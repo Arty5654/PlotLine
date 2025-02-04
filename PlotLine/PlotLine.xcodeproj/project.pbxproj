@@ -45,6 +45,11 @@
 			path = PlotLineUITests;
 			sourceTree = "<group>";
 		};
+		CDA3CE8E2D52A1660038ABC2 /* Backend */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Backend;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -79,6 +84,7 @@
 				CDA3CE742D5299960038ABC2 /* PlotLineTests */,
 				CDA3CE7E2D5299960038ABC2 /* PlotLineUITests */,
 				CDA3CE622D5299930038ABC2 /* Products */,
+				CDA3CE8E2D52A1660038ABC2 /* Backend */,
 			);
 			sourceTree = "<group>";
 		};
@@ -109,6 +115,7 @@
 			);
 			fileSystemSynchronizedGroups = (
 				CDA3CE632D5299930038ABC2 /* PlotLine */,
+				CDA3CE8E2D52A1660038ABC2 /* Backend */,
 			);
 			name = PlotLine;
 			packageProductDependencies = (
