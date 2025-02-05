@@ -9,9 +9,13 @@ import SwiftUI
 
 @main
 struct PlotLineApp: App {
+    
+    @StateObject private var session = AuthViewModel()
+    
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            RootView()
+                .environmentObject(session)
         }
     }
 }
