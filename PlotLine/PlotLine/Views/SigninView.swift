@@ -1,11 +1,17 @@
 import SwiftUI
 
 struct SignInView: View {
+    
+    //Env Variables
     @EnvironmentObject var session: AuthViewModel
     
+    //State variables
     @State private var username: String = ""
     @State private var password: String = ""
     @State private var phoneNum: String = ""
+    @State private var errorMessage: String? = nil
+    
+    // UI variables
     
     var body: some View {
         VStack(spacing: 20) {
@@ -14,7 +20,7 @@ struct SignInView: View {
                 .resizable()
                 .scaledToFit()
                 .frame(width: 150, height: 150) // Adjust size as needed
-                .padding(.bottom, 10)
+                .padding(.bottom, 0)
             
             // Title
             Text("PlotLine")
@@ -34,6 +40,15 @@ struct SignInView: View {
                 .textFieldStyle(RoundedBorderTextFieldStyle())
                 .padding(.horizontal)
             
+            //Error in signing up
+            if let error = errorMessage {
+                Text(error)
+                    .foregroundColor(.red)
+                    .font(.system(size: 14))
+                    .padding(.horizontal)
+                    .transition(.opacity)
+            }
+            
             // Sign Up Button
             Button(action: {
                 //todo call auth function
@@ -49,7 +64,7 @@ struct SignInView: View {
             }
             .padding(.horizontal)
             
-            // Log in Instead Button
+            // TODO make login page
             Button(action: {
                 // Navigate to log in page
             }) {
@@ -61,7 +76,12 @@ struct SignInView: View {
         }
         .padding()
     }
+    
+    // TODO write func to get error message from auth if not successful
+
 }
+
+
 
 struct SignInView_Previews: PreviewProvider {
     static var previews: some View {
