@@ -12,19 +12,21 @@ class AuthViewModel: ObservableObject {
     @Published var isLoggedIn: Bool = false
 
     init() {
-        //TODO load from UserDefaults to ensure a user stays logged in til signout
+        self.isLoggedIn = UserDefaults.standard.bool(forKey: "isLoggedIn")
     }
 
     func signIn() {
             // TODO add auth logic once backend is integrated
             
         self.isLoggedIn = true
+        UserDefaults.standard.set(true, forKey: "isLoggedIn")
     }
 
     func signOut() {
         // TODO update
         
         self.isLoggedIn = false
+        UserDefaults.standard.set(false, forKey: "isLoggedIn")
     }
     
 
