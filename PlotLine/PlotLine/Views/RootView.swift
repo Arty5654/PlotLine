@@ -17,7 +17,9 @@ struct RootView: View {
             ContentView()
         } else {
             // No auth, signin page display
-            SignInView()
+            NavigationStack {
+                SignUpView()
+            }
         }
     }
 }

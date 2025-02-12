@@ -14,8 +14,11 @@ struct PlotLineApp: App {
     
     var body: some Scene {
         WindowGroup {
-            RootView()
-                .environmentObject(session)
+            NavigationStack {
+                RootView()
+                    .environmentObject(session)
+            }
+
         }
     }
 }

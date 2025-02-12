@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct SignInView: View {
+struct SignUpView: View {
     
     //Env Variables
     @EnvironmentObject var session: AuthViewModel
@@ -8,8 +8,8 @@ struct SignInView: View {
     //State variables
     @State private var username: String = ""
     @State private var password: String = ""
+    @State private var confPassword: String = ""
     @State private var phoneNum: String = ""
-    @State private var errorMessage: String? = nil
     
     // UI variables
     
@@ -27,6 +27,10 @@ struct SignInView: View {
                 .font(.custom("AvenirNext-Bold", size: 36))                .foregroundColor(Color(.blue))
                 .padding(.bottom, 25)
             
+            // Text fields
+            TextField("Phone Number", text: $phoneNum)
+                .textFieldStyle(RoundedBorderTextFieldStyle())
+                .padding(.horizontal)
             
             TextField("Username", text: $username)
                 .textFieldStyle(RoundedBorderTextFieldStyle())
@@ -36,22 +40,33 @@ struct SignInView: View {
                 .textFieldStyle(RoundedBorderTextFieldStyle())
                 .padding(.horizontal)
             
+            SecureField("Confirm Password", text: $confPassword)
+                .textFieldStyle(RoundedBorderTextFieldStyle())
+                .padding(.horizontal)
+            
             //Error in signing up
-            if let error = errorMessage {
+            if let error = session.errorMessage {
                 Text(error)
                     .foregroundColor(.red)
                     .font(.system(size: 14))
                     .padding(.horizontal)
                     .transition(.opacity)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity, alignment: .center)
             }
             
-            // Sign In Button
+            // Sign Up Button
             Button(action: {
                 //todo call auth function
                 
-                session.signIn()
+                session.signUp(
+                    phone: phoneNum,
+                    username: username,
+                    password: password,
+                    confPassword: confPassword
+                )
             }) {
-                Text("Sign In")
+                Text("Sign Up")
                     .foregroundColor(.white)
                     .padding()
                     .frame(maxWidth: .infinity)
@@ -62,10 +77,11 @@ struct SignInView: View {
             
             Spacer()
             
+            // TODO make login page
             NavigationLink(
-                destination: SignUpView(),
+                destination: SignInView(),
                 label: {
-                    Text("No Account? Sign Up Instead!")
+                    Text("Have an Account? Log in instead!")
                         .font(.system(size: 14))
                         .foregroundColor(.green)
                 }
@@ -81,10 +97,11 @@ struct SignInView: View {
 
 
 
-struct SignInView_Previews: PreviewProvider {
+struct SignUpView_Previews: PreviewProvider {
     static var previews: some View {
-        SignInView()
+        SignUpView()
             .environmentObject(AuthViewModel())
             .preferredColorScheme(.light)
     }
 }
+
