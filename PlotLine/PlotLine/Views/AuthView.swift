@@ -1,31 +1,29 @@
 //
-//  RootView.swift
+//  AuthView.swift
 //  PlotLine
 //
-//  Created by Alex Younkers on 2/5/25.
+//  Created by Alex Younkers on 2/13/25.
 //
-
 import SwiftUI
 
-
-
-struct RootView: View {
+struct AuthView: View {
     
     @EnvironmentObject var session: AuthViewModel
     // TODO replace ContentView() with home screen
     
     var body: some View {
-        if session.isLoggedIn {
-            ContentView()
+        if session.isSignin {
+            SignInView()
                 .environmentObject(session)
         } else {
-            // No auth, signin page display
-            AuthView()
+            SignUpView()
+                .environmentObject(session)
         }
     }
 }
 
 #Preview {
-    RootView()
+   AuthView()
         .environmentObject(AuthViewModel())
 }
+

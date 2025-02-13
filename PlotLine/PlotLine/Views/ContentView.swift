@@ -8,6 +8,9 @@
 import SwiftUI
 
 struct ContentView: View {
+    
+    @EnvironmentObject var session: AuthViewModel
+    
     var body: some View {
         VStack {
             Image(systemName: "globe")
@@ -16,9 +19,26 @@ struct ContentView: View {
             Text("PlotLine")
         }
         .padding()
+        
+        Spacer()
+        
+        Button(action: {
+            //todo call auth function
+            
+            session.signOut()
+        }) {
+            Text("Sign Out")
+                .foregroundColor(.white)
+                .padding()
+                .frame(maxWidth: .infinity)
+                .background(Color(.red)) // Green theme color
+                .cornerRadius(8)
+        }
+        .padding(.horizontal)
     }
 }
 
 #Preview {
     ContentView()
+        .environmentObject(AuthViewModel())
 }

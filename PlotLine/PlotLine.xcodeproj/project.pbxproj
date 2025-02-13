@@ -23,6 +23,19 @@
 		};
 /* End PBXContainerItemProxy section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		CDFF674E2D5E38B1009F7BC3 /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
 		CDA3CE612D5299930038ABC2 /* PlotLine.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PlotLine.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		CDA3CE712D5299960038ABC2 /* PlotLineTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PlotLineTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -102,6 +115,7 @@
 				CDA3CE5D2D5299930038ABC2 /* Sources */,
 				CDA3CE5E2D5299930038ABC2 /* Frameworks */,
 				CDA3CE5F2D5299930038ABC2 /* Resources */,
+				CDFF674E2D5E38B1009F7BC3 /* Embed Frameworks */,
 			);
 			buildRules = (
 			);
@@ -195,6 +209,8 @@
 			);
 			mainGroup = CDA3CE582D5299930038ABC2;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = CDA3CE622D5299930038ABC2 /* Products */;
 			projectDirPath = "";

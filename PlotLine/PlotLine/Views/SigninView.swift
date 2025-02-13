@@ -11,6 +11,12 @@ struct SignInView: View {
     @State private var phoneNum: String = ""
     @State private var errorMessage: String? = nil
     
+    @FocusState private var focusedField: Field?
+    
+    enum Field {
+            case username, password, none
+    }
+    
     // UI variables
     
     var body: some View {
@@ -19,21 +25,39 @@ struct SignInView: View {
             Image("PlotLineLogo")
                 .resizable()
                 .scaledToFit()
-                .frame(width: 150, height: 150) // Adjust size as needed
+                .frame(width: 150, height: 150)
                 .padding(.bottom, 0)
             
             // Title
             Text("PlotLine")
-                .font(.custom("AvenirNext-Bold", size: 36))                .foregroundColor(Color(.blue))
+                .font(.custom("AvenirNext-Bold", size: 36))
+                .foregroundColor(Color(.blue))
                 .padding(.bottom, 25)
-            
+                
             
             TextField("Username", text: $username)
-                .textFieldStyle(RoundedBorderTextFieldStyle())
+                .padding()
+                .background(Color.white)
+                .cornerRadius(8)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(focusedField == .username ? Color.blue : Color.gray, lineWidth: 2)
+                )
+                .focused($focusedField, equals: .username)
+                .shadow(color: .gray.opacity(0.5), radius: 5, x: 0, y: 4)
                 .padding(.horizontal)
+
             
             SecureField("Password", text: $password)
-                .textFieldStyle(RoundedBorderTextFieldStyle())
+                .padding()
+                .background(Color.white)
+                .cornerRadius(8)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(focusedField == .password ? Color.blue : Color.gray, lineWidth: 2)
+                )
+                .focused($focusedField, equals: .password)
+                .shadow(color: .gray.opacity(0.5), radius: 5, x: 0, y: 4)
                 .padding(.horizontal)
             
             //Error in signing up
@@ -47,29 +71,36 @@ struct SignInView: View {
             
             // Sign In Button
             Button(action: {
-                //todo call auth function
-                
-                session.signIn()
+                session.signIn(username: username, password: password)
             }) {
                 Text("Sign In")
                     .foregroundColor(.white)
+                    .fontWeight(.bold)
                     .padding()
-                    .frame(maxWidth: .infinity)
+                    .frame(width: 220)
                     .background(Color(.green)) // Green theme color
                     .cornerRadius(8)
             }
             .padding(.horizontal)
             
+            Button(action: {
+                // display OTP screen for uname/password reset
+            }) {
+                Text("Forgot username or password?")
+                    .font(.system(size: 14))
+                    .foregroundColor(.red)
+            }
+            .padding(.top, 10)
+            
             Spacer()
             
-            NavigationLink(
-                destination: SignUpView(),
-                label: {
-                    Text("No Account? Sign Up Instead!")
-                        .font(.system(size: 14))
-                        .foregroundColor(.green)
-                }
-            )
+            Button(action: {
+                session.isSignin = false
+            }) {
+                Text("No Account? Sign up now!")
+                    .font(.system(size: 14))
+                    .foregroundColor(.green)
+            }
             .padding(.top, 10)
         }
         .padding()

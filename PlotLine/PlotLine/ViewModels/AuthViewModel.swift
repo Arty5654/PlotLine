@@ -7,11 +7,14 @@
 
 import SwiftUI
 
+@MainActor
 class AuthViewModel: ObservableObject {
  
     @Published var isLoggedIn: Bool = false
     @Published var errorMessage: String?
     @Published var authToken: String?
+    
+    @Published var isSignin: Bool = false
 
     init() {
         if let token = KeychainManager.loadToken() {
@@ -43,10 +46,15 @@ class AuthViewModel: ObservableObject {
         }
         guard password.rangeOfCharacter(from: .decimalDigits) != nil, password.rangeOfCharacter(from: .uppercaseLetters) != nil, password.rangeOfCharacter(from: .lowercaseLetters) != nil else {
             
-            self.errorMessage = "Password requires an uppercase, lowercase, and a number"
+            self.errorMessage = "Password requires an uppercase, lowercase, and a number."
             return
         }
-
+        
+        //username errorchecks (no spaces or special characters)
+        guard isValidUsername(username) else {
+            self.errorMessage = "Username can only contain letters and numbers."
+            return
+        }
         
         Task {
             do {
@@ -55,12 +63,15 @@ class AuthViewModel: ObservableObject {
                     username: username,
                     password: password
                 )
+                
                 // On success
-                self.isLoggedIn = true
-                self.authToken = response.token
                 if let token = response.token {
                     KeychainManager.saveToken(token)
                 }
+                self.authToken = response.token
+                self.isLoggedIn = true
+                print("User Logged in!")
+                
             } catch {
                 // Handle errors from AuthAPI
                 if let authError = error as? AuthError {
@@ -81,11 +92,41 @@ class AuthViewModel: ObservableObject {
         
     }
 
-    func signIn() {
-        // TODO add auth logic once backend is integrated
-            
-        self.isLoggedIn = true
+    func signIn(username: String, password: String) {
         
+        Task {
+            do {
+                let response = try await AuthAPI.signIn(
+                    username: username,
+                    password: password
+                )
+                
+                // On success
+                if let token = response.token {
+                    KeychainManager.saveToken(token)
+                }
+                self.authToken = response.token
+                self.isLoggedIn = true
+                print("User Logged in!")
+                
+            } catch {
+                // Handle errors from AuthAPI
+                if let authError = error as? AuthError {
+                    switch authError {
+                    case .custom(let msg):
+                        self.errorMessage = msg
+                    case .invalidURL:
+                        self.errorMessage = "Invalid URL"
+                    case .serverError:
+                        self.errorMessage = "Server error."
+                    }
+                } else {
+                    self.errorMessage = error.localizedDescription
+                }
+                self.isLoggedIn = false
+            }
+        }
+
     }
 
     func signOut() {
@@ -94,6 +135,12 @@ class AuthViewModel: ObservableObject {
         self.isLoggedIn = false
         self.authToken = nil
         KeychainManager.removeToken()
+    }
+    
+    // regex check for valid username (alphanumeric only)
+    func isValidUsername(_ username: String) -> Bool {
+        let regex = "^[a-zA-Z0-9]+$"
+        return NSPredicate(format: "SELF MATCHES %@", regex).evaluate(with: username)
     }
     
 

@@ -38,6 +38,38 @@ struct AuthAPI {
         return authResponse
     }
     
+    
+    static func signIn(username: String, password: String) async throws -> AuthResponse {
+        guard let url = URL(string: "\(baseURL)/auth/signin") else {
+            throw AuthError.invalidURL
+        }
+
+        // encode sign up request
+        let requestBody = SignInRequest(username: username, password: password)
+        let jsonData = try JSONEncoder().encode(requestBody)
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.httpBody = jsonData
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            throw AuthError.serverError
+        }
+
+        let authResponse = try JSONDecoder().decode(AuthResponse.self, from: data)
+        if !authResponse.success {
+            throw AuthError.custom(authResponse.error ?? "Unknown error")
+        }
+
+        return authResponse
+    }
+    
+    
+    
+    
 }
 
 // types of authentication errors
