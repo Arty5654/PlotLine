@@ -1,5 +1,7 @@
 package com.plotline.backend.service;
 
+import java.nio.charset.StandardCharsets;
+
 import org.springframework.security.crypto.bcrypt.BCrypt;
 import org.springframework.stereotype.Service;
 
@@ -7,9 +9,11 @@ import com.auth0.jwt.JWT;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.plotline.backend.dto.S3UserRecord;
 
+import software.amazon.awssdk.core.ResponseBytes;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
 
@@ -67,6 +71,41 @@ public class AuthService {
             e.printStackTrace();
             return false;
         }
+    }
+
+    public String userLogin(String username, String rawPassword) {
+
+        if (!userExists(username)) {
+            return "Given username does not exist";
+        }
+
+        try {
+            // Fetch user record from S3
+            GetObjectRequest getRequest = GetObjectRequest.builder()
+                    .bucket(bucketName)
+                    .key(userKey(username))
+                    .build();
+
+            ResponseBytes<GetObjectResponse> objectBytes = s3Client.getObjectAsBytes(getRequest);
+            String userJson = new String(objectBytes.asByteArray(), StandardCharsets.UTF_8);
+
+            // Convert JSON to User Record
+            S3UserRecord userRecord = objectMapper.readValue(userJson, S3UserRecord.class);
+
+            // Verify Password
+            if (BCrypt.checkpw(rawPassword, userRecord.getPassword())) {
+                //correct password
+                return "true";
+            } else {
+                //incorrect password
+                return "Incorrect Password"; 
+            }
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            return "Server Error";
+        }
+        
     }
 
     // generate jwt token for user on login/signup

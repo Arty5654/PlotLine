@@ -8,9 +8,9 @@ public class AuthResponse {
     public AuthResponse() {
     }
     
-    public AuthResponse(boolean success, String token, String error) {
-        this.token = token;
+    public AuthResponse(boolean success, String token, String error) {      
         this.success = success;
+        this.token = token;
         this.error = error;
     }
     
