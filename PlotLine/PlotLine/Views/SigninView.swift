@@ -9,7 +9,6 @@ struct SignInView: View {
     @State private var username: String = ""
     @State private var password: String = ""
     @State private var phoneNum: String = ""
-    @State private var errorMessage: String? = nil
     
     @FocusState private var focusedField: Field?
     
@@ -61,7 +60,7 @@ struct SignInView: View {
                 .padding(.horizontal)
             
             //Error in signing up
-            if let error = errorMessage {
+            if let error = session.loginErrorMessage {
                 Text(error)
                     .foregroundColor(.red)
                     .font(.system(size: 14))

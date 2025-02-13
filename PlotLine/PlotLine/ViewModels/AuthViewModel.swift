@@ -11,7 +11,10 @@ import SwiftUI
 class AuthViewModel: ObservableObject {
  
     @Published var isLoggedIn: Bool = false
-    @Published var errorMessage: String?
+    
+    @Published var signupErrorMessage: String?
+    @Published var loginErrorMessage: String?
+    
     @Published var authToken: String?
     
     @Published var isSignin: Bool = false
@@ -27,32 +30,32 @@ class AuthViewModel: ObservableObject {
     
     func signUp(phone: String, username: String, password: String, confPassword: String) {
         // clear prev error
-        self.errorMessage = nil
+        self.signupErrorMessage = nil
         
         // null error checks
         guard !phone.isEmpty, !username.isEmpty, !password.isEmpty, !confPassword.isEmpty else {
-            self.errorMessage = "Please fill out all fields."
+            self.signupErrorMessage = "Please fill out all fields."
             return
         }
         
         //password error checks
         if password != confPassword {
-            self.errorMessage = "Please ensure passwords match."
+            self.signupErrorMessage = "Please ensure passwords match."
             return
         }
         guard password.count >= 8 else {
-            self.errorMessage = "Password must be 8 digits"
+            self.signupErrorMessage = "Password must be 8 digits"
             return
         }
         guard password.rangeOfCharacter(from: .decimalDigits) != nil, password.rangeOfCharacter(from: .uppercaseLetters) != nil, password.rangeOfCharacter(from: .lowercaseLetters) != nil else {
             
-            self.errorMessage = "Password requires an uppercase, lowercase, and a number."
+            self.signupErrorMessage = "Password requires an uppercase, lowercase, and a number."
             return
         }
         
         //username errorchecks (no spaces or special characters)
         guard isValidUsername(username) else {
-            self.errorMessage = "Username can only contain letters and numbers."
+            self.signupErrorMessage = "Username can only contain letters and numbers."
             return
         }
         
@@ -70,6 +73,7 @@ class AuthViewModel: ObservableObject {
                 }
                 self.authToken = response.token
                 self.isLoggedIn = true
+                self.signupErrorMessage = nil
                 print("User Logged in!")
                 
             } catch {
@@ -77,14 +81,14 @@ class AuthViewModel: ObservableObject {
                 if let authError = error as? AuthError {
                     switch authError {
                     case .custom(let msg):
-                        self.errorMessage = msg
+                        self.signupErrorMessage = msg
                     case .invalidURL:
-                        self.errorMessage = "Invalid URL"
+                        self.signupErrorMessage = "Invalid URL"
                     case .serverError:
-                        self.errorMessage = "Server error."
+                        self.signupErrorMessage = "Server error."
                     }
                 } else {
-                    self.errorMessage = error.localizedDescription
+                    self.signupErrorMessage = error.localizedDescription
                 }
                 self.isLoggedIn = false
             }
@@ -107,21 +111,21 @@ class AuthViewModel: ObservableObject {
                 }
                 self.authToken = response.token
                 self.isLoggedIn = true
-                print("User Logged in!")
+                self.loginErrorMessage = nil
                 
             } catch {
                 // Handle errors from AuthAPI
                 if let authError = error as? AuthError {
                     switch authError {
                     case .custom(let msg):
-                        self.errorMessage = msg
+                        self.loginErrorMessage = msg
                     case .invalidURL:
-                        self.errorMessage = "Invalid URL"
+                        self.loginErrorMessage = "Invalid URL"
                     case .serverError:
-                        self.errorMessage = "Server error."
+                        self.loginErrorMessage = "Server error."
                     }
                 } else {
-                    self.errorMessage = error.localizedDescription
+                    self.loginErrorMessage = error.localizedDescription
                 }
                 self.isLoggedIn = false
             }
@@ -129,9 +133,7 @@ class AuthViewModel: ObservableObject {
 
     }
 
-    func signOut() {
-        // TODO update
-        
+    func signOut() {        
         self.isLoggedIn = false
         self.authToken = nil
         KeychainManager.removeToken()

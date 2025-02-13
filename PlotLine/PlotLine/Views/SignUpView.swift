@@ -87,7 +87,7 @@ struct SignUpView: View {
                 .padding(.horizontal)
             
             //Error in signing up
-            if let error = session.errorMessage {
+            if let error = session.signupErrorMessage {
                 Text(error)
                     .foregroundColor(.red)
                     .font(.system(size: 14))
