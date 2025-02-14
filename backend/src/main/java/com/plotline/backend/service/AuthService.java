@@ -16,6 +16,8 @@ import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
+import io.github.cdimascio.dotenv.Dotenv;
+
 
 @Service
 public class AuthService {
@@ -23,13 +25,15 @@ public class AuthService {
     private final S3Client s3Client;
     private final String bucketName = "plotline-accounts";
     private final ObjectMapper objectMapper;
-
-    private static final String jwt_secret = System.getenv("JWT_SECRET");
+    Dotenv dotenv = Dotenv.load();
+    private String jwt_secret = dotenv.get("JWT_SECRET");
+    
     private static final long jwt_expiry = 1000 * 60 * 60 * 24 * 30; // 1 month for new login
 
     public AuthService(S3Client s3Client) {
         this.s3Client = s3Client;
         this.objectMapper = new ObjectMapper();
+        System.out.println("JWTTTT: " + jwt_secret);
     }
 
     // check if user exists for username uniqueness and login functions

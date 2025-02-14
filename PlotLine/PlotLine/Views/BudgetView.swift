@@ -10,14 +10,9 @@ import Charts
 
 struct BudgetView: View {
     @State private var selectedTab = "Budgeting" // Toggle between Budgeting & Stocks
-    @State private var showIncomeSheet = false
-    @State private var showExpenseSheet = false
-    @State private var showBudgetSheet = false
-    @State private var showSpendingSheet = false
-    @State private var selectedChartView = "Weekly"
 
     var body: some View {
-        NavigationView {
+        NavigationStack {  // Wrap with NavigationStack
             VStack(spacing: 20) {
                 // Toggle Button for Budgeting and Stocks
                 Picker("View", selection: $selectedTab) {
@@ -28,13 +23,7 @@ struct BudgetView: View {
                 .padding()
 
                 if selectedTab == "Budgeting" {
-                    BudgetSection(
-                        showIncomeSheet: $showIncomeSheet,
-                        showExpenseSheet: $showExpenseSheet,
-                        showBudgetSheet: $showBudgetSheet,
-                        showSpendingSheet: $showSpendingSheet,
-                        selectedChartView: $selectedChartView
-                    )
+                    BudgetSection()
                 } else {
                     StockTrackingView()
                 }
@@ -42,18 +31,13 @@ struct BudgetView: View {
                 Spacer()
             }
             .padding()
-            //.navigationTitle("PlotLine")
         }
     }
 }
 
 // MARK: - Budgeting Section
 struct BudgetSection: View {
-    @Binding var showIncomeSheet: Bool
-    @Binding var showExpenseSheet: Bool
-    @Binding var showBudgetSheet: Bool
-    @Binding var showSpendingSheet: Bool
-    @Binding var selectedChartView: String
+    @State private var selectedChartView = "Weekly"
 
     var body: some View {
         VStack(alignment: .leading, spacing: 15) {
@@ -79,58 +63,26 @@ struct BudgetSection: View {
             .cornerRadius(10)
             .shadow(radius: 3)
 
-            // Budgeting Input Buttons (Now Below the Chart)
-            Button(action: { showIncomeSheet.toggle() }) {
+            // Navigation Links to IncomeRentView and Other Input Views
+            NavigationLink(destination: IncomeRentView()) {
                 BudgetButtonLabel(title: "Input Recurring Income & Rent")
             }
-            .sheet(isPresented: $showIncomeSheet) {
-                InputIncomeView()
-            }
 
-            Button(action: { showExpenseSheet.toggle() }) {
+            NavigationLink(destination: IncomeRentView()) {
                 BudgetButtonLabel(title: "Input Estimated Weekly/Monthly Costs")
             }
-            .sheet(isPresented: $showExpenseSheet) {
-                InputExpenseView()
-            }
 
-            Button(action: { showBudgetSheet.toggle() }) {
+            NavigationLink(destination: IncomeRentView()) {
                 BudgetButtonLabel(title: "Create Weekly/Monthly Budget")
             }
-            .sheet(isPresented: $showBudgetSheet) {
-                InputBudgetView()
-            }
 
-            Button(action: { showSpendingSheet.toggle() }) {
+            NavigationLink(destination: IncomeRentView()) {
                 BudgetButtonLabel(title: "Input Spending for a Time Period")
-            }
-            .sheet(isPresented: $showSpendingSheet) {
-                InputSpendingView()
             }
         }
         .padding()
         .background(Color.blue.opacity(0.1))
         .cornerRadius(15)
-    }
-}
-
-// MARK: - Stock Tracking Section
-struct StockTrackingView: View {
-    var body: some View {
-        VStack {
-            Text("Stock Tracking")
-                .font(.largeTitle)
-                .bold()
-                .padding(.bottom, 10)
-
-            Text("Stock Information Coming Soon...")
-                .font(.headline)
-                .padding()
-        }
-        .frame(maxWidth: .infinity, minHeight: 300)
-        .background(Color.green.opacity(0.1))
-        .cornerRadius(15)
-        .shadow(radius: 3)
     }
 }
 
@@ -176,36 +128,23 @@ struct BudgetButtonLabel: View {
     }
 }
 
-// MARK: - Placeholder Input Sheets
-struct InputIncomeView: View {
+// MARK: - Placeholder Stock Tracking Section
+struct StockTrackingView: View {
     var body: some View {
-        Text("Input Recurring Income & Rent")
-            .font(.title)
-            .padding()
-    }
-}
+        VStack {
+            Text("Stock Tracking")
+                .font(.largeTitle)
+                .bold()
+                .padding(.bottom, 10)
 
-struct InputExpenseView: View {
-    var body: some View {
-        Text("Input Estimated Weekly/Monthly Costs")
-            .font(.title)
-            .padding()
-    }
-}
-
-struct InputBudgetView: View {
-    var body: some View {
-        Text("Create Weekly/Monthly Budget")
-            .font(.title)
-            .padding()
-    }
-}
-
-struct InputSpendingView: View {
-    var body: some View {
-        Text("Input Spending for a Time Period")
-            .font(.title)
-            .padding()
+            Text("Stock Information Coming Soon...")
+                .font(.headline)
+                .padding()
+        }
+        .frame(maxWidth: .infinity, minHeight: 300)
+        .background(Color.green.opacity(0.1))
+        .cornerRadius(15)
+        .shadow(radius: 3)
     }
 }
 

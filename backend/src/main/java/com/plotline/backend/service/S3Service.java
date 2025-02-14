@@ -6,6 +6,11 @@ import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.*;
 
+import io.github.cdimascio.dotenv.Dotenv;
+import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
+import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.regions.Region;
+
 import java.io.InputStream;
 import java.nio.ByteBuffer;
 
@@ -14,8 +19,17 @@ public class S3Service {
   private final S3Client s3Client;
   private final String bucketName = "plotline-database-bucket";
 
-  public S3Service(S3Client s3Client) {
-    this.s3Client = s3Client;
+  public S3Service() {
+    Dotenv dotenv = Dotenv.load(); // Load .env file
+    String accessKey = dotenv.get("AWS_ACCESS_KEY_ID");
+    String secretKey = dotenv.get("AWS_SECRET_ACCESS_KEY");
+    String region = dotenv.get("AWS_REGION");
+    String jwtKey = dotenv.get("JWT_SECRET_KEY");
+
+    this.s3Client = S3Client.builder()
+            .region(Region.of(region))
+            .credentialsProvider(StaticCredentialsProvider.create(AwsBasicCredentials.create(accessKey, secretKey)))
+            .build();
   }
 
   public void uploadFile(String fileName, InputStream inputStream, long contentLength) {
@@ -23,9 +37,10 @@ public class S3Service {
       PutObjectRequest putObjectRequest = PutObjectRequest.builder()
           .bucket(bucketName)
           .key(fileName)
+          .contentLength(contentLength)
           .build();
 
-      s3Client.putObject(putObjectRequest, RequestBody.fromByteBuffer(ByteBuffer.wrap(inputStream.readAllBytes())));
+      s3Client.putObject(putObjectRequest, RequestBody.fromInputStream(inputStream, contentLength));
     } catch (Exception e) {
       throw new RuntimeException("Error uploading file to S3", e);
     }

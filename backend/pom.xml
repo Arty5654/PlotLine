@@ -68,6 +68,23 @@
             <version>4.4.0</version> <!-- or the latest -->
         </dependency>
 
+        <!-- JWT -->
+        <!-- <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt</artifactId>
+            <version>0.11.5</version>
+        </dependency> -->
+
+        <!-- Dotenv for loading environment variables -->
+        <dependency>
+            <groupId>io.github.cdimascio</groupId>
+            <artifactId>dotenv-java</artifactId>
+            <version>3.0.0</version>
+        </dependency>
+
+        
+
+
     </dependencies>
 
     <build>
