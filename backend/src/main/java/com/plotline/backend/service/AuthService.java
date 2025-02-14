@@ -54,7 +54,7 @@ public class AuthService {
 
             String hashedPassword = BCrypt.hashpw(rawPassword, BCrypt.gensalt());
 
-            S3UserRecord userRecord = new S3UserRecord(phone, username, hashedPassword);
+            S3UserRecord userRecord = new S3UserRecord(username, phone, hashedPassword);
             String userJson = objectMapper.writeValueAsString(userRecord);
 
             PutObjectRequest putRequest = PutObjectRequest.builder().
