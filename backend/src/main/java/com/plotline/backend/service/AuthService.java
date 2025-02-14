@@ -23,10 +23,10 @@ import io.github.cdimascio.dotenv.Dotenv;
 public class AuthService {
 
     private final S3Client s3Client;
-    private final String bucketName = "plotline-accounts";
+    private final String bucketName = "plotline-database-bucket";
     private final ObjectMapper objectMapper;
     Dotenv dotenv = Dotenv.load();
-    private String jwt_secret = dotenv.get("JWT_SECRET");
+    private String jwt_secret = dotenv.get("JWT_SECRET_KEY");
     
     private static final long jwt_expiry = 1000 * 60 * 60 * 24 * 30; // 1 month for new login
 
@@ -38,7 +38,7 @@ public class AuthService {
 
     // check if user exists for username uniqueness and login functions
     public boolean userExists(String username) {
-        String key = userKey(username);
+        String key = userAccKey(username);
         try {
             s3Client.getObject(GetObjectRequest.builder().bucket(bucketName).key(key).build());
             return true;
@@ -63,7 +63,7 @@ public class AuthService {
 
             PutObjectRequest putRequest = PutObjectRequest.builder().
                                         bucket(bucketName).
-                                        key(userKey(username)).
+                                        key(userAccKey(username)).
                                         contentType("application/json").
                                         build();
 
@@ -87,7 +87,7 @@ public class AuthService {
             // Fetch user record from S3
             GetObjectRequest getRequest = GetObjectRequest.builder()
                     .bucket(bucketName)
-                    .key(userKey(username))
+                    .key(userAccKey(username))
                     .build();
 
             ResponseBytes<GetObjectResponse> objectBytes = s3Client.getObjectAsBytes(getRequest);
@@ -127,8 +127,8 @@ public class AuthService {
 
 
     // key for each bucket: username.json
-    private String userKey(String username) {     
-        return username + ".json";
+    private String userAccKey(String username) {     
+        return "users/" + username + "/account.json";
     }
   
 }
