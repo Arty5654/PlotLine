@@ -8,17 +8,11 @@
 import SwiftUI
 
 struct IncomeRentView: View {
-    @State private var income: String = ""
-    @State private var rent: String = ""
+    @State private var income: String = UserDefaults.standard.string(forKey: "userIncome") ?? ""
+    @State private var rent: String = UserDefaults.standard.string(forKey: "userRent") ?? ""
     @State private var showWarning: Bool = false
     @State private var showAlert: Bool = false
     @State private var proceedWithSave: Bool = false // Flag to save after alert
-    @Environment(\.presentationMode) var presentationMode
-    
-    // Fetch logged-in username
-    private var username: String {
-        return UserDefaults.standard.string(forKey: "loggedInUsername") ?? "UnknownUser"
-    }
 
     var body: some View {
         VStack(spacing: 20) {
@@ -77,12 +71,12 @@ struct IncomeRentView: View {
         }
     }
 
-    // Save Data to Backend
+    // Save Data to Backend and Persist Values Locally
     private func saveToBackend() {
         guard proceedWithSave, let incomeValue = Double(income), let rentValue = Double(rent) else { return }
 
         let userIncomeData: [String: Any] = [
-            "username": username,
+            "username": UserDefaults.standard.string(forKey: "loggedInUsername") ?? "UnknownUser",
             "income": incomeValue,
             "rent": rentValue
         ]
@@ -101,12 +95,13 @@ struct IncomeRentView: View {
                 return
             }
             print("Data successfully saved")
+            
+            // Store the values locally so they persist
+            UserDefaults.standard.set(income, forKey: "userIncome")
+            UserDefaults.standard.set(rent, forKey: "userRent")
         }.resume()
-
-        presentationMode.wrappedValue.dismiss()
     }
 }
-
 
 // MARK: - Preview
 #Preview {
