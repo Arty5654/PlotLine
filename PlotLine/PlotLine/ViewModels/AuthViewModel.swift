@@ -70,6 +70,8 @@ class AuthViewModel: ObservableObject {
                 // On success
                 if let token = response.token {
                     KeychainManager.saveToken(token)
+                    // Save username so we can connect data to the user in different views
+                    UserDefaults.standard.set(username, forKey: "loggedInUsername")
                 }
                 self.authToken = response.token
                 self.isLoggedIn = true
@@ -108,6 +110,8 @@ class AuthViewModel: ObservableObject {
                 // On success
                 if let token = response.token {
                     KeychainManager.saveToken(token)
+                    // Save username so we can connect data to the user in different views
+                    UserDefaults.standard.set(username, forKey: "loggedInUsername")
                 }
                 self.authToken = response.token
                 self.isLoggedIn = true

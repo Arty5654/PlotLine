@@ -22,6 +22,22 @@ struct ContentView: View {
         
         Spacer()
         
+        NavigationLink(destination: BudgetView()) {
+            Text("Go to budget page")
+                .foregroundColor(.white)
+                .padding()
+                .frame(maxWidth: .infinity)
+                .background(Color(.red)) // Green theme color
+                .cornerRadius(8)
+                
+        }
+        .padding()
+        
+        
+        
+        
+        Spacer()
+        
         Button(action: {
             //todo call auth function
             
