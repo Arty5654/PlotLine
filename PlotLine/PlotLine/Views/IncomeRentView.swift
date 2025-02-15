@@ -26,12 +26,12 @@ struct IncomeRentView: View {
                 .font(.title2)
                 .bold()
 
-            TextField("Enter Monthly Income ($)", text: $income)
+            TextField("Enter Monthly Income (Pre-Tax)", text: $income)
                 .keyboardType(.decimalPad)
                 .textFieldStyle(RoundedBorderTextFieldStyle())
                 .padding()
 
-            TextField("Enter Monthly Rent ($)", text: $rent)
+            TextField("Enter Monthly Rent", text: $rent)
                 .keyboardType(.decimalPad)
                 .textFieldStyle(RoundedBorderTextFieldStyle())
                 .padding()
