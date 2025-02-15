@@ -12,7 +12,7 @@ struct BudgetView: View {
     @State private var selectedTab = "Budgeting" // Toggle between Budgeting & Stocks
 
     var body: some View {
-        NavigationStack {  // Wrap with NavigationStack
+        NavigationStack {
             VStack(spacing: 20) {
                 // Toggle Button for Budgeting and Stocks
                 Picker("View", selection: $selectedTab) {
@@ -45,7 +45,7 @@ struct BudgetSection: View {
                 .font(.largeTitle)
                 .bold()
 
-            // Spending Trends Chart (Now Moved to the Top)
+            // Spending Trends Chart 
             VStack {
                 Text("Spending Trends")
                     .font(.headline)
@@ -68,7 +68,7 @@ struct BudgetSection: View {
                 BudgetButtonLabel(title: "Input Recurring Income & Rent")
             }
 
-            NavigationLink(destination: IncomeRentView()) {
+            NavigationLink(destination: WeeklyMonthlyCostView()) {
                 BudgetButtonLabel(title: "Input Estimated Weekly/Monthly Costs")
             }
 
