@@ -42,7 +42,7 @@ public class AuthController {
         String token = authService.generateToken(request.getUsername());
         
         // signup successful
-        return ResponseEntity.ok(new AuthResponse(true, token, null));
+        return ResponseEntity.ok(new AuthResponse(true, token, "Needs Verification"));
     }
 
     @PostMapping("/signin")
@@ -84,7 +84,9 @@ public class AuthController {
                 return ResponseEntity.ok(new AuthResponse(false, null, "Could not create user"));
             }
 
-            System.out.println("Google user SIGNED UP");
+            String token = authService.generateToken(username);
+            return ResponseEntity.ok(new AuthResponse(true, token, "Needs Verification"));
+
 
         } else {
             // username exists already, try signing the google user back in
@@ -107,9 +109,11 @@ public class AuthController {
 
             }
 
+            String token = authService.generateToken(username);
+            return ResponseEntity.ok(new AuthResponse(true, token, null));
+
         }
 
-        String token = authService.generateToken(username);
-        return ResponseEntity.ok(new AuthResponse(true, token, null));
+
     }
 }
