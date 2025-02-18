@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		CD06D2DE2D64C5D600838ECF /* .gitignore in Resources */ = {isa = PBXBuildFile; fileRef = CD06D2DD2D64C5CD00838ECF /* .gitignore */; };
 		CDC64D202D641D7300187584 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = CDC64D1F2D641D7300187584 /* GoogleSignIn */; };
 		CDC64D222D641D7300187584 /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = CDC64D212D641D7300187584 /* GoogleSignInSwift */; };
 /* End PBXBuildFile section */
@@ -42,6 +43,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		CD06D2DD2D64C5CD00838ECF /* .gitignore */ = {isa = PBXFileReference; lastKnownFileType = text; path = .gitignore; sourceTree = "<group>"; };
 		CDA3CE612D5299930038ABC2 /* PlotLine.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PlotLine.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		CDA3CE712D5299960038ABC2 /* PlotLineTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PlotLineTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		CDA3CE7B2D5299960038ABC2 /* PlotLineUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PlotLineUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -108,6 +110,7 @@
 		CDA3CE582D5299930038ABC2 = {
 			isa = PBXGroup;
 			children = (
+				CD06D2DD2D64C5CD00838ECF /* .gitignore */,
 				CDA3CE632D5299930038ABC2 /* PlotLine */,
 				CDA3CE742D5299960038ABC2 /* PlotLineTests */,
 				CDA3CE7E2D5299960038ABC2 /* PlotLineUITests */,
@@ -251,6 +254,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				CD06D2DE2D64C5D600838ECF /* .gitignore in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
