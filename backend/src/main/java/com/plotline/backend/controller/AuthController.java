@@ -71,9 +71,8 @@ public class AuthController {
     @PostMapping("/google-signin")
     public ResponseEntity<AuthResponse> googleSignIn(@RequestBody GoogleSigninRequest request) {
 
-        String email = request.getEmail();
+        String username = request.getUsername();
         String tokenID = request.getIdToken();
-        String username = email.split("@")[0];
 
         if (!authService.userExists(username)) {
 
