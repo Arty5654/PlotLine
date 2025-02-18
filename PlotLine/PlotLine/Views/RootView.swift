@@ -15,13 +15,17 @@ struct RootView: View {
     // TODO replace ContentView() with home screen
     
     var body: some View {
-        if session.isLoggedIn {
+        if session.isLoggedIn && session.needVerification != true {
             ContentView()
                 .environmentObject(session)
+        } else if (session.needVerification == true) {
+            PhoneVerificationView()
         } else {
             // No auth, signin page display
             AuthView()
         }
+        
+        
     }
 }
 

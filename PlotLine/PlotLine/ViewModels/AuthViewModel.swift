@@ -20,6 +20,7 @@ class AuthViewModel: ObservableObject {
     @Published var authToken: String?
     
     @Published var isSignin: Bool = false
+    @Published var needVerification: Bool?
 
     init() {
         if let token = KeychainManager.loadToken() {
@@ -78,7 +79,11 @@ class AuthViewModel: ObservableObject {
                 self.authToken = response.token
                 self.isLoggedIn = true
                 self.signupErrorMessage = nil
-                print("User Logged in!")
+                
+                // trigger phone verification
+                if response.error == "Needs Verification" {
+                    self.needVerification = true
+                }
                 
             } catch {
                 // Handle errors from AuthAPI
@@ -147,11 +152,18 @@ class AuthViewModel: ObservableObject {
                     //TODO make this use username instead of email
                     
                     if let token = response.token {
+                        
                         KeychainManager.saveToken(token)
                         UserDefaults.standard.set(username, forKey: "loggedInUsername")
+                        
                         self.authToken = token
+                        
                         self.isLoggedIn = true
-                        print("Google Sign-In successful, token saved.")
+                        
+                        // trigger phone verification
+                        if response.error == "Needs Verification" {
+                            self.needVerification = true
+                        }
                     }
                 } catch {
                     self.signupErrorMessage = "Google Sign-In failed: \(error.localizedDescription)"
