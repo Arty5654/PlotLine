@@ -6,6 +6,11 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		CDC64D202D641D7300187584 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = CDC64D1F2D641D7300187584 /* GoogleSignIn */; };
+		CDC64D222D641D7300187584 /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = CDC64D212D641D7300187584 /* GoogleSignInSwift */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		CDA3CE722D5299960038ABC2 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -42,9 +47,22 @@
 		CDA3CE7B2D5299960038ABC2 /* PlotLineUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PlotLineUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		CD942FF32D6422C300211F05 /* Exceptions for "PlotLine" folder in "PlotLine" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = CDA3CE602D5299930038ABC2 /* PlotLine */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		CDA3CE632D5299930038ABC2 /* PlotLine */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				CD942FF32D6422C300211F05 /* Exceptions for "PlotLine" folder in "PlotLine" target */,
+			);
 			path = PlotLine;
 			sourceTree = "<group>";
 		};
@@ -65,6 +83,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				CDC64D202D641D7300187584 /* GoogleSignIn in Frameworks */,
+				CDC64D222D641D7300187584 /* GoogleSignInSwift in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -126,6 +146,8 @@
 			);
 			name = PlotLine;
 			packageProductDependencies = (
+				CDC64D1F2D641D7300187584 /* GoogleSignIn */,
+				CDC64D212D641D7300187584 /* GoogleSignInSwift */,
 			);
 			productName = PlotLine;
 			productReference = CDA3CE612D5299930038ABC2 /* PlotLine.app */;
@@ -210,6 +232,7 @@
 			mainGroup = CDA3CE582D5299930038ABC2;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
+				CDC64D1E2D641D7300187584 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = CDA3CE622D5299930038ABC2 /* Products */;
@@ -414,6 +437,7 @@
 				DEVELOPMENT_ASSET_PATHS = "\"PlotLine/Preview Content\"";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = PlotLine/Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -442,6 +466,7 @@
 				DEVELOPMENT_ASSET_PATHS = "\"PlotLine/Preview Content\"";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = PlotLine/Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -568,6 +593,30 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		CDC64D1E2D641D7300187584 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/google/GoogleSignIn-iOS.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 8.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		CDC64D1F2D641D7300187584 /* GoogleSignIn */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = CDC64D1E2D641D7300187584 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
+			productName = GoogleSignIn;
+		};
+		CDC64D212D641D7300187584 /* GoogleSignInSwift */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = CDC64D1E2D641D7300187584 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
+			productName = GoogleSignInSwift;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = CDA3CE592D5299930038ABC2 /* Project object */;
 }
