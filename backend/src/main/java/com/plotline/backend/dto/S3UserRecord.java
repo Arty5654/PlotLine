@@ -4,16 +4,18 @@ public class S3UserRecord {
     private String username;
     private String phone;
     private String password;
-    private String birthday;
-    private String city;
+    private Boolean isGoogle;
+    private Boolean isVerified;
     
     public S3UserRecord() {
     }
     
-    public S3UserRecord(String username, String phone, String password) {
+    public S3UserRecord(String username, String phone, String password, Boolean isGoogle, Boolean isVerified) {
         this.username = username;
         this.phone = phone;
         this.password = password;
+        this.isGoogle = isGoogle;
+        this.isVerified = isVerified;
     }
     
     public String getUsername() {
@@ -38,5 +40,21 @@ public class S3UserRecord {
     
     public void setPassword(String password) {
         this.password = password;
+    }
+
+    public Boolean getIsGoogle() {
+        return isGoogle;
+    }
+
+    public void setIsGoogle(Boolean isGoogle) {
+        this.isGoogle = isGoogle;
+    }
+
+    public Boolean getIsVerified() {
+        return isVerified;
+    }
+
+    public void setIsVerified(Boolean isVerified) {
+        this.isVerified = isVerified;
     }
 }

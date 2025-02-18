@@ -47,8 +47,32 @@ public class AuthService {
         }
     }
 
+    //returns TRUE if user is a google user
+    public boolean googleUser(String username) {
+        String key = userAccKey(username);
+        try {
+
+            // Fetch user record from S3
+            GetObjectRequest getRequest = GetObjectRequest.builder()
+                    .bucket(bucketName)
+                    .key(key)
+                    .build();
+
+            ResponseBytes<GetObjectResponse> objectBytes = s3Client.getObjectAsBytes(getRequest);
+            String userJson = new String(objectBytes.asByteArray(), StandardCharsets.UTF_8);
+
+            // Convert JSON to User Record
+            S3UserRecord userRecord = objectMapper.readValue(userJson, S3UserRecord.class);
+
+            return userRecord.getIsGoogle();
+
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     // create new user in s3 bucket
-    public boolean createUser(String phone, String username, String rawPassword) {
+    public boolean createUser(String phone, String username, String rawPassword, Boolean isGoogle) {
 
         if (userExists(username)) {
             return false;
@@ -58,7 +82,7 @@ public class AuthService {
 
             String hashedPassword = BCrypt.hashpw(rawPassword, BCrypt.gensalt());
 
-            S3UserRecord userRecord = new S3UserRecord(username, phone, hashedPassword);
+            S3UserRecord userRecord = new S3UserRecord(username, phone, hashedPassword, isGoogle, false);
             String userJson = objectMapper.writeValueAsString(userRecord);
 
             PutObjectRequest putRequest = PutObjectRequest.builder().
@@ -101,7 +125,12 @@ public class AuthService {
                 //correct password
                 return "true";
             } else {
-                //incorrect password
+                //incorrect password or google account
+
+                if (googleUser(username)) {
+                    return "Please sign in with Google!";
+                }
+
                 return "Incorrect Password"; 
             }
 
