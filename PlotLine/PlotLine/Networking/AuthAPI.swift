@@ -67,6 +67,34 @@ struct AuthAPI {
         return authResponse
     }
     
+    static func googleSignIn(idToken: String, username: String) async throws -> AuthResponse {
+        guard let url = URL(string: "\(baseURL)/auth/google-signin") else {
+            throw AuthError.invalidURL
+        }
+
+        let requestBody = GoogleSignInRequest(idToken: idToken, username: username)
+        let jsonData = try JSONEncoder().encode(requestBody)
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.httpBody = jsonData
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
+            throw AuthError.serverError
+        }
+
+        let authResponse = try JSONDecoder().decode(AuthResponse.self, from: data)
+        if !authResponse.success {
+            throw AuthError.custom(authResponse.error ?? "Google authentication failed")
+        }
+
+        return authResponse
+    }
+
+    
     
     
     

@@ -1,4 +1,6 @@
 import SwiftUI
+import GoogleSignIn
+import GoogleSignInSwift
 
 struct SignInView: View {
     
@@ -81,6 +83,14 @@ struct SignInView: View {
                     .cornerRadius(8)
             }
             .padding(.horizontal)
+            
+            GoogleSignInButton(action: {
+                session.googleSignIn()
+            })
+            .frame(width: 140)
+            .padding(.horizontal)
+            .cornerRadius(10)
+            .shadow(color: Color.gray.opacity(0.9), radius: 5, x: 2, y: 4)
             
             Button(action: {
                 // display OTP screen for uname/password reset

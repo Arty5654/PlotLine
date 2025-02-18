@@ -6,6 +6,8 @@
 //
 
 import SwiftUI
+import GoogleSignIn
+import GoogleSignInSwift
 
 @MainActor
 class AuthViewModel: ObservableObject {
@@ -95,6 +97,70 @@ class AuthViewModel: ObservableObject {
                 self.isLoggedIn = false
             }
         }
+        
+    }
+    
+    func googleSignIn() {
+        
+        self.signupErrorMessage = nil
+        
+        
+        // configure google to handle signin
+        guard let clientID = Bundle.main.object(forInfoDictionaryKey: "GIDClientID") as? String else {
+            print("Google Sign-In: Missing Client ID in Info.plist")
+            return
+        }
+        let config = GIDConfiguration(clientID: clientID)
+        GIDSignIn.sharedInstance.configuration = config
+        
+        guard let rootViewController = UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene })
+            .flatMap({ $0.windows })
+            .first(where: { $0.isKeyWindow })?.rootViewController else {
+                self.signupErrorMessage = "Google Sign-In: Internal Error"
+                return
+        }
+        
+        GIDSignIn.sharedInstance.signIn(withPresenting: rootViewController) { result, error in
+            if let error = error {
+                self.signupErrorMessage = "Google Sign-In failed: \(error.localizedDescription)"
+                return
+            }
+            
+            guard let user = result?.user, let idToken = user.idToken?.tokenString else {
+                self.signupErrorMessage = "Google Sign-In: User or ID Token not found"
+                return
+            }
+            
+            let email = user.profile?.email ?? nil
+            
+            if (email == nil) {
+                self.signupErrorMessage = "No email found"
+                return
+            }
+            
+            let username = email!.components(separatedBy: "@").first
+            
+            Task {
+                do {
+                    let response = try await AuthAPI.googleSignIn(idToken: idToken, username: username!)
+                    //TODO make this use username instead of email
+                    
+                    if let token = response.token {
+                        KeychainManager.saveToken(token)
+                        UserDefaults.standard.set(username, forKey: "loggedInUsername")
+                        self.authToken = token
+                        self.isLoggedIn = true
+                        print("Google Sign-In successful, token saved.")
+                    }
+                } catch {
+                    self.signupErrorMessage = "Google Sign-In failed: \(error.localizedDescription)"
+                }
+            }
+
+            
+        }
+        
         
     }
 

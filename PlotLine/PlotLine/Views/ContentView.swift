@@ -11,12 +11,14 @@ struct ContentView: View {
     
     @EnvironmentObject var session: AuthViewModel
     
+    let username = UserDefaults.standard.string(forKey: "loggedInUsername") ?? "Guest"
+    
     var body: some View {
         VStack {
             Image(systemName: "globe")
                 .imageScale(.large)
                 .foregroundStyle(.tint)
-            Text("PlotLine")
+            Text("PlotLine - \(username)")
         }
         .padding()
         
