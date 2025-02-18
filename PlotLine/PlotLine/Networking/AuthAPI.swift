@@ -67,12 +67,12 @@ struct AuthAPI {
         return authResponse
     }
     
-    static func googleSignIn(idToken: String, email: String) async throws -> AuthResponse {
+    static func googleSignIn(idToken: String, username: String) async throws -> AuthResponse {
         guard let url = URL(string: "\(baseURL)/auth/google-signin") else {
             throw AuthError.invalidURL
         }
 
-        let requestBody = GoogleSignInRequest(idToken: idToken, email: email)
+        let requestBody = GoogleSignInRequest(idToken: idToken, username: username)
         let jsonData = try JSONEncoder().encode(requestBody)
 
         var request = URLRequest(url: url)

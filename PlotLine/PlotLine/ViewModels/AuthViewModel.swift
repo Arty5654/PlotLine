@@ -100,7 +100,7 @@ class AuthViewModel: ObservableObject {
         
     }
     
-    func googleSignUp() {
+    func googleSignIn() {
         
         self.signupErrorMessage = nil
         
@@ -132,15 +132,23 @@ class AuthViewModel: ObservableObject {
                 return
             }
             
-            let email = user.profile?.email ?? "No Email"
-            print("Google Sign-In Success: \(email)")
+            let email = user.profile?.email ?? nil
+            
+            if (email == nil) {
+                self.signupErrorMessage = "No email found"
+                return
+            }
+            
+            let username = email!.components(separatedBy: "@").first
             
             Task {
                 do {
-                    let response = try await AuthAPI.googleSignIn(idToken: idToken, email: email)
+                    let response = try await AuthAPI.googleSignIn(idToken: idToken, username: username!)
+                    //TODO make this use username instead of email
                     
                     if let token = response.token {
                         KeychainManager.saveToken(token)
+                        UserDefaults.standard.set(username, forKey: "loggedInUsername")
                         self.authToken = token
                         self.isLoggedIn = true
                         print("Google Sign-In successful, token saved.")

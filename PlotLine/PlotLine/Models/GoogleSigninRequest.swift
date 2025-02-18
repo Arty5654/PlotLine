@@ -6,7 +6,7 @@
 //
 struct GoogleSignInRequest: Codable {
     let idToken: String
-    let email: String
+    let username: String
 }
 
 

@@ -121,7 +121,7 @@ struct SignUpView: View {
             .padding(.horizontal)
             
             GoogleSignInButton(action: {
-                session.googleSignUp()
+                session.googleSignIn()
             })
             
             .frame(width: 140)
