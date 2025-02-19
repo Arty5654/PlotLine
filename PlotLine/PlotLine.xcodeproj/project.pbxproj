@@ -49,22 +49,9 @@
 		CDA3CE7B2D5299960038ABC2 /* PlotLineUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PlotLineUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
-/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		CD942FF32D6422C300211F05 /* Exceptions for "PlotLine" folder in "PlotLine" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				Info.plist,
-			);
-			target = CDA3CE602D5299930038ABC2 /* PlotLine */;
-		};
-/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
-
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		CDA3CE632D5299930038ABC2 /* PlotLine */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				CD942FF32D6422C300211F05 /* Exceptions for "PlotLine" folder in "PlotLine" target */,
-			);
 			path = PlotLine;
 			sourceTree = "<group>";
 		};
@@ -441,7 +428,7 @@
 				DEVELOPMENT_ASSET_PATHS = "\"PlotLine/Preview Content\"";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = PlotLine/Info.plist;
+				INFOPLIST_FILE = "";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -470,7 +457,7 @@
 				DEVELOPMENT_ASSET_PATHS = "\"PlotLine/Preview Content\"";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = PlotLine/Info.plist;
+				INFOPLIST_FILE = "";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
