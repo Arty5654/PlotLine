@@ -79,6 +79,7 @@ public class AuthService {
         }
 
         try {
+            
 
             String hashedPassword = BCrypt.hashpw(rawPassword, BCrypt.gensalt());
 
