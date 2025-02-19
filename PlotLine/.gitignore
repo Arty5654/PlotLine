@@ -6,4 +6,6 @@
 **/xcuserdata/*
 
 
-PlotLine/Info.plist
+**/.DS_Store
+
+**/Config.xcconfig
