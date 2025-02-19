@@ -93,6 +93,33 @@ struct AuthAPI {
 
         return authResponse
     }
+    
+    static func sendCode(phone: String, username: String) async throws -> TextResponse {
+        
+        guard let url = URL(string: "\(baseURL)/auth/google-signin") else {
+            throw AuthError.invalidURL
+        }
+        
+        let requestBody = TextRequest(phone: phone, username: username)
+        let jsonData = try JSONEncoder().encode(requestBody)
+        
+        var request = URLRequest(url: url)
+        request.httpBody = jsonData
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
+            throw AuthError.serverError
+        }
+        
+        let textResponse = try JSONDecoder().decode(TextResponse.self, from: data)
+        if !textResponse.success {
+            throw AuthError.custom(textResponse.error ?? "Failed to send code to number")
+        }
+        
+        return textResponse
+    }
 
     
     

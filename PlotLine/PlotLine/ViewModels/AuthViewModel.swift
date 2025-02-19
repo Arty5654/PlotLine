@@ -16,11 +16,16 @@ class AuthViewModel: ObservableObject {
     
     @Published var signupErrorMessage: String?
     @Published var loginErrorMessage: String?
+    @Published var verificationErrorMessage: String?
     
     @Published var authToken: String?
     
     @Published var isSignin: Bool = false
     @Published var needVerification: Bool?
+    
+    @Published var phoneNumber: String = ""
+    @Published var isCodeSent: Bool = false
+    @Published var code: String?
 
     init() {
         if let token = KeychainManager.loadToken() {
@@ -75,6 +80,7 @@ class AuthViewModel: ObservableObject {
                     KeychainManager.saveToken(token)
                     // Save username so we can connect data to the user in different views
                     UserDefaults.standard.set(username, forKey: "loggedInUsername")
+                    self.phoneNumber = phone
                 }
                 self.authToken = response.token
                 self.isLoggedIn = true
@@ -213,6 +219,34 @@ class AuthViewModel: ObservableObject {
             }
         }
 
+    }
+    
+    func sendSmsCode(username: String, phone: String) {
+        
+        guard username != "none" else {
+            self.verificationErrorMessage = "Error sending code"
+            return
+        }
+        
+        Task {
+            do {
+                let response = try await AuthAPI.sendCode(
+                    phone: phone,
+                    username: username
+                )
+                self.phoneNumber = phone
+                if response.success {
+                    self.isCodeSent = true
+                    self.code = response.code
+                }
+                
+                
+            } catch {
+                self.verificationErrorMessage = error.localizedDescription
+            }
+            
+            
+        }
     }
 
     func signOut() {        
