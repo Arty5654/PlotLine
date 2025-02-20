@@ -72,7 +72,7 @@ struct BudgetSection: View {
                 BudgetButtonLabel(title: "Input Estimated Weekly/Monthly Costs")
             }
 
-            NavigationLink(destination: IncomeRentView()) {
+            NavigationLink(destination: BudgetInputView()) {
                 BudgetButtonLabel(title: "Create Weekly/Monthly Budget")
             }
 
