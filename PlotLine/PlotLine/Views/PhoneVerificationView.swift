@@ -111,7 +111,7 @@ struct PhoneVerificationView: View {
                 Spacer()
                 
                 Button("Send SMS Code") {
-                    session.sendSmsCode(username: UserDefaults.standard.string(forKey: "loggedInUsername") ?? "none", phone: phoneNumber)
+                    session.sendSmsCode(phone: phoneNumber)
                 }
                 .font(.custom("AvenirNext-Bold", size: 20))
                 .foregroundColor(.white)

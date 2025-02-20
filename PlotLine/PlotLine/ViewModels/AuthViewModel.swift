@@ -221,25 +221,24 @@ class AuthViewModel: ObservableObject {
 
     }
     
-    func sendSmsCode(username: String, phone: String) {
+    func sendSmsCode(phone: String) {
         
-        guard username != "none" else {
-            self.verificationErrorMessage = "Error sending code"
+        print(phone)
+        
+        guard !phone.isEmpty else {
+            self.verificationErrorMessage = "Error: Phone number is empty"
             return
         }
         
         Task {
             do {
                 let response = try await AuthAPI.sendCode(
-                    phone: phone,
-                    username: username
+                    phone: phone
                 )
                 self.phoneNumber = phone
                 if response.success {
                     self.isCodeSent = true
-                    self.code = response.code
                 }
-                
                 
             } catch {
                 self.verificationErrorMessage = error.localizedDescription

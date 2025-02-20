@@ -17,8 +17,12 @@ struct SignInRequest: Codable {
     let password: String
 }
 
-struct TextRequest: Codable {
-    let phone: String
-    let username: String
+struct SmsRequest: Codable {
+    let toNumber: String
+}
+
+struct VerificationRequest: Codable {
+    let phoneNumber: String
+    let code: String
 }
 

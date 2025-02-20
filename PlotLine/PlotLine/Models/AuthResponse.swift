@@ -12,9 +12,8 @@ struct AuthResponse: Codable {
     let error: String?
 }
 
-struct TextResponse: Codable {
+struct SmsResponse: Codable {
+    let message: String
     let success: Bool
-    let code: String
-    let error: String?
 }
 
