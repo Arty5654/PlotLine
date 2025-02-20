@@ -93,7 +93,63 @@ struct AuthAPI {
 
         return authResponse
     }
+    
+    static func sendCode(phone: String) async throws -> SmsResponse {
+        
+        guard let url = URL(string: "\(baseURL)/sms/send-verification") else {
+            throw AuthError.invalidURL
+        }
+        
+        let requestBody = SmsRequest(toNumber: phone)
+        let jsonData = try JSONEncoder().encode(requestBody)
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.httpBody = jsonData
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
+            throw AuthError.serverError
+        }
+        
+        let textResponse = try JSONDecoder().decode(SmsResponse.self, from: data)
+        if !textResponse.success {
+            throw AuthError.custom(textResponse.message)
+        }
+        
+        return textResponse
+    }
+
+    
+    static func sendVerification(phone: String, code: String) async throws -> SmsResponse {
+        
+        guard let url = URL(string: "\(baseURL)/sms/verify-code") else {
+            throw AuthError.invalidURL
+        }
+        
+        let requestBody = VerificationRequest(phoneNumber: phone, code: code)
+        let jsonData = try JSONEncoder().encode(requestBody)
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.httpBody = jsonData
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
+            throw AuthError.serverError
+        }
+        
+        let textResponse = try JSONDecoder().decode(SmsResponse.self, from: data)
+        if !textResponse.success {
+            throw AuthError.custom(textResponse.message)
+        }
+        
+        return textResponse
+    }
     
     
     

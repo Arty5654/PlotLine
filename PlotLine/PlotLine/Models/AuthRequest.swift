@@ -17,3 +17,12 @@ struct SignInRequest: Codable {
     let password: String
 }
 
+struct SmsRequest: Codable {
+    let toNumber: String
+}
+
+struct VerificationRequest: Codable {
+    let phoneNumber: String
+    let code: String
+}
+
