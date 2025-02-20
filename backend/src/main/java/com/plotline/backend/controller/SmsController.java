@@ -8,14 +8,15 @@ import com.plotline.backend.service.SmsService;
 import com.twilio.twiml.voice.Sms;
 
 import org.springframework.web.bind.annotation.*;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 
 @RestController
 @RequestMapping("/sms")
 public class SmsController {
 
+  @Autowired
   private final SmsService smsService;
-
   public SmsController(SmsService smsService) {
     this.smsService = smsService;
   }

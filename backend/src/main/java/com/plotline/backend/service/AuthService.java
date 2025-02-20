@@ -33,7 +33,6 @@ public class AuthService {
     public AuthService(S3Client s3Client) {
         this.s3Client = s3Client;
         this.objectMapper = new ObjectMapper();
-        System.out.println("JWTTTT: " + jwt_secret);
     }
 
     // check if user exists for username uniqueness and login functions
