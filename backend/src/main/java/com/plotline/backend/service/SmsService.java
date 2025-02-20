@@ -48,6 +48,8 @@ public class SmsService {
         toNumber,
         "sms"
       ).create(twilioRestClient);
+
+    System.out.println("Verification SID: " + verification.getSid());
   }
 
   public boolean verifyCode(String toNumber, String code) {

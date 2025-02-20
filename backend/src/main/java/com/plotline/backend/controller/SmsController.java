@@ -41,7 +41,7 @@ public class SmsController {
             return ResponseEntity.badRequest().body(new SmsResponse(" Error: Phone number is missing", false));
         }
 
-        String toNumber = jsonNode.get("toNumber").asText();
+        String toNumber = "+1" + jsonNode.get("toNumber").asText();
         smsService.sendVerificationCode(toNumber);
 
         return ResponseEntity.ok(new SmsResponse("Verification code sent", true));
