@@ -79,11 +79,13 @@ public class UserProfileService {
   public String uploadProfilePicture(MultipartFile file, String username) throws Exception {
         String fileName = "users/" + username + "/profile_pictures/" + username + ".jpg";
 
+        System.out.println("Uploading profile picture");
 
         PutObjectRequest putRequest = PutObjectRequest.builder()
                 .bucket(bucketName)
                 .key(fileName)
                 .contentType(file.getContentType())
+                .acl(ObjectCannedACL.PUBLIC_READ)
                 .build();
 
         s3Client.putObject(putRequest, RequestBody.fromBytes(file.getBytes()));

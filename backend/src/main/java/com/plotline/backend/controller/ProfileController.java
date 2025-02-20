@@ -1,9 +1,13 @@
 package com.plotline.backend.controller;
 
 
+import java.util.Collections;
+import java.util.Map;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -50,6 +54,8 @@ public class ProfileController {
     public ResponseEntity<String> uploadProfilePicture(@RequestParam("file") MultipartFile file,
                                                        @RequestParam("username") String username) {
 
+        System.out.println("Upload request triggered");
+
         try {
             String imageUrl = userProfileService.uploadProfilePicture(file, username);
             return ResponseEntity.ok(imageUrl);
@@ -57,4 +63,12 @@ public class ProfileController {
             return ResponseEntity.status(500).body("Error uploading profile picture");
         }
     }
+
+    @GetMapping("/get-profile-pic")
+    public ResponseEntity<Map<String, String>> getProfilePicture(@RequestParam String username) {   
+        String s3Url = "https://plotline-database-bucket.s3.amazonaws.com/users/" + username + "/profile_pictures/" + username + ".jpg";
+        return ResponseEntity.ok(Collections.singletonMap("profilePicUrl", s3Url));
+    }
+
+
 }
