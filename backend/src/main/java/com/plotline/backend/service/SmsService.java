@@ -41,6 +41,8 @@ public class SmsService {
   }
 
   public void sendVerificationCode(String toNumber) {
+
+    System.out.println("Sending verification code to " + toNumber);
     Verification verification = Verification.creator(
         verifyServiceSid,
         toNumber,
