@@ -213,7 +213,7 @@ struct ProfileView: View {
                     
                     
                     Button("Save Changes") {
-                        // todo api call to save profile changes to db
+                        saveProfileChanges()
                     }
                     .padding()
                     .background(Color.green)
@@ -280,12 +280,6 @@ struct ProfileView: View {
                     self.birthday = parseDate(profile.birthday ?? "")
                     self.homeCity = profile.city ?? ""
                     self.phoneNumber = profile.phone
-
-                    if let imageUrlString = profile.profileUrl, let imageUrl = URL(string: imageUrlString) {
-                        self.profileImageURL = imageUrl
-                    } else {
-                        self.profileImageURL = nil
-                    }
                 }
             } catch {
                 print("Error fetching profile: \(error)")
@@ -302,17 +296,21 @@ struct ProfileView: View {
     
     private func saveProfileChanges() {
         
-        let profileImageString: String? = self.profileImageURL?.absoluteString
+        
         Task {
             do {
                 try await ProfileAPI.saveProfile(username: self.username,
                                                  name: self.displayName,
                                                  birthday: formatDate(self.birthday),
                                                  phone: self.phoneNumber,
-                                                 city: self.homeCity,
-                                                 profileUrl: profileImageString)
+                                                 city: self.homeCity)
                 
-                print("Changes saved!")
+                if (self.selectedImage != nil) {
+                    let result = try await ProfileAPI.uploadProfilePicture(image: self.selectedImage!, username: self.username)
+                    print(result)
+                }
+                
+                print("Changes saved")
             } catch {
                 print("error saving changes")
             }

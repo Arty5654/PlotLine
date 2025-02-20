@@ -11,5 +11,4 @@ struct UserProfile: Codable {
     let birthday: String?
     let phone: String
     let city: String?
-    let profileUrl: String?
 }
