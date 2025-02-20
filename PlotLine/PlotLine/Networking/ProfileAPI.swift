@@ -38,8 +38,6 @@ struct ProfileAPI {
                 throw AuthError.serverError
             }
 
-            let saveResponse = String(data: data, encoding: .utf8) ?? "Unknown response"
-
         } catch {
             throw error
         }
@@ -66,6 +64,24 @@ struct ProfileAPI {
             throw error // Handle networking or decoding errors
         }
     }
+    
+    static func getProfilePic(username: String) async throws -> String? {
+        
+        guard let url = URL(string: "\(baseURL)/profile/get-profile-pic?username=\(username)") else {
+            throw URLError(.badURL)
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let (data, _) = try await URLSession.shared.data(for: request)
+        
+        let jsonResponse = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        return jsonResponse?["profilePicUrl"] as? String
+
+    }
+
     
     static func uploadProfilePicture(image: UIImage, username: String) async throws -> String {
         guard let imageData = image.jpegData(compressionQuality: 0.8) else {

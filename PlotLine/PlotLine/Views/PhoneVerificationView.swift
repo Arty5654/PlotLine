@@ -5,22 +5,17 @@
 //  Created by Alex Younkers on 2/18/25.
 //
 
-
 import SwiftUI
-
-
 
 struct PhoneVerificationView: View {
     
     @EnvironmentObject var session: AuthViewModel
     @State private var phoneNumber: String = ""
     @State private var isEditingNumber = false
-    
     @State private var codeInput = ""
+    @State private var isOptedIn = false
     
     var body: some View {
-        
-        
         
         VStack(spacing: 20) {
             // Logo Image
@@ -36,13 +31,9 @@ struct PhoneVerificationView: View {
                 .foregroundColor(Color(.blue))
                 .padding(.bottom, 15)
             
-            
-
-            
             if (!session.isCodeSent) {
                 
-                // phone check and send code step (before sending text)
-                
+                // Phone check and send code step (before sending text)
                 Text("This step ensures you have a quick way to access your account if you are locked out or forget your password.")
                     .font(.custom("AvenirNext-Bold", size: 14))
                     .foregroundColor(.gray)
@@ -50,7 +41,7 @@ struct PhoneVerificationView: View {
                     .padding(.horizontal, 30)
                     .padding(.bottom, 25)
                 
-                // allow editing
+
                 if isEditingNumber {
                     TextField("Enter your phone number", text: $phoneNumber)
                         .keyboardType(.phonePad)
@@ -69,7 +60,7 @@ struct PhoneVerificationView: View {
                     
                 } else {
                     
-                    // if google account, need to add number here!
+                    // if google add number
                     if phoneNumber.isEmpty {
                         Text("Please Add Your Phone Number")
                             .font(.custom("AvenirNext-Bold", size: 18))
@@ -87,7 +78,7 @@ struct PhoneVerificationView: View {
                         .font(.custom("AvenirNext-Bold", size: 16))
                         
                     } else {
-                        //prefilled (from num added on signup)
+                        //prefilled
                         Text("Your Phone Number:")
                             .font(.headline)
                         Text(phoneNumber)
@@ -104,9 +95,24 @@ struct PhoneVerificationView: View {
                         .cornerRadius(8)
                         .font(.custom("AvenirNext-Bold", size: 16))
                     }
-                    
-                    
                 }
+                
+                // Opt-in Checkbox
+                HStack {
+                    Button(action: {
+                        isOptedIn.toggle()
+                    }) {
+                        Image(systemName: isOptedIn ? "checkmark.square.fill" : "square")
+                            .foregroundColor(isOptedIn ? .blue : .gray)
+                    }
+                    Text("Opt-in to receive text messages (Message & data rates may apply)")
+                        .font(.custom("AvenirNext-Regular", size: 14))
+                        .foregroundColor(.gray)
+                        .multilineTextAlignment(.leading)
+                        .padding(.leading, 5)
+                }
+                .padding(.horizontal, 30)
+                .padding(.top, 10)
                 
                 Spacer()
                 
@@ -124,7 +130,7 @@ struct PhoneVerificationView: View {
                 .disabled(!isPhoneNumberValid(phoneNumber))
                 
                 
-            }  else {
+            } else {
                 
                 TextField("Enter the code you received", text: $codeInput)
                     .keyboardType(.numberPad)
@@ -139,7 +145,7 @@ struct PhoneVerificationView: View {
                 Spacer()
                     
                 Button("Verify") {
-                    //todo add verification logic
+                    // TODO: Add verification logic
                 }
                 .font(.custom("AvenirNext-Bold", size: 20))
                 .foregroundColor(.white)
@@ -148,20 +154,14 @@ struct PhoneVerificationView: View {
                 .background(Color.green)
                 .cornerRadius(8)
                 .padding(.horizontal, 60)
-                    
-                    
-                
                 
                 Button("Resend Code") {
-                    // todo call code send again
+                    // TODO: Call code send again
                 }
                 .font(.footnote)
                 .foregroundColor(.blue)
                 .padding(.bottom, 30)
-             
-                
             }
-            
         }
         .padding()
         .onAppear {
@@ -170,8 +170,8 @@ struct PhoneVerificationView: View {
     }
     
     private func isPhoneNumberValid(_ number: String) -> Bool {
-            let digits = number.filter(\.isNumber).count
-            return digits >= 10
+        let digits = number.filter(\.isNumber).count
+        return digits >= 10
     }
 }
 
@@ -179,3 +179,4 @@ struct PhoneVerificationView: View {
     PhoneVerificationView()
         .environmentObject(AuthViewModel())
 }
+

@@ -5,6 +5,7 @@ struct ProfileView: View {
     
     @State private var username: String = UserDefaults.standard.string(forKey: "loggedInUsername") ?? "Guest"
     
+    // profile fields
     @State private var displayName: String = ""
     @State private var isEditingDisplayName = false
     
@@ -17,11 +18,14 @@ struct ProfileView: View {
     @State private var phoneNumber: String = ""
     @State private var isEditingPhone = false
     
+    // image fields and overlay
     @State private var profileImageURL: URL?
     @State private var selectedImage: UIImage?
     @State private var showingImagePicker = false
     
+    // for save changes animations
     @State private var isUploading = false
+    @State private var showSuccessModal = false
     
     var body: some View {
         
@@ -32,13 +36,12 @@ struct ProfileView: View {
                 VStack(spacing: 20) {
                     
                     // profile picture (click to change)
-                    
                     Button(action: {
                         showingImagePicker = true
                     }) {
                         ZStack {
                             if let selectedImage {
-                                // show image if there is one
+                                // user selects new image from camera roll
                                 Image(uiImage: selectedImage)
                                     .resizable()
                                     .scaledToFill()
@@ -47,7 +50,7 @@ struct ProfileView: View {
                                     .overlay(Circle().stroke(Color.blue, lineWidth: 2))
                             } else if let profileImageURL {
                                 
-                                // pre-existing image
+                                // pre-existing image loaded from DB
                                 AsyncImage(url: profileImageURL) { phase in
                                     if let image = phase.image {
                                         image
@@ -266,6 +269,30 @@ struct ProfileView: View {
         .sheet(isPresented: $showingImagePicker) {
             ImagePicker(image: $selectedImage)
         }
+        .overlay(
+            // overlay for after changes are saved
+            Group {
+            if showSuccessModal {
+                VStack {
+                    Image(systemName: "checkmark.circle.fill")
+                        .resizable()
+                        .frame(width: 80, height: 80)
+                        .foregroundColor(.green)
+                        .transition(.scale)
+                    
+                    Text("Saved!")
+                        .font(.headline)
+                        .foregroundColor(.green)
+                    }
+                    .padding()
+                    .background(Color.white)
+                    .cornerRadius(10)
+                    .shadow(radius: 10)
+                    .frame(width: 150, height: 150)
+                    .opacity(showSuccessModal ? 1.0 : 0.0)
+                    .animation(.easeInOut(duration: 0.3), value: showSuccessModal)
+                }
+        })
 
         
     }
@@ -275,11 +302,15 @@ struct ProfileView: View {
         Task {
             do {
                 let profile = try await ProfileAPI.fetchProfile(username: self.username)
+                let profilePicURL = try await ProfileAPI.getProfilePic(username: self.username)
                 DispatchQueue.main.async {
                     self.displayName = profile.name ?? ""
                     self.birthday = parseDate(profile.birthday ?? "")
                     self.homeCity = profile.city ?? ""
                     self.phoneNumber = profile.phone
+                    if let urlString = profilePicURL, let url = URL(string: urlString) {
+                        self.profileImageURL = url
+                    }
                 }
             } catch {
                 print("Error fetching profile: \(error)")
@@ -305,9 +336,25 @@ struct ProfileView: View {
                                                  phone: self.phoneNumber,
                                                  city: self.homeCity)
                 
-                if (self.selectedImage != nil) {
-                    let result = try await ProfileAPI.uploadProfilePicture(image: self.selectedImage!, username: self.username)
-                    print(result)
+                if let selectedImage {
+                    let result = try await ProfileAPI.uploadProfilePicture(image: selectedImage, username: self.username)
+                    print("Profile picture uploaded: \(result)")
+                                
+                    // Fetch updated profile pic URL
+                    let newProfilePicURL = try await ProfileAPI.getProfilePic(username: self.username)
+                    DispatchQueue.main.async {
+                        if let urlString = newProfilePicURL, let url = URL(string: urlString) {
+                            self.profileImageURL = url
+                        }
+                    }
+                }
+                
+                // show saved modal
+                DispatchQueue.main.async {
+                    showSuccessModal = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                        showSuccessModal = false
+                    }
                 }
                 
                 print("Changes saved")
@@ -328,7 +375,7 @@ struct ProfileView: View {
     
     private func formatDate(_ date: Date) -> String {
         let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd" // Ensure this matches the backend format
+        formatter.dateFormat = "yyyy-MM-dd"
         return formatter.string(from: date)
     }
 
