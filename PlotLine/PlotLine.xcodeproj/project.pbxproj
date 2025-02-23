@@ -7,8 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		4239F88C2D6946490036D707 /* Config.xcconfig in Resources */ = {isa = PBXBuildFile; fileRef = 4239F88B2D6946490036D707 /* Config.xcconfig */; };
 		CD06D2DE2D64C5D600838ECF /* .gitignore in Resources */ = {isa = PBXBuildFile; fileRef = CD06D2DD2D64C5CD00838ECF /* .gitignore */; };
-		CD06D3242D6650B900838ECF /* Config.xcconfig in Resources */ = {isa = PBXBuildFile; fileRef = CD06D3232D6650B900838ECF /* Config.xcconfig */; };
 		CDC64D202D641D7300187584 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = CDC64D1F2D641D7300187584 /* GoogleSignIn */; };
 		CDC64D222D641D7300187584 /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = CDC64D212D641D7300187584 /* GoogleSignInSwift */; };
 /* End PBXBuildFile section */
@@ -44,8 +44,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		4239F88B2D6946490036D707 /* Config.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config.xcconfig; sourceTree = "<group>"; };
 		CD06D2DD2D64C5CD00838ECF /* .gitignore */ = {isa = PBXFileReference; lastKnownFileType = text; path = .gitignore; sourceTree = "<group>"; };
-		CD06D3232D6650B900838ECF /* Config.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config.xcconfig; sourceTree = "<group>"; };
 		CDA3CE612D5299930038ABC2 /* PlotLine.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PlotLine.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		CDA3CE712D5299960038ABC2 /* PlotLineTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PlotLineTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		CDA3CE7B2D5299960038ABC2 /* PlotLineUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PlotLineUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -112,7 +112,7 @@
 		CDA3CE582D5299930038ABC2 = {
 			isa = PBXGroup;
 			children = (
-				CD06D3232D6650B900838ECF /* Config.xcconfig */,
+				4239F88B2D6946490036D707 /* Config.xcconfig */,
 				CD06D2DD2D64C5CD00838ECF /* .gitignore */,
 				CDA3CE632D5299930038ABC2 /* PlotLine */,
 				CDA3CE742D5299960038ABC2 /* PlotLineTests */,
@@ -257,7 +257,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				CD06D3242D6650B900838ECF /* Config.xcconfig in Resources */,
+				4239F88C2D6946490036D707 /* Config.xcconfig in Resources */,
 				CD06D2DE2D64C5D600838ECF /* .gitignore in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -318,7 +318,6 @@
 /* Begin XCBuildConfiguration section */
 		CDA3CE832D5299960038ABC2 /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = CD06D3232D6650B900838ECF /* Config.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
@@ -382,7 +381,6 @@
 		};
 		CDA3CE842D5299960038ABC2 /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = CD06D3232D6650B900838ECF /* Config.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
@@ -439,7 +437,6 @@
 		};
 		CDA3CE862D5299960038ABC2 /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = CD06D3232D6650B900838ECF /* Config.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
@@ -468,7 +465,6 @@
 		};
 		CDA3CE872D5299960038ABC2 /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = CD06D3232D6650B900838ECF /* Config.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;

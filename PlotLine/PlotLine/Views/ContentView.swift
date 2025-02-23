@@ -37,6 +37,19 @@ struct ContentView: View {
         
         Spacer()
         
+        NavigationLink(destination: MainGroceryListView()) {
+            Text("Go to Grocery Lists Page")
+                .foregroundColor(.white)
+                .padding()
+                .frame(maxWidth: .infinity)
+                .background(Color(.green)) // Green theme color
+                .cornerRadius(8)
+                
+        }
+        .padding()
+        
+        Spacer()
+        
         NavigationLink(destination: ProfileView()) {
             Text("Go to profile page")
                 .foregroundColor(.white)
