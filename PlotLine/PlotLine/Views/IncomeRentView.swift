@@ -1,35 +1,33 @@
-//
-//  IncomeRentView.swift
-//  PlotLine
-//
-//  Created by Arteom Avetissian on 2/13/25.
-//
-
 import SwiftUI
 
 struct IncomeRentView: View {
-    @State private var income: String = UserDefaults.standard.string(forKey: "userIncome") ?? ""
-    @State private var rent: String = UserDefaults.standard.string(forKey: "userRent") ?? ""
-    @State private var showWarning: Bool = false
-    @State private var showAlert: Bool = false
-    @State private var proceedWithSave: Bool = false // Flag to save after alert
-
+    @State private var income: String = ""
+    @State private var rent: String = ""
+    
+    @State private var activeAlert: ActiveAlert? = nil
+    
+    @State private var shouldSave: Bool = false
+    
+    private var username: String {
+        return UserDefaults.standard.string(forKey: "loggedInUsername") ?? "UnknownUser"
+    }
+    
     var body: some View {
         VStack(spacing: 20) {
             Text("Enter Your Income & Rent")
                 .font(.title2)
                 .bold()
-
+            
             TextField("Enter Monthly Income (Pre-Tax)", text: $income)
                 .keyboardType(.decimalPad)
                 .textFieldStyle(RoundedBorderTextFieldStyle())
                 .padding()
-
+            
             TextField("Enter Monthly Rent", text: $rent)
                 .keyboardType(.decimalPad)
                 .textFieldStyle(RoundedBorderTextFieldStyle())
                 .padding()
-
+            
             Button(action: checkRentThreshold) {
                 Text("Save")
                     .font(.headline)
@@ -40,67 +38,177 @@ struct IncomeRentView: View {
                     .cornerRadius(10)
             }
             .padding()
-            .alert(isPresented: $showAlert) {
-                Alert(
-                    title: Text("Warning"),
-                    message: Text("⚠️ Your rent exceeds 30% of your income."),
-                    primaryButton: .default(Text("OK"), action: {
-                        proceedWithSave = true
-                        saveToBackend() // Save data after alert dismissal
-                    }),
-                    secondaryButton: .cancel()
-                )
-            }
-
+            
             Spacer()
         }
         .padding()
         .navigationTitle("Income & Rent")
-    }
-
-    // Check if rent is too high before saving
-    private func checkRentThreshold() {
-        guard let incomeValue = Double(income), let rentValue = Double(rent) else { return }
-
-        if rentValue >= (incomeValue * 0.3) {
-            showWarning = true
-            showAlert = true
-        } else {
-            proceedWithSave = true
-            saveToBackend()
+        
+        .alert(item: $activeAlert) { alertType in
+            switch alertType {
+                
+            case .warning(let rentPercentage):
+                return Alert(
+                    title: Text("⚠️ High Rent Warning"),
+                    message: Text(
+                        "Your rent is **\(String(format: "%.1f", rentPercentage))%** of your income, which exceeds the recommended 30%."
+                    ),
+                    primaryButton: .default(Text("Proceed Anyway"), action: {
+                        print("🔄 User confirmed warning, proceeding with save.")
+                        DispatchQueue.main.async {
+                            shouldSave = true
+                            saveToBackend()
+                        }
+                    }),
+                    secondaryButton: .cancel()
+                )
+                
+            case .success:
+                return Alert(
+                    title: Text("✅ Success"),
+                    message: Text("Your income and rent data has been saved successfully."),
+                    dismissButton: .default(Text("OK"))
+                )
+            }
+        }
+        .onAppear {
+            fetchIncomeData()
         }
     }
-
-    // Save Data to Backend and Persist Values Locally
+    
+    // MARK: - Fetch Income & Rent from Database
+    private func fetchIncomeData() {
+        guard let url = URL(string: "http://localhost:8080/api/income/\(username)") else {
+            print("❌ Invalid URL")
+            return
+        }
+        
+        //print("📡 Fetching income data for user:", username)
+        
+        URLSession.shared.dataTask(with: url) { data, response, error in
+            if let error = error {
+                //print("❌ Error fetching income data:", error.localizedDescription)
+                return
+            }
+            
+            guard let data = data, !data.isEmpty else {
+                //print("⚠️ No data received from backend. Initializing default values.")
+                DispatchQueue.main.async {
+                    self.income = ""
+                    self.rent = ""
+                }
+                return
+            }
+            
+            do {
+                let decodedData = try JSONDecoder().decode(IncomeRentResponse.self, from: data)
+                //print("✅ Decoded Data:", decodedData)
+                
+                DispatchQueue.main.async {
+                    self.income = String(decodedData.income)
+                    self.rent = String(decodedData.rent)
+                }
+            } catch {
+                //print("❌ Failed to decode JSON:", error)
+                DispatchQueue.main.async {
+                    self.income = ""
+                    self.rent = ""
+                }
+            }
+        }.resume()
+    }
+    
+    // MARK: - Check if rent exceeds 30% before saving
+    private func checkRentThreshold() {
+        guard let incomeValue = Double(income),
+              let rentValue = Double(rent),
+              incomeValue > 0 else {
+            //print("❌ Invalid numeric input. Income: \(income), Rent: \(rent)")
+            return
+        }
+        
+        let rentPercentage = (rentValue / incomeValue) * 100
+        print("📊 Rent Percentage:", rentPercentage)
+        
+        if rentPercentage >= 30 {
+            //print("⚠️ Rent exceeds 30%, showing warning alert.")
+            DispatchQueue.main.async {
+                shouldSave = false  // Ensure it doesn't save prematurely
+                self.activeAlert = .warning(rentPercentage)
+            }
+        } else {
+            //print("✅ Rent is under 30%, saving directly.")
+            DispatchQueue.main.async {
+                shouldSave = true
+                saveToBackend()
+            }
+        }
+    }
+    
+    // MARK: - Save Data to Backend
     private func saveToBackend() {
-        guard proceedWithSave, let incomeValue = Double(income), let rentValue = Double(rent) else { return }
-
+        guard shouldSave,
+              let incomeValue = Double(income),
+              let rentValue = Double(rent) else {
+           // print("❌ Save aborted. Condition not met.")
+            return
+        }
+        
         let userIncomeData: [String: Any] = [
-            "username": UserDefaults.standard.string(forKey: "loggedInUsername") ?? "UnknownUser",
+            "username": username,
             "income": incomeValue,
             "rent": rentValue
         ]
-
+        
         guard let jsonData = try? JSONSerialization.data(withJSONObject: userIncomeData) else { return }
-
+        
         let url = URL(string: "http://localhost:8080/api/income")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = jsonData
-
+        
+       // print("📡 Sending save request...")
+        
         URLSession.shared.dataTask(with: request) { data, response, error in
             if let error = error {
-                print("Error saving data: \(error)")
+                print("❌ Error saving data: \(error)")
                 return
             }
-            print("Data successfully saved")
             
-            // Store the values locally so they persist
-            UserDefaults.standard.set(income, forKey: "userIncome")
-            UserDefaults.standard.set(rent, forKey: "userRent")
+           // print("✅ Data successfully saved!")
+            
+            DispatchQueue.main.async {
+                // Once saved successfully, show success alert
+                self.activeAlert = .success
+                UserDefaults.standard.set(self.income, forKey: "userIncome")
+                UserDefaults.standard.set(self.rent, forKey: "userRent")
+            }
         }.resume()
     }
+}
+
+// MARK: - ActiveAlert Enum
+/// This enum uniquely identifies which alert should appear.
+enum ActiveAlert: Identifiable {
+    case warning(Double)  // Pass the rent percentage
+    case success
+    
+    var id: String {
+        switch self {
+        case .warning(let percentage):
+            return "warning-\(percentage)"
+        case .success:
+            return "success"
+        }
+    }
+}
+
+// MARK: - Response Model
+struct IncomeRentResponse: Codable {
+    let username: String
+    let income: Double
+    let rent: Double
 }
 
 // MARK: - Preview

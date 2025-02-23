@@ -40,4 +40,23 @@ public class IncomeController {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error saving data: " + e.getMessage());
         }
     }
+
+    @GetMapping("/{username}")
+    public ResponseEntity<String> getIncomeData(@PathVariable String username) {
+        try {
+            // Generate S3 key dynamically
+            String key = "users/" + username + "/income.json";
+
+            // Fetch data from S3
+            byte[] fileData = s3Service.downloadFile(key);
+            String jsonData = new String(fileData, StandardCharsets.UTF_8);
+
+            return ResponseEntity.ok(jsonData);
+        } catch (Exception e) {
+            // Return a valid empty JSON response instead of plain text
+            String emptyJson = "{}"; 
+            return ResponseEntity.ok(emptyJson);
+        }
+    }
+
 }
