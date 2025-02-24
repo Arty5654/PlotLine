@@ -61,6 +61,7 @@ struct AuthAPI {
 
         let authResponse = try JSONDecoder().decode(AuthResponse.self, from: data)
         if !authResponse.success {
+
             throw AuthError.custom(authResponse.error ?? "Unknown error")
         }
 
@@ -123,13 +124,13 @@ struct AuthAPI {
     }
 
     
-    static func sendVerification(phone: String, code: String) async throws -> SmsResponse {
+    static func sendVerification(phone: String, code: String, username: String) async throws -> SmsResponse {
         
         guard let url = URL(string: "\(baseURL)/sms/verify-code") else {
             throw AuthError.invalidURL
         }
         
-        let requestBody = VerificationRequest(phoneNumber: phone, code: code)
+        let requestBody = VerificationRequest(phoneNumber: phone, code: code, username: username)
         let jsonData = try JSONEncoder().encode(requestBody)
         
         var request = URLRequest(url: url)

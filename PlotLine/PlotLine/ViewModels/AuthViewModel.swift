@@ -25,7 +25,6 @@ class AuthViewModel: ObservableObject {
     
     @Published var phoneNumber: String = ""
     @Published var isCodeSent: Bool = false
-    @Published var code: String?
 
     init() {
         if let token = KeychainManager.loadToken() {
@@ -183,6 +182,8 @@ class AuthViewModel: ObservableObject {
     }
 
     func signIn(username: String, password: String) {
+    
+        self.loginErrorMessage = nil
         
         Task {
             do {
@@ -190,6 +191,23 @@ class AuthViewModel: ObservableObject {
                     username: username,
                     password: password
                 )
+                
+    
+                // edge case where user still hasnt verified
+                if response.error == "Needs Verification" {
+                    self.needVerification = true
+                    self.isLoggedIn = true
+                    self.loginErrorMessage = nil
+                    
+                    if let token = response.token {
+                        KeychainManager.saveToken(token)
+                        // Save username so we can connect data to the user in different views
+                        UserDefaults.standard.set(username, forKey: "loggedInUsername")
+                    }
+                    self.authToken = response.token
+                    
+                    return
+                }
                 
                 // On success
                 if let token = response.token {
@@ -201,7 +219,12 @@ class AuthViewModel: ObservableObject {
                 self.isLoggedIn = true
                 self.loginErrorMessage = nil
                 
+                if response.error == "Needs Verification" {
+                    self.needVerification = true
+                }
+                
             } catch {
+                
                 // Handle errors from AuthAPI
                 if let authError = error as? AuthError {
                     switch authError {
@@ -223,7 +246,7 @@ class AuthViewModel: ObservableObject {
     
     func sendSmsCode(phone: String) {
         
-        print(phone)
+        self.verificationErrorMessage = nil
         
         guard !phone.isEmpty else {
             self.verificationErrorMessage = "Error: Phone number is empty"
@@ -247,11 +270,53 @@ class AuthViewModel: ObservableObject {
             
         }
     }
+    
+    func verifyCode(phone: String, code: String, username: String) {
+        
+        self.verificationErrorMessage = nil
+        
+        guard !phone.isEmpty else {
+            self.verificationErrorMessage = "Phone number is empty"
+            return
+        }
+        
+        guard !code.isEmpty else {
+            self.verificationErrorMessage = "Code must not be empty"
+            return
+        }
+        
+        guard !username.isEmpty else {
+            self.verificationErrorMessage = "User not found. Please sign out and try again"
+            return
+        }
+        
+        Task {
+            do {
+                let response = try await AuthAPI.sendVerification(phone: phone, code: code, username: username)
+                self.phoneNumber = phone
+                if response.success {
+                    self.needVerification = false
+                }
+                
+            } catch let authError as AuthError {
+                self.verificationErrorMessage = "Incorrect Code!"
+            } catch {
+                self.verificationErrorMessage = "An unexpected error occurred. Please try again"
+            }
+            
+            
+        }
+    }
 
     func signOut() {        
         self.isLoggedIn = false
         self.authToken = nil
         KeychainManager.removeToken()
+        
+        self.isCodeSent = false
+        self.isSignin = true
+        self.phoneNumber = ""
+        self.needVerification = nil
     }
     
     // regex check for valid username (alphanumeric only)

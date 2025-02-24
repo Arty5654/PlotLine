@@ -11,13 +11,13 @@ import SwiftUI
 struct ProfileAPI {
     static let baseURL = "http://localhost:8080"
 
-    static func saveProfile(username: String, name: String, birthday: String, phone: String, city: String) async throws {
+    static func saveProfile(username: String, name: String, birthday: String, city: String) async throws {
 
         guard let url = URL(string: "\(baseURL)/profile/save-user") else {
             throw URLError(.badURL)
         }
 
-        let requestBody = UserProfile(username: username, name: name, birthday: birthday, phone: phone, city: city)
+        let requestBody = UserProfile(username: username, name: name, birthday: birthday, city: city)
 
         let jsonData: Data
         do {

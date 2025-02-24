@@ -15,9 +15,6 @@ struct ProfileView: View {
     @State private var homeCity: String = ""
     @State private var isEditingHomeCity = false
     
-    @State private var phoneNumber: String = ""
-    @State private var isEditingPhone = false
-    
     // image fields and overlay
     @State private var profileImageURL: URL?
     @State private var selectedImage: UIImage?
@@ -138,39 +135,6 @@ struct ProfileView: View {
                                 isEditingHomeCity.toggle()
                             }) {
                                 Image(systemName: isEditingHomeCity ? "checkmark" : "pencil")
-                                    .foregroundColor(.blue)
-                                    .padding(6)
-                                    .background(Circle().fill(Color(.systemGray4)))
-                                    .frame(width: 30, height: 30)
-                            }
-                        }
-                        .padding()
-                        .background(Color(.systemGray6))
-                        .cornerRadius(10)
-                    }
-                    .padding(.horizontal, 30)
-                    
-                    // phone num field
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text("Phone Number")
-                            .font(.custom("AvenirNext-Bold", size: 15))
-                            .foregroundColor(.gray)
-                        
-                        HStack {
-                            if isEditingPhone {
-                                TextField("Enter new phone", text: $phoneNumber)
-                                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                                    .padding(.vertical, 8)
-                            } else {
-                                Text(phoneNumber.isEmpty ? "Tap to enter" : phoneNumber)
-                                    .font(.body)
-                                    .foregroundColor(.primary)
-                                    .padding(.vertical, 8)
-                            }
-                            Button(action: {
-                                isEditingPhone.toggle()
-                            }) {
-                                Image(systemName: isEditingPhone ? "checkmark" : "pencil")
                                     .foregroundColor(.blue)
                                     .padding(6)
                                     .background(Circle().fill(Color(.systemGray4)))
@@ -307,7 +271,6 @@ struct ProfileView: View {
                     self.displayName = profile.name ?? ""
                     self.birthday = parseDate(profile.birthday ?? "")
                     self.homeCity = profile.city ?? ""
-                    self.phoneNumber = profile.phone
                     if let urlString = profilePicURL, let url = URL(string: urlString) {
                         self.profileImageURL = url
                     }
@@ -333,7 +296,6 @@ struct ProfileView: View {
                 try await ProfileAPI.saveProfile(username: self.username,
                                                  name: self.displayName,
                                                  birthday: formatDate(self.birthday),
-                                                 phone: self.phoneNumber,
                                                  city: self.homeCity)
                 
                 if let selectedImage {

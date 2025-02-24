@@ -9,6 +9,5 @@ struct UserProfile: Codable {
     let username: String
     let name: String?
     let birthday: String?
-    let phone: String
     let city: String?
 }
