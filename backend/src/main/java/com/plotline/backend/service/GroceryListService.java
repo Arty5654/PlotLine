@@ -297,4 +297,39 @@ public class GroceryListService {
             return false;
         }
     }
+
+    // Method to update the item order in the grocery list
+    public boolean updateItemOrder(String username, String listId, List<GroceryItem> reorderedItems) throws IOException {
+        try {
+            // Fetch the grocery list from S3
+            GroceryList groceryList = getGroceryList(username, listId);
+
+            if (groceryList == null) {
+                return false;
+            }
+
+            // Update the items list with the new order
+            groceryList.setItems(reorderedItems);
+
+            // Update the 'updatedAt' timestamp
+            String currentDate = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'").format(new Date());
+            groceryList.setUpdatedAt(currentDate);
+
+            // Serialize the updated grocery list back to JSON
+            String updatedListJson = objectMapper.writeValueAsString(groceryList);
+
+            // Upload the updated grocery list back to S3
+            String s3Path = getS3Path(username, listId);
+            PutObjectRequest putObjectRequest = PutObjectRequest.builder()
+                    .bucket(BUCKET_NAME)
+                    .key(s3Path)
+                    .build();
+            s3Client.putObject(putObjectRequest, RequestBody.fromString(updatedListJson));
+
+            return true;
+        } catch (Exception e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
 }
