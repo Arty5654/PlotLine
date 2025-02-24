@@ -65,6 +65,22 @@ struct ProfileAPI {
         }
     }
     
+    static func fetchPhone(username: String) async throws -> String? {
+        guard let url = URL(string: "\(baseURL)/profile/get-phone?username=\(username)") else {
+            throw URLError(.badURL)
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let (data, _) = try await URLSession.shared.data(for: request)
+        
+        // Convert raw data to a string
+        let phoneString = String(data: data, encoding: .utf8)
+        return phoneString
+    }
+    
     static func getProfilePic(username: String) async throws -> String? {
         
         guard let url = URL(string: "\(baseURL)/profile/get-profile-pic?username=\(username)") else {

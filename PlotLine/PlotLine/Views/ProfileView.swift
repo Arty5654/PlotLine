@@ -18,7 +18,9 @@ struct ProfileView: View {
     // image fields and overlay
     @State private var profileImageURL: URL?
     @State private var selectedImage: UIImage?
+    
     @State private var showingImagePicker = false
+    @State private var showingChangePasswordSheet = false
     
     // for save changes animations
     @State private var isUploading = false
@@ -190,7 +192,7 @@ struct ProfileView: View {
                     Spacer()
                     
                     Button("Change Password") {
-                        // make navigation stack to phoneverification view -> route that back here for a passwordReset modal
+                        showingChangePasswordSheet = true
                     }
                     .padding()
                     .background(Color.red)
@@ -232,6 +234,9 @@ struct ProfileView: View {
         }
         .sheet(isPresented: $showingImagePicker) {
             ImagePicker(image: $selectedImage)
+        }
+        .sheet(isPresented: $showingChangePasswordSheet) {
+                    ChangePasswordModalView(isPresented: $showingChangePasswordSheet)
         }
         .overlay(
             // overlay for after changes are saved
@@ -383,6 +388,113 @@ struct ImagePicker: UIViewControllerRepresentable {
                     }
                 }
             }
+        }
+    }
+}
+
+struct ChangePasswordModalView: View {
+    @Binding var isPresented: Bool
+    
+    @State private var useOTPFlow = false
+    @State private var username: String = UserDefaults.standard.string(forKey: "loggedInUsername") ?? "Guest"
+    
+    @State private var oldPassword: String = ""
+    @State private var newPassword: String = ""
+    @State private var confirmPassword: String = ""
+    
+    @State private var phoneNumber: String = ""
+    @State private var otpCode: String = ""
+    
+    var body: some View {
+        NavigationView {
+            Form {
+                if !useOTPFlow {
+                    
+                    Section(header: Text("Change Password (Old PW)")) {
+                        SecureField("Old Password", text: $oldPassword)
+                        SecureField("New Password", text: $newPassword)
+                        SecureField("Confirm New Password", text: $confirmPassword)
+                        
+                        Button("Save") {
+                            //TODO: check if old password is right, then change password
+                            isPresented = false
+                        }
+                        .disabled(oldPassword.isEmpty || newPassword.isEmpty || confirmPassword.isEmpty)
+                    }
+                } else {
+                    Section(header: Text("Change Password (OTP)")) {
+                        
+                        Button("Send One-Time-Passcode") {
+                            // 1. Trigger backend to send SMS code to phoneNumber
+                            Task {
+                                do {
+                                    try await AuthAPI.sendCode(
+                                        phone: self.phoneNumber
+                                    )
+                                    
+                                } catch {
+                                    print("error")
+                                }
+                                
+                                
+                            }
+                        }
+                        
+                        TextField("Enter OTP", text: $otpCode)
+                            .keyboardType(.numberPad)
+                        
+                        SecureField("New Password", text: $newPassword)
+                        SecureField("Confirm New Password", text: $confirmPassword)
+                        
+                        Button("Verify & Save") {
+                            Task {
+                                do {
+                                    let verified = try await AuthAPI.sendVerification(phone: self.phoneNumber,
+                                                                       code: otpCode,
+                                                                       username: self.username)
+                                    
+                                    if (verified.success) {
+                                        // change password function
+                                        //TODO:
+                                        
+                                    } else {
+                                        
+                                        // wrong password -> show as error somewhere
+                                    }
+                                } catch {
+                                    print("An unexpected error occurred. Please try again")
+                                }
+                                
+                            }
+                            isPresented = false
+                        }
+                        .disabled(phoneNumber.isEmpty || otpCode.isEmpty || newPassword.isEmpty || confirmPassword.isEmpty)
+                    }
+                }
+            }
+            .navigationBarTitle("Change Password", displayMode: .inline)
+            
+            .navigationBarItems(
+                trailing: Button(action: {
+                    Task {
+                            do {
+                                // grab phone num once
+                                if (self.phoneNumber == "") {
+                                    let fetchedPhone = try await ProfileAPI.fetchPhone(username: self.username)
+                                    self.phoneNumber = fetchedPhone ?? ""
+                                }
+                                
+                                withAnimation {
+                                    useOTPFlow.toggle()
+                                }
+                            } catch {
+                                print("Error fetching phone: \(error)")
+                            }
+                        }
+                }) {
+                    Text(useOTPFlow ? "Use Old PW" : "Get A Text")
+                }
+            )
         }
     }
 }
