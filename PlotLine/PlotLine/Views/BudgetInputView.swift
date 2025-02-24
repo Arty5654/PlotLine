@@ -12,8 +12,14 @@ struct BudgetInputView: View {
     // Single alert state: .saved or .cleared
     @State private var activeAlert2: ActiveAlert2? = nil
     
-    // For optional budgeting tips
-    @State private var budgetingTips: [String] = []
+    @State private var budgetingWarnings: String = "" // Stores warning message
+
+    // User's income and rent fetched from backend
+    @State private var userIncome: Double = 0.0
+    @State private var userRent: Double = 0.0
+    
+    // Whether the user acknowledged warnings
+    @State private var warningsAcknowledged: Bool = false
     
     // MARK: - Constants / Defaults
     private let username: String = UserDefaults.standard.string(forKey: "loggedInUsername") ?? "UnknownUser"
@@ -26,10 +32,11 @@ struct BudgetInputView: View {
         BudgetItem(category: "Eating Out", amount: ""),
         BudgetItem(category: "Entertainment", amount: ""),
         BudgetItem(category: "Utilities", amount: ""),
+        BudgetItem(category: "Savings", amount: ""),
         BudgetItem(category: "Miscellaneous", amount: "")
     ]
     
-    // A computed property to convert UI text ("Weekly"/"Monthly") to backend param ("weekly"/"monthly")
+    // ("Weekly"/"Monthly") to backend param ("weekly"/"monthly")
     private var backendType: String {
         selectedType.lowercased()
     }
@@ -90,24 +97,9 @@ struct BudgetInputView: View {
             }
             .padding()
             
-            // Display Budgeting Tips (optional)
-            if !budgetingTips.isEmpty {
-                VStack(alignment: .leading) {
-                    Text("💡 Budgeting Tips:")
-                        .font(.headline)
-                        .padding(.top)
-                    ForEach(budgetingTips, id: \.self) { tip in
-                        Text("• \(tip)")
-                            .foregroundColor(.gray)
-                            .font(.subheadline)
-                    }
-                }
-                .padding()
-            }
-            
             // Save & Clear Buttons
             HStack {
-                Button(action: saveBudget) {
+                Button(action: attemptSaveBudget) {
                     Text("Save Budget")
                         .font(.headline)
                         .foregroundColor(.white)
@@ -137,16 +129,29 @@ struct BudgetInputView: View {
         // Alert that shows either "saved" or "cleared"
         .alert(item: $activeAlert2) { alertType in
             switch alertType {
+            case .warning:
+                // Show warnings and let user proceed or cancel
+                return Alert(
+                    title: Text("⚠️ Budgeting Warning"),
+                    message: Text(budgetingWarnings),
+                    primaryButton: .default(Text("Proceed Anyway"), action: {
+                        // User acknowledges warning => do the actual save
+                        saveBudget()
+                    }),
+                    secondaryButton: .cancel()
+                )
+                
             case .saved:
                 return Alert(
                     title: Text("Budget Saved"),
                     message: Text("Your \(selectedType) budget was saved successfully."),
                     dismissButton: .default(Text("OK"))
                 )
+                
             case .cleared:
                 return Alert(
                     title: Text("Budget Cleared"),
-                    message: Text("Your \(selectedType) budget was cleared, and default categories have been restored."),
+                    message: Text("Your \(selectedType) budget was cleared and default categories have been restored."),
                     dismissButton: .default(Text("OK"))
                 )
             }
@@ -154,6 +159,7 @@ struct BudgetInputView: View {
         
         // Fetch data on first appear
         .onAppear {
+            fetchIncomeData()
             fetchBudgetData()
         }
     }
@@ -161,6 +167,19 @@ struct BudgetInputView: View {
 
 // MARK: - Methods
 extension BudgetInputView {
+    
+    // Attempt to save budget (checks warnings first)
+    private func attemptSaveBudget() {
+       generateBudgetingWarnings()  // sets `budgetingWarnings`
+       
+       if budgetingWarnings.isEmpty {
+           // No warnings? Save immediately
+           saveBudget()
+       } else {
+           // Warnings exist => show .warning alert
+           activeAlert2 = .warning
+       }
+   }
     
     // Add a new category row if it doesn't already exist
     private func addCategory() {
@@ -228,8 +247,36 @@ extension BudgetInputView {
         }.resume()
     }
     
+    private func fetchIncomeData() {
+        let urlString = "http://localhost:8080/api/income/\(username)"
+        guard let url = URL(string: urlString) else { return }
+        
+        URLSession.shared.dataTask(with: url) { data, response, error in
+            if let error = error {
+                print("❌ Error fetching income data:", error.localizedDescription)
+                return
+            }
+            
+            guard let data = data, !data.isEmpty else {
+                print("⚠️ No income data found; defaulting to 0.")
+                return
+            }
+            
+            do {
+                let decodedResponse = try JSONDecoder().decode(IncomeResponse.self, from: data)
+                DispatchQueue.main.async {
+                    self.userIncome = decodedResponse.income
+                    self.userRent = decodedResponse.rent
+                }
+            } catch {
+                print("❌ Failed to decode income data:", error)
+            }
+        }.resume()
+    }
+    
     // Save user budget data to the backend
     private func saveBudget() {
+        generateBudgetingWarnings() // Generate warnings before saving
         let budgetDict = budgetItems.reduce(into: [String: Double]()) { result, item in
             if let val = Double(item.amount) {
                 result[item.category] = val
@@ -270,9 +317,34 @@ extension BudgetInputView {
             // Show "saved" alert on main thread
             DispatchQueue.main.async {
                 self.activeAlert2 = .saved
-                self.generateBudgetingTips() // optional tip generation
+                //self.generateBudgetingTips() // optional tip generation
             }
         }.resume()
+    }
+    
+    // Generate budgeting warnings dynamically
+    private func generateBudgetingWarnings() {
+        budgetingWarnings = ""
+
+        let rent = Double(budgetItems.first(where: { $0.category == "Rent" })?.amount ?? "0") ?? 0
+        let savings = Double(budgetItems.first(where: { $0.category == "Savings" })?.amount ?? "0") ?? 0
+        let eatingOut = Double(budgetItems.first(where: { $0.category == "Eating Out" })?.amount ?? "0") ?? 0
+
+        if rent > userIncome * 0.3 {
+            budgetingWarnings += "⚠️ Your rent exceeds 30% of your income. Consider reducing it.\n"
+        }
+        
+        if savings < userIncome * 0.1 {
+            budgetingWarnings += "⚠️ Consider increasing your savings to at least 10% of your income.\n"
+        }
+        
+        if eatingOut > 200 {
+            budgetingWarnings += "⚠️ You’re spending a lot on eating out. Try cooking at home more often.\n"
+        }
+        
+        if !budgetingWarnings.isEmpty {
+            activeAlert2 = .warning
+        }
     }
     
     // Clear all budget data, update backend, then revert to default categories
@@ -299,42 +371,32 @@ extension BudgetInputView {
             DispatchQueue.main.async {
                 self.budgetItems = Self.defaultBudgetCategories
                 self.activeAlert2 = .cleared
-                self.budgetingTips.removeAll()
+                //self.budgetingTips.removeAll()
             }
         }.resume()
     }
     
-    // Generate tips after saving (optional feature)
-    private func generateBudgetingTips() {
-        budgetingTips.removeAll()
-        
-        // Example: If rent > 30% of userIncome
-        if let rentVal = Double(budgetItems.first(where: { $0.category == "Rent" })?.amount ?? "0"),
-           let userIncomeStr = UserDefaults.standard.string(forKey: "userIncome"),
-           let userIncomeVal = Double(userIncomeStr),
-           rentVal > userIncomeVal * 0.3 {
-            budgetingTips.append("Your rent exceeds 30% of your income. Consider ways to reduce it.")
-        }
-        
-        // Example: If Eating Out > $200
-        if let eatingOutVal = Double(budgetItems.first(where: { $0.category == "Eating Out" })?.amount ?? "0"),
-           eatingOutVal > 200 {
-            budgetingTips.append("You’re spending a lot on eating out. Try cooking at home more often.")
-        }
-    }
 }
 
 // MARK: - ActiveAlert2 Enum
 fileprivate enum ActiveAlert2: Identifiable {
     case saved
     case cleared
+    case warning
     
     var id: String {
         switch self {
         case .saved: return "saved"
         case .cleared: return "cleared"
+        case .warning: return "warning"
         }
     }
+}
+
+struct IncomeResponse: Codable {
+    let username: String
+    let income: Double
+    let rent: Double
 }
 
 // MARK: - Data Models

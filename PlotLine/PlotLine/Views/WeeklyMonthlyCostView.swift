@@ -234,6 +234,7 @@ struct WeeklyMonthlyCostView: View {
             BudgetItem(category: "Eating Out", amount: ""),
             BudgetItem(category: "Entertainment", amount: ""),
             BudgetItem(category: "Utilities", amount: ""),
+            BudgetItem(category: "Savings", amount: ""),
             BudgetItem(category: "Miscellaneous", amount: "")
         ]
 
