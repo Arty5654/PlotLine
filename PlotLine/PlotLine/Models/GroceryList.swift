@@ -14,7 +14,7 @@ struct GroceryList: Identifiable, Codable {
     var username: String // Include username to associate the list with the user
 }
 
-struct GroceryItem: Codable {
+struct GroceryItem: Identifiable, Codable {
     var id: UUID
     var name: String
     var quantity: Int
