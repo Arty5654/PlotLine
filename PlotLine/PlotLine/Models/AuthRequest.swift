@@ -24,5 +24,18 @@ struct SmsRequest: Codable {
 struct VerificationRequest: Codable {
     let phoneNumber: String
     let code: String
+    let username: String
+}
+
+struct PasswordRequest: Codable {
+    let username: String
+    let oldPassword: String
+    let newPassword: String
+}
+
+struct OTPPasswordRequest: Codable {
+    let username: String
+    let newPassword: String
+    let code: String
 }
 

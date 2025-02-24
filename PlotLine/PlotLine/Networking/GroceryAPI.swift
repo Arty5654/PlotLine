@@ -179,4 +179,29 @@ struct GroceryListAPI {
             throw error
         }
     }
+    
+    // Function to update the order of items in a grocery list
+    static func updateItemOrder(listId: String, reorderedItems: [GroceryItem]) async throws {
+        guard let loggedInUsername = UserDefaults.standard.string(forKey: "loggedInUsername") else {
+            throw URLError(.userAuthenticationRequired)
+        }
+
+        guard let url = URL(string: "\(baseURL)/\(listId)/items/order?username=\(loggedInUsername)") else {
+            throw URLError(.badURL)
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "PUT"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(reorderedItems)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+
+        // Assuming server responds with success message
+        print("Items reordered: \(String(data: data, encoding: .utf8) ?? "")")
+    }
 }

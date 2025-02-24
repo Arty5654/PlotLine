@@ -61,6 +61,7 @@ struct AuthAPI {
 
         let authResponse = try JSONDecoder().decode(AuthResponse.self, from: data)
         if !authResponse.success {
+
             throw AuthError.custom(authResponse.error ?? "Unknown error")
         }
 
@@ -123,13 +124,13 @@ struct AuthAPI {
     }
 
     
-    static func sendVerification(phone: String, code: String) async throws -> SmsResponse {
+    static func sendVerification(phone: String, code: String, username: String) async throws -> SmsResponse {
         
         guard let url = URL(string: "\(baseURL)/sms/verify-code") else {
             throw AuthError.invalidURL
         }
         
-        let requestBody = VerificationRequest(phoneNumber: phone, code: code)
+        let requestBody = VerificationRequest(phoneNumber: phone, code: code, username: username)
         let jsonData = try JSONEncoder().encode(requestBody)
         
         var request = URLRequest(url: url)
@@ -150,6 +151,64 @@ struct AuthAPI {
         
         return textResponse
     }
+    
+    static func changePassword(username: String, oldPassword: String, newPassword: String) async throws -> Bool {
+        guard let url = URL(string: "\(baseURL)/auth/change-password") else {
+            throw AuthError.invalidURL
+        }
+
+        let requestBody = PasswordRequest(username: username, oldPassword: oldPassword, newPassword: newPassword)
+        let jsonData = try JSONEncoder().encode(requestBody)
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.httpBody = jsonData
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            throw AuthError.serverError
+        }
+
+        let authResponse = try JSONDecoder().decode(AuthResponse.self, from: data)
+        if !authResponse.success {
+
+            throw AuthError.custom(authResponse.error ?? "Unknown error")
+        }
+
+        return authResponse.success
+    }
+    
+    static func changePasswordWithCode(username: String, newPassword: String, code: String) async throws -> Bool {
+        guard let url = URL(string: "\(baseURL)/auth/change-password-code") else {
+            throw AuthError.invalidURL
+        }
+
+        let requestBody = OTPPasswordRequest(username: username, newPassword: newPassword, code: code)
+        let jsonData = try JSONEncoder().encode(requestBody)
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.httpBody = jsonData
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            throw AuthError.serverError
+        }
+
+        let authResponse = try JSONDecoder().decode(AuthResponse.self, from: data)
+        if !authResponse.success {
+
+            throw AuthError.custom(authResponse.error ?? "Unknown error")
+        }
+
+        return authResponse.success
+    }
+    
+    
     
     
     

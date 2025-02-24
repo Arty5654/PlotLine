@@ -11,13 +11,13 @@ import SwiftUI
 struct ProfileAPI {
     static let baseURL = "http://localhost:8080"
 
-    static func saveProfile(username: String, name: String, birthday: String, phone: String, city: String) async throws {
+    static func saveProfile(username: String, name: String, birthday: String, city: String) async throws {
 
         guard let url = URL(string: "\(baseURL)/profile/save-user") else {
             throw URLError(.badURL)
         }
 
-        let requestBody = UserProfile(username: username, name: name, birthday: birthday, phone: phone, city: city)
+        let requestBody = UserProfile(username: username, name: name, birthday: birthday, city: city)
 
         let jsonData: Data
         do {
@@ -63,6 +63,22 @@ struct ProfileAPI {
         } catch {
             throw error // Handle networking or decoding errors
         }
+    }
+    
+    static func fetchPhone(username: String) async throws -> String? {
+        guard let url = URL(string: "\(baseURL)/profile/get-phone?username=\(username)") else {
+            throw URLError(.badURL)
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let (data, _) = try await URLSession.shared.data(for: request)
+        
+        // Convert raw data to a string
+        let phoneString = String(data: data, encoding: .utf8)
+        return phoneString
     }
     
     static func getProfilePic(username: String) async throws -> String? {

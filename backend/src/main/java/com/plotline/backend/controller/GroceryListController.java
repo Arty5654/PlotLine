@@ -82,5 +82,21 @@ public class GroceryListController {
             return ResponseEntity.status(400).body("Failed to toggle item checked status");
         }
     }
+
+    // New endpoint to update the order of items in the grocery list
+    @PutMapping("/{listId}/items/order")
+    public ResponseEntity<String> updateItemOrder(@PathVariable String listId, @RequestBody List<GroceryItem> reorderedItems, @RequestParam String username) {
+        try {
+            boolean success = groceryListService.updateItemOrder(username, listId, reorderedItems);
+            if (success) {
+                return ResponseEntity.ok("Grocery list items reordered successfully.");
+            } else {
+                return ResponseEntity.status(400).body("Failed to reorder items.");
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+            return ResponseEntity.status(500).body("Error updating item order.");
+        }
+    }
 }
 

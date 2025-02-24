@@ -10,11 +10,10 @@ import com.plotline.backend.dto.AuthResponse;
 import com.plotline.backend.dto.SignInRequest;
 import com.plotline.backend.dto.SignUpRequest;
 import com.plotline.backend.service.AuthService;
-
 import io.github.cdimascio.dotenv.Dotenv;
 
 import java.util.Arrays;
-import java.util.Collections;
+import java.util.Map;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -72,14 +71,20 @@ public class AuthController {
         // add user to db
         String loginResult = authService.userLogin(request.getUsername(), request.getPassword());
 
-        if (!loginResult.equals("true")) {
+        if (!loginResult.equals("true") && !loginResult.equals("Needs Verification")) {
             return ResponseEntity.ok(new AuthResponse(false, null, loginResult));
         }
+
+
         
         // create jwt token
         String token = authService.generateToken(request.getUsername());
+
+        if (loginResult.equals("Needs Verification")) {
+            return ResponseEntity.ok(new AuthResponse(true, token, "Needs Verification"));
+        }
         
-        // signup successful
+        // signin successful
         return ResponseEntity.ok(new AuthResponse(true, token, null));
     }
 
@@ -108,6 +113,8 @@ public class AuthController {
             GoogleIdToken.Payload payload = idToken.getPayload();
             String googleUserId = payload.getSubject(); // Unique Google User ID
 
+            String loginResult = "";
+
             if (!authService.userExists(username)) {
 
                 // username does not exist, create new account for google user
@@ -134,17 +141,22 @@ public class AuthController {
                 } else {
     
                     // log google user back into their account 
-                    String loginResult = authService.userLogin(username, googleUserId);
+                    loginResult = authService.userLogin(username, googleUserId);
     
                     System.out.println("Google user LOGGED IN");
     
-                    if (!loginResult.equals("true")) {
+                    if (!loginResult.equals("true") && !loginResult.equals("Needs Verification")) {
                         return ResponseEntity.ok(new AuthResponse(false, null, loginResult));
                     }
     
                 }
     
                 String token = authService.generateToken(username);
+
+                if (loginResult.equals("Needs Verification")) {
+                    return ResponseEntity.ok(new AuthResponse(true, token, "Needs Verification"));
+                }
+
                 return ResponseEntity.ok(new AuthResponse(true, token, null));
     
             }
@@ -156,5 +168,44 @@ public class AuthController {
 
         }
     }
+
+    @PostMapping("/change-password")
+    public ResponseEntity<AuthResponse> changePassword(@RequestBody Map<String, String> request) {
+        String username = request.get("username");
+        String oldPassword = request.get("oldPassword");
+        String newPassword = request.get("newPassword");
+
+        if (username == null || oldPassword == null || newPassword == null) {
+            return ResponseEntity.badRequest().body(new AuthResponse(false, null, "Missing required fields"));
+        }
+
+        String result = authService.changeUserPassword(username, oldPassword, newPassword, "");
+
+        if (result.equals("success")) {
+            return ResponseEntity.ok(new AuthResponse(true, null, null));
+        } else {
+            return ResponseEntity.ok(new AuthResponse(false, null, result));
+        }
+    }
+
+    @PostMapping("/change-password-code")
+    public ResponseEntity<AuthResponse> changePasswordWithCode(@RequestBody Map<String, String> request) {
+        String username = request.get("username");
+        String newPassword = request.get("newPassword");
+        String code = request.get("code");
+
+        if (username == null || code == null || newPassword == null) {
+            return ResponseEntity.badRequest().body(new AuthResponse(false, null, "Missing required fields"));
+        }
+
+        String result = authService.changeUserPassword(username, "", newPassword, code);
+
+        if (result.equals("success")) {
+            return ResponseEntity.ok(new AuthResponse(true, null, null));
+        } else {
+            return ResponseEntity.ok(new AuthResponse(false, null, result));
+        }
+    }
+
         
 }

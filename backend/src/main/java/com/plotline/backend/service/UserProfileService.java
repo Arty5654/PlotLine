@@ -5,6 +5,7 @@ import java.nio.charset.StandardCharsets;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+import com.plotline.backend.dto.S3UserRecord;
 import com.plotline.backend.dto.UserProfile;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -57,6 +58,7 @@ public class UserProfileService {
       
       try {
 
+        System.out.println(username);
         String key = "users/" + username + "/profile.json";
 
         GetObjectRequest getRequest = GetObjectRequest.builder()
@@ -75,6 +77,30 @@ public class UserProfileService {
           return null;
       }
   }
+
+  public String getPhoneNum(String username) {
+      
+    try {
+
+      System.out.println(username);
+      String key = "users/" + username + "/account.json";
+
+      GetObjectRequest getRequest = GetObjectRequest.builder()
+        .bucket(bucketName)
+        .key(key)
+        .build();
+
+      ResponseBytes<GetObjectResponse> objectBytes = s3Client.getObjectAsBytes(getRequest);
+      String userJson = new String(objectBytes.asByteArray(), StandardCharsets.UTF_8);
+
+
+      S3UserRecord profile = objectMapper.readValue(userJson, S3UserRecord.class);
+      return profile.getPhone();
+
+    } catch (Exception e) {
+        return null;
+    }
+}
 
   public String uploadProfilePicture(MultipartFile file, String username) throws Exception {
         String fileName = "users/" + username + "/profile_pictures/" + username + ".jpg";

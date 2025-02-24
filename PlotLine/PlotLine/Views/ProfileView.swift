@@ -15,13 +15,12 @@ struct ProfileView: View {
     @State private var homeCity: String = ""
     @State private var isEditingHomeCity = false
     
-    @State private var phoneNumber: String = ""
-    @State private var isEditingPhone = false
-    
     // image fields and overlay
     @State private var profileImageURL: URL?
     @State private var selectedImage: UIImage?
+    
     @State private var showingImagePicker = false
+    @State private var showingChangePasswordSheet = false
     
     // for save changes animations
     @State private var isUploading = false
@@ -150,39 +149,6 @@ struct ProfileView: View {
                     }
                     .padding(.horizontal, 30)
                     
-                    // phone num field
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text("Phone Number")
-                            .font(.custom("AvenirNext-Bold", size: 15))
-                            .foregroundColor(.gray)
-                        
-                        HStack {
-                            if isEditingPhone {
-                                TextField("Enter new phone", text: $phoneNumber)
-                                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                                    .padding(.vertical, 8)
-                            } else {
-                                Text(phoneNumber.isEmpty ? "Tap to enter" : phoneNumber)
-                                    .font(.body)
-                                    .foregroundColor(.primary)
-                                    .padding(.vertical, 8)
-                            }
-                            Button(action: {
-                                isEditingPhone.toggle()
-                            }) {
-                                Image(systemName: isEditingPhone ? "checkmark" : "pencil")
-                                    .foregroundColor(.blue)
-                                    .padding(6)
-                                    .background(Circle().fill(Color(.systemGray4)))
-                                    .frame(width: 30, height: 30)
-                            }
-                        }
-                        .padding()
-                        .background(Color(.systemGray6))
-                        .cornerRadius(10)
-                    }
-                    .padding(.horizontal, 30)
-                    
                     
                     // birthday field
                     VStack(alignment: .leading, spacing: 5) {
@@ -226,7 +192,7 @@ struct ProfileView: View {
                     Spacer()
                     
                     Button("Change Password") {
-                        // make navigation stack to phoneverification view -> route that back here for a passwordReset modal
+                        showingChangePasswordSheet = true
                     }
                     .padding()
                     .background(Color.red)
@@ -269,6 +235,9 @@ struct ProfileView: View {
         .sheet(isPresented: $showingImagePicker) {
             ImagePicker(image: $selectedImage)
         }
+        .sheet(isPresented: $showingChangePasswordSheet) {
+                    ChangePasswordModalView(isPresented: $showingChangePasswordSheet)
+        }
         .overlay(
             // overlay for after changes are saved
             Group {
@@ -307,7 +276,6 @@ struct ProfileView: View {
                     self.displayName = profile.name ?? ""
                     self.birthday = parseDate(profile.birthday ?? "")
                     self.homeCity = profile.city ?? ""
-                    self.phoneNumber = profile.phone
                     if let urlString = profilePicURL, let url = URL(string: urlString) {
                         self.profileImageURL = url
                     }
@@ -333,7 +301,6 @@ struct ProfileView: View {
                 try await ProfileAPI.saveProfile(username: self.username,
                                                  name: self.displayName,
                                                  birthday: formatDate(self.birthday),
-                                                 phone: self.phoneNumber,
                                                  city: self.homeCity)
                 
                 if let selectedImage {
@@ -421,6 +388,139 @@ struct ImagePicker: UIViewControllerRepresentable {
                     }
                 }
             }
+        }
+    }
+}
+
+struct ChangePasswordModalView: View {
+    @Binding var isPresented: Bool
+    
+    @State private var useOTPFlow = false
+    @State private var username: String = UserDefaults.standard.string(forKey: "loggedInUsername") ?? "Guest"
+    
+    @State private var oldPassword: String = ""
+    @State private var newPassword: String = ""
+    @State private var confirmPassword: String = ""
+    
+    @State private var phoneNumber: String = ""
+    @State private var otpCode: String = ""
+    
+    @State private var errorMessage: String?
+
+    
+    var body: some View {
+        NavigationView {
+            Form {
+                if !useOTPFlow {
+                    
+                    Section(header: Text("Change Password with current PW")) {
+                        SecureField("Current Password", text: $oldPassword)
+                        SecureField("New Password", text: $newPassword)
+                        SecureField("Confirm New Password", text: $confirmPassword)
+                        
+                        Button("Save") {
+                            self.errorMessage = nil
+                            
+                            Task {
+                                guard newPassword == confirmPassword else {
+                                    self.errorMessage = "New passwords do not match."
+                                    return
+                                }
+
+                                do {
+                                    let success = try await AuthAPI.changePassword(username: username, oldPassword: oldPassword, newPassword: newPassword)
+                                    if success {
+                                        isPresented = false
+                                    } else {
+                                        self.errorMessage = "Failed to change password. Incorrect Old Password"
+                                    }
+                                } catch {
+                                    self.errorMessage = "An error occurred. Please try again."
+                                }
+                            }
+                        }
+                        .disabled(oldPassword.isEmpty || newPassword.isEmpty || confirmPassword.isEmpty)
+                    }
+                } else {
+                    Section(header: Text("Change Password with OTP")) {
+                        //send otp to acct phone num
+                        Button("Send One-Time-Passcode") {
+                            Task {
+                                do {
+                                    try await AuthAPI.sendCode(
+                                        phone: self.phoneNumber
+                                    )
+                                } catch {
+                                    print("error")
+                                }
+                            }
+                        }
+                        
+                        TextField("Enter OTP", text: $otpCode)
+                            .keyboardType(.numberPad)
+                        
+                        SecureField("New Password", text: $newPassword)
+                        SecureField("Confirm New Password", text: $confirmPassword)
+                        
+                        Button("Verify & Save") {
+                            self.errorMessage = nil
+                            
+                            guard newPassword == confirmPassword else {
+                                self.errorMessage = "New passwords do not match."
+                                return
+                            }
+                            
+                            Task {
+                                do {
+                                    let success = try await AuthAPI.changePasswordWithCode(username: username, newPassword: newPassword, code: otpCode)
+                                    if success {
+                                        isPresented = false
+                                    } else {
+                                        self.errorMessage = "Invalid Code. Please Try again"
+                                    }
+
+                                } catch {
+                                    print("An unexpected error occurred. Please try again.")
+                                    self.errorMessage = "Invalid Code. Please Try again"
+                                }
+                                
+                            }
+                        }
+                        .disabled(phoneNumber.isEmpty || otpCode.isEmpty || newPassword.isEmpty || confirmPassword.isEmpty)
+                    }
+                }
+                
+                if let errorMessage = errorMessage {
+                    Text(errorMessage)
+                        .foregroundColor(.red)
+                        .font(.caption)
+                        .padding()
+                }
+            }
+            .navigationBarTitle("Change Password", displayMode: .inline)
+            
+            .navigationBarItems(
+                trailing: Button(action: {
+                    Task {
+                            do {
+                                // grab phone num once
+                                if (self.phoneNumber == "") {
+                                    let fetchedPhone = try await ProfileAPI.fetchPhone(username: self.username)
+                                    self.phoneNumber = fetchedPhone ?? ""
+                                }
+                                
+                                withAnimation {
+                                    useOTPFlow.toggle()
+                                    self.errorMessage = nil
+                                }
+                            } catch {
+                                print("Error fetching phone: \(error)")
+                            }
+                        }
+                }) {
+                    Text(useOTPFlow ? "Use Old PW" : "Get A Text")
+                }
+            )
         }
     }
 }

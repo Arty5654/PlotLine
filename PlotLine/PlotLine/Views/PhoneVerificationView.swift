@@ -10,6 +10,7 @@ import SwiftUI
 struct PhoneVerificationView: View {
     
     @EnvironmentObject var session: AuthViewModel
+    @State private var username: String = UserDefaults.standard.string(forKey: "loggedInUsername") ?? "Guest"
     @State private var phoneNumber: String = ""
     @State private var isEditingNumber = false
     @State private var codeInput = ""
@@ -114,6 +115,14 @@ struct PhoneVerificationView: View {
                 .padding(.horizontal, 30)
                 .padding(.top, 10)
                 
+                if let error = session.verificationErrorMessage, !error.isEmpty {
+                    Text(error)
+                        .foregroundColor(.red)
+                        .font(.custom("AvenirNext-Bold", size: 14))
+                        .padding(.horizontal, 30)
+                        .multilineTextAlignment(.center)
+                }
+                
                 Spacer()
                 
                 Button("Send SMS Code") {
@@ -128,6 +137,7 @@ struct PhoneVerificationView: View {
                 .padding(.horizontal, 40)
                 .padding(.bottom, 10)
                 .disabled(!isPhoneNumberValid(phoneNumber))
+                .disabled(!isOptedIn)
                 
                 
             } else {
@@ -141,11 +151,19 @@ struct PhoneVerificationView: View {
                     )
                     .padding(.horizontal, 30)
                     .padding(.top, 20)
+                
+                if let error = session.verificationErrorMessage, !error.isEmpty {
+                    Text(error)
+                        .foregroundColor(.red)
+                        .font(.custom("AvenirNext-Bold", size: 14))
+                        .padding(.horizontal, 30)
+                        .multilineTextAlignment(.center)
+                }
                     
                 Spacer()
                     
                 Button("Verify") {
-                    // TODO: Add verification logic
+                    session.verifyCode(phone: phoneNumber, code: codeInput, username: username)
                 }
                 .font(.custom("AvenirNext-Bold", size: 20))
                 .foregroundColor(.white)
@@ -156,7 +174,7 @@ struct PhoneVerificationView: View {
                 .padding(.horizontal, 60)
                 
                 Button("Resend Code") {
-                    // TODO: Call code send again
+                    session.sendSmsCode(phone: phoneNumber)
                 }
                 .font(.footnote)
                 .foregroundColor(.blue)

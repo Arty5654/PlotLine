@@ -50,6 +50,18 @@ public class ProfileController {
         return ResponseEntity.ok(profile);
     }
 
+    @GetMapping("/get-phone")
+    public ResponseEntity<String> getPhone(@RequestParam String username) {
+        String phone = userProfileService.getPhoneNum(username);
+
+        if (phone == null) {
+            System.out.println("acc not found");
+            return ResponseEntity.badRequest().body(null);
+        }
+
+        return ResponseEntity.ok(phone);
+    }
+
     @PostMapping("/upload-profile-pic")
     public ResponseEntity<String> uploadProfilePicture(@RequestParam("file") MultipartFile file,
                                                        @RequestParam("username") String username) {

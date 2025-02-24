@@ -26,37 +26,39 @@ struct GroceryListDetailView: View {
                     .foregroundColor(.gray)
                     .padding()
             } else {
-                List(items, id: \.id) { item in
-                    HStack {
-                        // Toggle check mark when the user taps on the item
-                        Button(action: {}) {
+                List {
+                    ForEach(items) { item in
+                        HStack {
+                            // Checkbox toggle using onTapGesture
                             Image(systemName: item.checked ? "checkmark.square" : "square")
                                 .foregroundColor(item.checked ? .green : .gray)
-                        }
-                        .onTapGesture {
-                            toggleChecked(item: item)
-                        }
+                                .onTapGesture {
+                                    toggleChecked(item: item)  // Handle toggling checked status on tap
+                                }
 
-                        Text(item.name)
-                            .font(.body)
-                            .foregroundStyle(Color.primary.opacity(item.checked ? 0.5 : 1))
-                            .strikethrough(item.checked)
+                            Text(item.name)
+                                .font(.body)
+                                .strikethrough(item.checked, color: .green)
+                                .foregroundColor(item.checked ? .gray : .primary)
 
-                        Spacer()
+                            Spacer()
 
-                        Text("x \(item.quantity)") // Display item quantity
-                            .foregroundColor(.gray)
+                            Text("x \(item.quantity)") // Display item quantity
+                                .foregroundColor(.gray)
 
-                        // Delete the item when the trash icon is clicked
-                        Button(action: {}) {
+                            // Trash button to delete an item
                             Image(systemName: "trash")
                                 .foregroundColor(.red)
-                        }
-                        .onTapGesture {
-                            deleteItem(item)
+                                .onTapGesture {
+                                    deleteItem(item)  // Handle item deletion on tap
+                                }
                         }
                     }
+                    .onMove { indices, newOffset in
+                        moveItem(from: indices, to: newOffset)
+                    }
                 }
+                .navigationBarItems(trailing: EditButton()) // Show edit button to enable reordering
             }
 
             HStack {
@@ -149,6 +151,21 @@ struct GroceryListDetailView: View {
                 }
             } catch {
                 print("Failed to toggle checked status: \(error)")
+            }
+        }
+    }
+
+    // Function to handle reordering of items
+    func moveItem(from indices: IndexSet, to newOffset: Int) {
+        Task {
+            do {
+                // This function updates the items array to reflect the reordering
+                items.move(fromOffsets: indices, toOffset: newOffset)
+
+                // Update the item order in the backend
+                try await GroceryListAPI.updateItemOrder(listId: groceryList.id.uuidString, reorderedItems: items)
+            } catch {
+                print("Failed to reorder items: \(error)")
             }
         }
     }
