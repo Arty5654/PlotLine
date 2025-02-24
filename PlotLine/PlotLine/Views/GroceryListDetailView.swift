@@ -26,34 +26,49 @@ struct GroceryListDetailView: View {
                     .foregroundColor(.gray)
                     .padding()
             } else {
-                List(items, id: \.name) { item in
+                List(items, id: \.id) { item in
                     HStack {
-                        Text(item.name) // Display item name
+                        // Toggle check mark when the user taps on the item
+                        Button(action: {}) {
+                            Image(systemName: item.checked ? "checkmark.square" : "square")
+                                .foregroundColor(item.checked ? .green : .gray)
+                        }
+                        .onTapGesture {
+                            toggleChecked(item: item)
+                        }
+
+                        Text(item.name)
+                            .font(.body)
+                            .foregroundStyle(Color.primary.opacity(item.checked ? 0.5 : 1))
+                            .strikethrough(item.checked)
+
                         Spacer()
-                        Text("x\(item.quantity)") // Display item quantity
+
+                        Text("x \(item.quantity)") // Display item quantity
                             .foregroundColor(.gray)
-                        Button(action: {
-                            deleteItem(item)
-                        }) {
+
+                        // Delete the item when the trash icon is clicked
+                        Button(action: {}) {
                             Image(systemName: "trash")
                                 .foregroundColor(.red)
+                        }
+                        .onTapGesture {
+                            deleteItem(item)
                         }
                     }
                 }
             }
 
             HStack {
-                // Name input field (takes up most of the width)
                 TextField("Enter new item", text: $newItemName)
                     .padding()
                     .textFieldStyle(RoundedBorderTextFieldStyle())
-                    .frame(maxWidth: .infinity) // Take as much space as possible
+                    .frame(maxWidth: .infinity)
 
-                // Quantity input field (smaller width)
                 TextField("Qty", value: $newItemQuantity, formatter: NumberFormatter())
                     .padding()
                     .textFieldStyle(RoundedBorderTextFieldStyle())
-                    .frame(width: 50) // Small width for quantity field
+                    .frame(width: 50)
             }
             .padding()
 
@@ -79,7 +94,6 @@ struct GroceryListDetailView: View {
         Task {
             do {
                 let listIdString = groceryList.id.uuidString
-                // Fetch items as GroceryItem objects
                 let fetchedItems = try await GroceryListAPI.getItems(listId: listIdString)
                 items = fetchedItems
             } catch {
@@ -94,13 +108,10 @@ struct GroceryListDetailView: View {
         Task {
             do {
                 let listIdString = groceryList.id.uuidString
-                // Create a GroceryItem object
                 let newItem = GroceryItem(id: UUID(), name: newItemName, quantity: newItemQuantity, checked: false)
 
-                // Add the new item to the backend
                 try await GroceryListAPI.addItem(listId: listIdString, item: newItem)
 
-                // Update UI
                 items.append(newItem)
                 newItemName = ""  // Reset name field
                 newItemQuantity = 1  // Reset quantity field
@@ -114,13 +125,30 @@ struct GroceryListDetailView: View {
         Task {
             do {
                 let listIdString = groceryList.id.uuidString
-                // Delete the item by its name or ID
-                try await GroceryListAPI.deleteItem(listId: listIdString, itemId: item.name)
+                try await GroceryListAPI.deleteItem(listId: listIdString, itemId: item.id.uuidString)
 
-                // Remove item from UI
-                items.removeAll { $0.name == item.name }
+                items.removeAll { $0.id == item.id }
             } catch {
                 print("Failed to delete item: \(error)")
+            }
+        }
+    }
+
+    func toggleChecked(item: GroceryItem) {
+        Task {
+            do {
+                let listIdString = groceryList.id.uuidString
+                let updatedItem = GroceryItem(id: item.id, name: item.name, quantity: item.quantity, checked: !item.checked)
+
+                // Toggle the item checked status on the backend
+                try await GroceryListAPI.toggleChecked(listId: listIdString, itemId: item.id.uuidString)
+
+                // Update the item locally
+                if let index = items.firstIndex(where: { $0.id == item.id }) {
+                    items[index] = updatedItem
+                }
+            } catch {
+                print("Failed to toggle checked status: \(error)")
             }
         }
     }
