@@ -12,3 +12,15 @@ struct BudgetItem: Identifiable, Codable {
     let category: String
     var amount: String
 }
+
+struct WeeklyMonthlyCostResponse: Codable {
+    let username: String
+    let type: String
+    let costs: [String: Double] // This ensures the costs are properly decoded
+}
+
+struct BudgetResponse: Codable {
+    let username: String
+    let type: String
+    let budget: [String: Double]
+}

@@ -68,4 +68,17 @@ public class BudgetController {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error deleting budget: " + e.getMessage());
         }
     }
+
+    @GetMapping("/api/budget/{username}/{type}")
+    public ResponseEntity<String> getUserBudget(@PathVariable String username, @PathVariable String type) {
+        try {
+            String key = "users/" + username + "/" + type + "_budget.json";
+            byte[] fileData = s3Service.downloadFile(key);
+            String jsonData = new String(fileData, StandardCharsets.UTF_8);
+            return ResponseEntity.ok(jsonData);
+        } catch (Exception e) {
+            return ResponseEntity.ok("{}"); // Empty JSON if no budget data
+        }
+    }
+
 }

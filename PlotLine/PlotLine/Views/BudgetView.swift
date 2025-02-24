@@ -7,6 +7,7 @@
 
 import SwiftUI
 import Charts
+import Foundation
 
 struct BudgetView: View {
     @State private var selectedTab = "Budgeting" // Toggle between Budgeting & Stocks
@@ -45,7 +46,7 @@ struct BudgetSection: View {
                 .font(.largeTitle)
                 .bold()
 
-            // Spending Trends Chart 
+            // Spending Trends Chart
             VStack {
                 Text("Spending Trends")
                     .font(.headline)
@@ -88,29 +89,145 @@ struct BudgetSection: View {
 
 // MARK: - Spending Chart View
 struct SpendingChartView: View {
-    let chartType: String
+    @State private var spendingData: [SpendingEntry] = []
+    @State private var totalBudget: Double = 0.0
+    let chartType: String  // "Weekly" or "Monthly"
+    private var username: String {
+        return UserDefaults.standard.string(forKey: "loggedInUsername") ?? "UnknownUser"
+    }
 
     var body: some View {
         VStack {
-            if chartType == "Weekly" {
-                Text("Weekly Spending Chart")
-                    .font(.subheadline)
-            } else {
-                Text("Monthly Spending Chart")
-                    .font(.subheadline)
-            }
+            Text("\(chartType) Spending Chart")
+                .font(.subheadline)
+            
             Chart {
-                BarMark(x: .value("Day", "Mon"), y: .value("Spending", 50))
-                BarMark(x: .value("Day", "Tue"), y: .value("Spending", 30))
-                BarMark(x: .value("Day", "Wed"), y: .value("Spending", 70))
-                BarMark(x: .value("Day", "Thu"), y: .value("Spending", 40))
-                BarMark(x: .value("Day", "Fri"), y: .value("Spending", 60))
+                // Plot user spending (bar chart)
+                ForEach(spendingData, id: \.category) { entry in
+                    BarMark(
+                        x: .value("Category", entry.category),
+                        y: .value("Spending", entry.amount)
+                    )
+                    .foregroundStyle(.blue)
+                }
+
+                // Plot budget line
+                RuleMark(y: .value("Total Budget", totalBudget))
+                    .foregroundStyle(.red)
+                    .lineStyle(StrokeStyle(lineWidth: 2, dash: [5])) // Dashed line for budget
+                    .annotation(position: .top, alignment: .trailing) {
+                        Text("Budget: $\(totalBudget, specifier: "%.2f")")
+                            .font(.caption)
+                            .foregroundColor(.red)
+                    }
             }
-            .frame(height: 200)
+            .frame(height: 250)
+            .padding()
+            .onAppear {
+                fetchSpendingData()
+                fetchBudgetData()
+            }
+            .onChange(of: chartType) {
+                fetchSpendingData()
+                fetchBudgetData()
+            }
         }
-        .padding()
+    }
+
+    // Fetch user spending data from backend
+    private func fetchSpendingData() {
+        guard let url = URL(string: "http://localhost:8080/api/costs/\(username)/\(chartType.lowercased())") else {
+            print("❌ Invalid URL for spending data")
+            return
+        }
+
+        print("📡 Fetching spending data for \(chartType)")
+
+        URLSession.shared.dataTask(with: url) { data, response, error in
+            if let error = error {
+                print("Error fetching spending data: \(error.localizedDescription)")
+                return
+            }
+
+            guard let data = data, !data.isEmpty else {
+                print("No spending data found, initializing empty values.")
+                DispatchQueue.main.async {
+                    self.spendingData = []
+                }
+                return
+            }
+
+            do {
+                let decodedResponse = try JSONDecoder().decode(WeeklyMonthlyCostResponse.self, from: data)
+                DispatchQueue.main.async {
+                    self.spendingData = decodedResponse.costs.map { SpendingEntry(category: $0.key, amount: $0.value) }
+                }
+            } catch {
+                print("Failed to decode spending data:", error)
+                DispatchQueue.main.async {
+                    self.spendingData = []
+                }
+            }
+        }.resume()
+    }
+
+    // Fetch user budget data from backend and calculate total sum
+    private func fetchBudgetData() {
+        guard let url = URL(string: "http://localhost:8080/api/budget/\(username)/\(chartType.lowercased())") else {
+            print("Invalid URL for budget data")
+            return
+        }
+
+        print("📡 Fetching budget data for \(chartType)")
+
+        URLSession.shared.dataTask(with: url) { data, response, error in
+            if let error = error {
+                print("Error fetching budget data: \(error.localizedDescription)")
+                return
+            }
+
+            guard let data = data, !data.isEmpty else {
+                print("No budget data found, setting totalBudget to 0.")
+                DispatchQueue.main.async {
+                    self.totalBudget = 0.0
+                }
+                return
+            }
+
+            do {
+                let decodedResponse = try JSONDecoder().decode(BudgetResponse.self, from: data)
+                DispatchQueue.main.async {
+                    self.totalBudget = decodedResponse.budget.values.reduce(0, +) // Sum all budget categories
+                }
+            } catch {
+                print("Failed to decode budget data:", error)
+                DispatchQueue.main.async {
+                    self.totalBudget = 0.0
+                }
+            }
+        }.resume()
     }
 }
+
+// Spending Entry Model
+struct SpendingEntry {
+    let category: String
+    let amount: Double
+}
+
+// Decodable Response Model for Spending
+//struct WeeklyMonthlyCostResponse: Codable {
+//    let username: String
+//    let type: String
+//    let costs: [String: Double]
+//}
+
+// Decodable Response Model for Budget
+//struct BudgetResponse: Codable {
+//    let username: String
+//    let type: String
+//    let budget: [String: Double]
+//}
 
 // MARK: - Budget Button Label
 struct BudgetButtonLabel: View {

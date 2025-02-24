@@ -276,11 +276,11 @@ struct BudgetItem: Identifiable {
 }
  */
 
-struct WeeklyMonthlyCostResponse: Codable {
-    let username: String
-    let type: String
-    let costs: [String: Double] // This ensures the costs are properly decoded
-}
+//struct WeeklyMonthlyCostResponse: Codable {
+//    let username: String
+//    let type: String
+//    let costs: [String: Double] // This ensures the costs are properly decoded
+//}
 
 extension View {
     func hideKeyboard() {
