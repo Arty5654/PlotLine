@@ -405,38 +405,54 @@ struct ChangePasswordModalView: View {
     @State private var phoneNumber: String = ""
     @State private var otpCode: String = ""
     
+    @State private var errorMessage: String?
+
+    
     var body: some View {
         NavigationView {
             Form {
                 if !useOTPFlow {
                     
-                    Section(header: Text("Change Password (Old PW)")) {
-                        SecureField("Old Password", text: $oldPassword)
+                    Section(header: Text("Change Password with current PW")) {
+                        SecureField("Current Password", text: $oldPassword)
                         SecureField("New Password", text: $newPassword)
                         SecureField("Confirm New Password", text: $confirmPassword)
                         
                         Button("Save") {
-                            //TODO: check if old password is right, then change password
-                            isPresented = false
+                            self.errorMessage = nil
+                            
+                            Task {
+                                guard newPassword == confirmPassword else {
+                                    self.errorMessage = "New passwords do not match."
+                                    return
+                                }
+
+                                do {
+                                    let success = try await AuthAPI.changePassword(username: username, oldPassword: oldPassword, newPassword: newPassword)
+                                    if success {
+                                        isPresented = false
+                                    } else {
+                                        self.errorMessage = "Failed to change password. Incorrect Old Password"
+                                    }
+                                } catch {
+                                    self.errorMessage = "An error occurred. Please try again."
+                                }
+                            }
                         }
                         .disabled(oldPassword.isEmpty || newPassword.isEmpty || confirmPassword.isEmpty)
                     }
                 } else {
-                    Section(header: Text("Change Password (OTP)")) {
-                        
+                    Section(header: Text("Change Password with OTP")) {
+                        //send otp to acct phone num
                         Button("Send One-Time-Passcode") {
-                            // 1. Trigger backend to send SMS code to phoneNumber
                             Task {
                                 do {
                                     try await AuthAPI.sendCode(
                                         phone: self.phoneNumber
                                     )
-                                    
                                 } catch {
                                     print("error")
                                 }
-                                
-                                
                             }
                         }
                         
@@ -447,29 +463,38 @@ struct ChangePasswordModalView: View {
                         SecureField("Confirm New Password", text: $confirmPassword)
                         
                         Button("Verify & Save") {
+                            self.errorMessage = nil
+                            
+                            guard newPassword == confirmPassword else {
+                                self.errorMessage = "New passwords do not match."
+                                return
+                            }
+                            
                             Task {
                                 do {
-                                    let verified = try await AuthAPI.sendVerification(phone: self.phoneNumber,
-                                                                       code: otpCode,
-                                                                       username: self.username)
-                                    
-                                    if (verified.success) {
-                                        // change password function
-                                        //TODO:
-                                        
+                                    let success = try await AuthAPI.changePasswordWithCode(username: username, newPassword: newPassword, code: otpCode)
+                                    if success {
+                                        isPresented = false
                                     } else {
-                                        
-                                        // wrong password -> show as error somewhere
+                                        self.errorMessage = "Invalid Code. Please Try again"
                                     }
+
                                 } catch {
-                                    print("An unexpected error occurred. Please try again")
+                                    print("An unexpected error occurred. Please try again.")
+                                    self.errorMessage = "Invalid Code. Please Try again"
                                 }
                                 
                             }
-                            isPresented = false
                         }
                         .disabled(phoneNumber.isEmpty || otpCode.isEmpty || newPassword.isEmpty || confirmPassword.isEmpty)
                     }
+                }
+                
+                if let errorMessage = errorMessage {
+                    Text(errorMessage)
+                        .foregroundColor(.red)
+                        .font(.caption)
+                        .padding()
                 }
             }
             .navigationBarTitle("Change Password", displayMode: .inline)
@@ -486,6 +511,7 @@ struct ChangePasswordModalView: View {
                                 
                                 withAnimation {
                                     useOTPFlow.toggle()
+                                    self.errorMessage = nil
                                 }
                             } catch {
                                 print("Error fetching phone: \(error)")

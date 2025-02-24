@@ -17,3 +17,8 @@ struct SmsResponse: Codable {
     let success: Bool
 }
 
+struct PasswordChangeResponse: Codable {
+    let success: Bool
+    let error: String?
+}
+
