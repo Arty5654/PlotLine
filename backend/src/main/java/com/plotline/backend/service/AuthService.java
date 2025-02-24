@@ -123,7 +123,11 @@ public class AuthService {
             // Verify Password
             if (BCrypt.checkpw(rawPassword, userRecord.getPassword())) {
                 //correct password
-                return "true";
+                if (userRecord.getIsVerified()) {
+                    return "true";
+                } else {
+                    return "Needs Verification";
+                }
             } else {
                 //incorrect password or google account
 

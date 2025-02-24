@@ -4,17 +4,15 @@ public class UserProfile {
   private String username;
   private String name;
   private String birthday;
-  private String phone;
   private String city;
 
   public UserProfile() {
   }
 
-  public UserProfile(String username, String name, String birthday, String phone, String city) {
+  public UserProfile(String username, String name, String birthday, String city) {
     this.username = username;
     this.name = name;
     this.birthday = birthday;
-    this.phone = phone;
     this.city = city;
   }
 
@@ -40,14 +38,6 @@ public class UserProfile {
 
   public void setBirthday(String birthday) {
     this.birthday = birthday;
-  }
-
-  public String getPhone() {
-    return phone;
-  }
-
-  public void setPhone(String phone) {
-    this.phone = phone;
   }
 
   public String getCity() {

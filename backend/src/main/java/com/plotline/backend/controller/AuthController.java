@@ -72,12 +72,18 @@ public class AuthController {
         // add user to db
         String loginResult = authService.userLogin(request.getUsername(), request.getPassword());
 
-        if (!loginResult.equals("true")) {
+        if (!loginResult.equals("true") && !loginResult.equals("Needs Verification")) {
             return ResponseEntity.ok(new AuthResponse(false, null, loginResult));
         }
+
+
         
         // create jwt token
         String token = authService.generateToken(request.getUsername());
+
+        if (loginResult.equals("Needs Verification")) {
+            return ResponseEntity.ok(new AuthResponse(true, token, "Needs Verification"));
+        }
         
         // signup successful
         return ResponseEntity.ok(new AuthResponse(true, token, null));
@@ -108,6 +114,8 @@ public class AuthController {
             GoogleIdToken.Payload payload = idToken.getPayload();
             String googleUserId = payload.getSubject(); // Unique Google User ID
 
+            String loginResult = "";
+
             if (!authService.userExists(username)) {
 
                 // username does not exist, create new account for google user
@@ -134,17 +142,22 @@ public class AuthController {
                 } else {
     
                     // log google user back into their account 
-                    String loginResult = authService.userLogin(username, googleUserId);
+                    loginResult = authService.userLogin(username, googleUserId);
     
                     System.out.println("Google user LOGGED IN");
     
-                    if (!loginResult.equals("true")) {
+                    if (!loginResult.equals("true") && !loginResult.equals("Needs Verification")) {
                         return ResponseEntity.ok(new AuthResponse(false, null, loginResult));
                     }
     
                 }
     
                 String token = authService.generateToken(username);
+
+                if (loginResult.equals("Needs Verification")) {
+                    return ResponseEntity.ok(new AuthResponse(true, token, "Needs Verification"));
+                }
+
                 return ResponseEntity.ok(new AuthResponse(true, token, null));
     
             }

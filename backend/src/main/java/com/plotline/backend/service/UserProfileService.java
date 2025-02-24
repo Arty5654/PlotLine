@@ -57,6 +57,7 @@ public class UserProfileService {
       
       try {
 
+        System.out.println(username);
         String key = "users/" + username + "/profile.json";
 
         GetObjectRequest getRequest = GetObjectRequest.builder()
