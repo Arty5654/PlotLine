@@ -1,24 +1,40 @@
 import UIKit
 import GoogleSignIn
+import UserNotifications
 
-class AppDelegate: NSObject, UIApplicationDelegate {
+class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
+    
     func application(
-      _ app: UIApplication,
-      open url: URL, options: [UIApplication.OpenURLOptionsKey : Any] = [:]
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
     ) -> Bool {
-      var handled: Bool
-
-      handled = GIDSignIn.sharedInstance.handle(url)
-      if handled {
+        // Correct place to set the delegate
+        UNUserNotificationCenter.current().delegate = self
+        
         return true
-      }
+    }
+    
+    func application(
+        _ app: UIApplication,
+        open url: URL, options: [UIApplication.OpenURLOptionsKey : Any] = [:]
+    ) -> Bool {
+        var handled: Bool
 
-      // Handle other custom URL types.
+        handled = GIDSignIn.sharedInstance.handle(url)
+        if handled {
+            return true
+        }
 
-      // If not handled by this app, return false.
-      return false
+        return false
     }
 
+    // Ensure notifications appear in foreground
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        print("Notification received while app is in foreground")
+        completionHandler([.banner, .sound, .badge])
+    }
 }
-
-
