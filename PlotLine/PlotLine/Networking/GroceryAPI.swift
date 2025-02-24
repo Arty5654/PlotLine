@@ -108,8 +108,6 @@ struct GroceryListAPI {
         
         // Create the grocery item model with username
         let groceryItem = item
-        
-        print(groceryItem)
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -149,5 +147,36 @@ struct GroceryListAPI {
 
         // Assuming server responds with success message
         print("Item deleted: \(String(data: data, encoding: .utf8) ?? "")")
+    }
+    
+    // Function to toggle the checked state of an item in a grocery list
+    static func toggleChecked(listId: String, itemId: String) async throws {
+        // Retrieve the logged-in username from UserDefaults
+        guard let loggedInUsername = UserDefaults.standard.string(forKey: "loggedInUsername") else {
+            throw URLError(.userAuthenticationRequired)
+        }
+
+        // Construct the URL to toggle the checked state of an item
+        guard let url = URL(string: "\(baseURL)/\(listId)/items/\(itemId)/toggle?username=\(loggedInUsername)") else {
+            throw URLError(.badURL)
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+
+            // Ensure we get a successful response
+            guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
+                throw URLError(.badServerResponse)
+            }
+
+            // Print return message
+            print("\(String(data: data, encoding: .utf8) ?? "")")
+        } catch {
+            throw error
+        }
     }
 }
