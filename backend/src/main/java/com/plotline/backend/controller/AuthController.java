@@ -10,11 +10,10 @@ import com.plotline.backend.dto.AuthResponse;
 import com.plotline.backend.dto.SignInRequest;
 import com.plotline.backend.dto.SignUpRequest;
 import com.plotline.backend.service.AuthService;
-
 import io.github.cdimascio.dotenv.Dotenv;
 
 import java.util.Arrays;
-import java.util.Collections;
+import java.util.Map;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -85,7 +84,7 @@ public class AuthController {
             return ResponseEntity.ok(new AuthResponse(true, token, "Needs Verification"));
         }
         
-        // signup successful
+        // signin successful
         return ResponseEntity.ok(new AuthResponse(true, token, null));
     }
 
@@ -169,5 +168,44 @@ public class AuthController {
 
         }
     }
+
+    @PostMapping("/change-password")
+    public ResponseEntity<AuthResponse> changePassword(@RequestBody Map<String, String> request) {
+        String username = request.get("username");
+        String oldPassword = request.get("oldPassword");
+        String newPassword = request.get("newPassword");
+
+        if (username == null || oldPassword == null || newPassword == null) {
+            return ResponseEntity.badRequest().body(new AuthResponse(false, null, "Missing required fields"));
+        }
+
+        String result = authService.changeUserPassword(username, oldPassword, newPassword, "");
+
+        if (result.equals("success")) {
+            return ResponseEntity.ok(new AuthResponse(true, null, null));
+        } else {
+            return ResponseEntity.ok(new AuthResponse(false, null, result));
+        }
+    }
+
+    @PostMapping("/change-password-code")
+    public ResponseEntity<AuthResponse> changePasswordWithCode(@RequestBody Map<String, String> request) {
+        String username = request.get("username");
+        String newPassword = request.get("newPassword");
+        String code = request.get("code");
+
+        if (username == null || code == null || newPassword == null) {
+            return ResponseEntity.badRequest().body(new AuthResponse(false, null, "Missing required fields"));
+        }
+
+        String result = authService.changeUserPassword(username, "", newPassword, code);
+
+        if (result.equals("success")) {
+            return ResponseEntity.ok(new AuthResponse(true, null, null));
+        } else {
+            return ResponseEntity.ok(new AuthResponse(false, null, result));
+        }
+    }
+
         
 }
