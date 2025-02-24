@@ -85,9 +85,7 @@ public class GroceryListService {
             throw new IllegalArgumentException("A grocery list with this name already exists.");
         }
 
-        System.out.println("before if else" + groceryList.getId());
         String groceryListID = groceryList.getId() != null ? groceryList.getId() : UUID.randomUUID().toString();
-        System.out.println("after if else" + groceryListID);
 
         groceryList.setId(groceryListID);
 
@@ -148,14 +146,8 @@ public class GroceryListService {
     // Fetch grocery list items from S3
     public List<GroceryItem> getItems(String username, String listId) {
         try {
-            // Log the username and listId to ensure they are being passed correctly
-            System.out.println("Fetching items for listId: " + listId + " and username: " + username);
-
             // Construct the S3 path using the username and listId
             String s3Path = getS3Path(username, listId);
-
-            // Log the constructed S3 path
-            System.out.println("S3 path for the grocery list: " + s3Path);
 
             // Get the object from S3
             GetObjectRequest getObjectRequest = GetObjectRequest.builder()
@@ -166,14 +158,8 @@ public class GroceryListService {
             // Download the file from S3
             ResponseInputStream<GetObjectResponse> response = s3Client.getObject(getObjectRequest);
 
-            // Log the success of the download (or size of the file)
-            System.out.println("Successfully retrieved the grocery list from S3");
-
             // Deserialize the grocery list JSON into an object
             GroceryList groceryList = objectMapper.readValue(response, GroceryList.class);
-
-            // Log the items in the grocery list
-            System.out.println("Items in the grocery list: " + groceryList.getItems());
 
             return groceryList.getItems();  // Return the list of items
 
@@ -188,9 +174,6 @@ public class GroceryListService {
     // Add an item to the grocery list in S3
     public boolean addItem(String username, String listId, GroceryItem item) {
         try {
-            // Log the item being added
-            System.out.println("Adding item to the list: " + item);
-
             // Get the existing grocery list from S3
             GroceryList groceryList = getGroceryList(username, listId);
 
@@ -199,30 +182,15 @@ public class GroceryListService {
                 return false;
             }
 
-            // Log the current items in the grocery list before adding the new item
-            System.out.println("Items before adding new item:");
-            System.out.println(groceryList.getItems());
-
             // Add the new item to the existing items array
             groceryList.getItems().add(item);
-
-            // Log the updated list of items
-            System.out.println("Items after adding new item:");
-            System.out.println(groceryList.getItems());
 
             // Update the updatedAt timestamp to the current date-time
             String currentDate = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'").format(new Date());
             groceryList.setUpdatedAt(currentDate);  // Update the 'updatedAt' field
 
-            // Log the updated grocery list with the new 'updatedAt'
-            System.out.println("Updated grocery list with updatedAt: " + groceryList.getUpdatedAt());
-
             // Serialize the entire grocery list back to JSON (not just the items array)
             String updatedListJson = objectMapper.writeValueAsString(groceryList);
-
-            // Log the updated JSON
-            System.out.println("Updated list JSON:");
-            System.out.println(updatedListJson);
 
             // Get the S3 path to store the updated grocery list
             String s3Path = getS3Path(username, listId);
@@ -253,28 +221,16 @@ public class GroceryListService {
                 return false;
             }
 
-            // Log the current items in the grocery list before removing the item
-            System.out.println("Items before deleting:");
-            System.out.println(groceryList.getItems());
-
-            // Remove the item from the list based on its name (itemId is the name here)
-            boolean itemRemoved = groceryList.getItems().removeIf(item -> item.getName().equals(itemId));
+            // Remove the item from the list based on its id
+            boolean itemRemoved = groceryList.getItems().removeIf(item -> item.getId().equals(itemId));
 
             if (itemRemoved) {
-                // Log the updated list of items
-                System.out.println("Items after deleting the item:");
-                System.out.println(groceryList.getItems());
-
                 // Update the updatedAt timestamp to the current date-time
                 String currentDate = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'").format(new Date());
                 groceryList.setUpdatedAt(currentDate);  // Update the 'updatedAt' field
 
                 // Serialize the entire grocery list back to JSON (not just the items array)
                 String updatedListJson = objectMapper.writeValueAsString(groceryList);
-
-                // Log the updated JSON
-                System.out.println("Updated list JSON after item deletion:");
-                System.out.println(updatedListJson);
 
                 // Get the S3 path to store the updated grocery list
                 String s3Path = getS3Path(username, listId);
@@ -288,7 +244,51 @@ public class GroceryListService {
 
                 return true;
             } else {
-                System.out.println("Item not found in the grocery list.");
+                System.out.println("Item to delete not found in the grocery list.");
+                return false;
+            }
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    // Backend function to toggle the checked status of a grocery item
+    public boolean toggleChecked(String username, String listId, String itemId) {
+        try {
+            // Fetch the grocery list from S3
+            GroceryList groceryList = getGroceryList(username, listId);
+
+            if (groceryList == null) {
+                System.out.println("Grocery list not found.");
+                return false;
+            }
+
+            // Find the item by ID and toggle its 'checked' state
+            java.util.Optional<GroceryItem> itemOpt = groceryList.getItems().stream()
+                    .filter(item -> item.getId().toString().equals(itemId))
+                    .findFirst();
+
+            if (itemOpt.isPresent()) {
+                GroceryItem item = itemOpt.get();
+                item.setChecked(!item.isChecked());  // Toggle the checked status
+                groceryList.setUpdatedAt(new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'").format(new Date()));  // Update the timestamp
+
+                // Serialize the updated grocery list back to JSON
+                String s3Path = getS3Path(username, listId);
+                String updatedListJson = objectMapper.writeValueAsString(groceryList);
+
+                // Upload the updated list back to S3
+                PutObjectRequest putObjectRequest = PutObjectRequest.builder()
+                        .bucket(BUCKET_NAME)
+                        .key(s3Path)
+                        .build();
+                s3Client.putObject(putObjectRequest, RequestBody.fromString(updatedListJson));
+
+                return true;
+            } else {
+                System.out.println("Item to toggle check not found in grocery list.");
                 return false;
             }
 
