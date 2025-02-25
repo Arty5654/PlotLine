@@ -20,9 +20,11 @@ struct RootView: View {
                 .environmentObject(session)
         } else if (session.needVerification == true) {
             PhoneVerificationView()
+                .environmentObject(session)
         } else {
             // No auth, signin page display
             AuthView()
+                .environmentObject(session)
         }
         
         
