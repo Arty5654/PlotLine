@@ -98,5 +98,16 @@ public class GroceryListController {
             return ResponseEntity.status(500).body("Error updating item order.");
         }
     }
+
+    // Endpoint to update the details of an item in the grocery list
+    @PutMapping("/{listId}/items/{itemId}")
+    public ResponseEntity<String> updateItemDetails(@PathVariable String listId, @RequestParam String username, @RequestBody GroceryItem updatedItem) {
+        boolean success = groceryListService.updateItemDetails(username, listId, updatedItem);
+        if (success) {
+            return ResponseEntity.ok("Item details updated successfully.");
+        } else {
+            return ResponseEntity.status(400).body("Failed to update item details.");
+        }
+    }
 }
 
