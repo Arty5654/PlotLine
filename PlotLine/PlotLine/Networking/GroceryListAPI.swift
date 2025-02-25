@@ -204,4 +204,39 @@ struct GroceryListAPI {
         // Assuming server responds with success message
         print("Items reordered: \(String(data: data, encoding: .utf8) ?? "")")
     }
+    
+    // Function to update an item in the grocery list
+    static func updateItem(listId: String, itemId: String, updatedItem: GroceryItem) async throws {
+        // Retrieve the logged-in username from UserDefaults
+        guard let loggedInUsername = UserDefaults.standard.string(forKey: "loggedInUsername") else {
+            throw URLError(.userAuthenticationRequired)
+        }
+
+        // Construct the URL for updating the item
+        guard let url = URL(string: "\(baseURL)/\(listId)/items/\(itemId)?username=\(loggedInUsername)") else {
+            throw URLError(.badURL)
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "PUT"  // Using PUT to update the item
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        // Encode the updated item data into JSON
+        do {
+            request.httpBody = try JSONEncoder().encode(updatedItem)
+        } catch {
+            throw error
+        }
+
+        // Send the request and handle the response
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        // Check if the response is successful (status code 200-299)
+        guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+
+        // Assuming server responds with a success message
+        print("Item updated successfully: \(String(data: data, encoding: .utf8) ?? "")")
+    }
 }

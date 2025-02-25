@@ -15,8 +15,12 @@ struct GroceryList: Identifiable, Codable {
 }
 
 struct GroceryItem: Identifiable, Codable {
+    var listId: UUID
     var id: UUID
     var name: String
     var quantity: Int
     var checked: Bool
+    var price: Double?
+    var store: String?
+    var notes: String?
 }
