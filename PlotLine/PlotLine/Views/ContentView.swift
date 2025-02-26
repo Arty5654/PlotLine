@@ -62,6 +62,18 @@ struct ContentView: View {
         .padding()
         
         
+        Spacer()
+        
+        NavigationLink(destination: WeeklyGoalsView()) {
+            Text("Go to Goals page")
+                .foregroundColor(.white)
+                .padding()
+                .frame(maxWidth: .infinity)
+                .background(Color(.green)) // Green theme color
+                .cornerRadius(8)
+                
+        }
+        .padding()
         
         
         Spacer()
