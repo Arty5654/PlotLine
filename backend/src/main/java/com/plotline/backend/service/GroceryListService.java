@@ -32,9 +32,10 @@ public class GroceryListService {
 
     // Helper function to construct the S3 path for the grocery list items
     private String getS3Path(String username, String listId) {
-        return "users/" + username + "/grocery_lists/" + listId + ".json";
+        return "users/" + username + "/grocery/lists/" + listId + ".json";
     }
 
+    // Method to fetch a grocery list from S3
     public GroceryList getGroceryList(String username, String listId) {
         try {
             String s3Path = getS3Path(username, listId);
@@ -56,11 +57,10 @@ public class GroceryListService {
         }
     }
 
-
     // Method to check if a grocery list already exists for the user (based on name)
     public boolean doesGroceryListExist(String username, String groceryListName) {
         // Construct the S3 key path to check for the existence of the grocery list
-        String s3Path = "users/" + username + "/grocery_lists/";
+        String s3Path = "users/" + username + "/grocery/lists/";
 
         // List all objects in the grocery lists folder for the user
         ListObjectsV2Request listObjectsV2Request = ListObjectsV2Request.builder()
@@ -98,8 +98,8 @@ public class GroceryListService {
         ObjectMapper objectMapper = new ObjectMapper();
         String jsonString = objectMapper.writeValueAsString(groceryList);
 
-        // Use a UUID for the file name in S3 to ensure uniqueness
-        String s3Key = "users/" + username + "/grocery_lists/" + groceryListID + ".json";
+        // Use the new path structure
+        String s3Key = "users/" + username + "/grocery/lists/" + groceryListID + ".json";
 
         // Create a PutObjectRequest with the bucket name, S3 key, and content
         PutObjectRequest putObjectRequest = PutObjectRequest.builder()
@@ -116,7 +116,7 @@ public class GroceryListService {
         List<GroceryList> groceryLists = new ArrayList<>();
 
         // Construct the S3 key path to list all grocery lists for the user
-        String s3Path = "users/" + username + "/grocery_lists/";
+        String s3Path = "users/" + username + "/grocery/lists/";
 
         // List all objects in the grocery lists folder for the user
         ListObjectsV2Request listObjectsV2Request = ListObjectsV2Request.builder()
