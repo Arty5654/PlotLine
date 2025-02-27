@@ -1,13 +1,13 @@
 //
-//  MainGroceryList.swift
+//  ActiveGroceryListView.swift
 //  PlotLine
 //
-//  Created by Yash Mehta on 2/22/25.
+//  Created by Yash Mehta on 2/27/25.
 //
 
 import SwiftUI
 
-struct MainGroceryListView: View {
+struct ActiveGroceryListView: View {
     @State private var groceryLists: [GroceryList] = []
     @State private var showingCreateGroceryList = false
     @State private var newGroceryListName: String = ""
@@ -19,13 +19,15 @@ struct MainGroceryListView: View {
     @State private var navigateToDetailView = false
     @State private var createdGroceryListID: String? = nil  // Store the newly created grocery list ID
     @State private var createdGroceryListName: String = ""  // Store the name of the created grocery list
-
+    
     @State private var navigateToPreferences = false  // Flag to control navigation to preferences view
     @State private var dietaryRestrictions: DietaryRestrictions? // Store dietary restrictions here
 
     var body: some View {
-        NavigationView {
-            VStack {
+        VStack {
+            // Buttons pinned to the top
+            VStack(spacing: 20) {
+                // Create New Grocery List Button
                 Button(action: {
                     showingCreateGroceryList.toggle()
                 }) {
@@ -36,6 +38,8 @@ struct MainGroceryListView: View {
                         .background(Color.green)
                         .cornerRadius(10)
                 }
+
+                // Preferences Button
                 Button(action: {
                     navigateToPreferencesScreen()
                 }) {
@@ -44,62 +48,68 @@ struct MainGroceryListView: View {
                         .padding()
                         .cornerRadius(5)
                 }
+            }
+            .padding(.top) // Space between the top and buttons
 
-                if groceryLists.isEmpty {
-                    Text("No grocery lists available.")
-                        .font(.title2)
-                        .foregroundColor(.gray)
-                        .padding()
-                } else {
-                    List(groceryLists) { groceryList in
-                        NavigationLink(destination: GroceryListDetailView(groceryList: groceryList)) {
-                            Text(groceryList.name)
-                        }
+            // If no grocery lists exist, show the message in the center
+            if groceryLists.isEmpty {
+                Spacer()  // Push content to the middle
+                Text("No active grocery lists available.")
+                    .font(.title2)
+                    .foregroundColor(.gray)
+                    .padding()
+                Spacer()  // Keep the message centered vertically
+            } else {
+                // Display the active grocery lists
+                List(groceryLists) { groceryList in
+                    NavigationLink(destination: GroceryListDetailView(groceryList: groceryList)) {
+                        Text(groceryList.name)
                     }
                 }
+            }
 
-                if showSuccessMessage {
-                    Text(successMessage)
-                        .foregroundColor(.green)
-                        .padding()
-                }
+            // Show success message
+            if showSuccessMessage {
+                Text(successMessage)
+                    .foregroundColor(.green)
+                    .padding()
             }
-            .navigationTitle("Grocery Lists")
-            .onAppear {
-                fetchGroceryLists()
-                fetchDietaryPreferences() // Fetch dietary preferences when the view appears
-            }
-            .sheet(isPresented: $showingCreateGroceryList) {
-                CreateGroceryListView(
-                    newGroceryListName: $newGroceryListName,
-                    showSuccessMessage: $showSuccessMessage,
-                    successMessage: $successMessage,
-                    onGroceryListCreated: { newListID in
-                        // After creating a new list, set the ID, name, and trigger navigation
-                        createdGroceryListID = newListID
-                        createdGroceryListName = newGroceryListName
-                        if let validUUID = UUID(uuidString: newListID) {
-                            groceryLists.append(GroceryList(id: validUUID, name: newGroceryListName, items: [], username: username ?? ""))
-                        } else {
-                            print("Invalid UUID format for new list ID")
-                        }
+        }
+        .navigationTitle("Active Grocery Lists")
+        .onAppear {
+            fetchGroceryLists()
+            fetchDietaryPreferences() // Fetch dietary preferences when the view appears
+        }
+        .sheet(isPresented: $showingCreateGroceryList) {
+            CreateGroceryListView(
+                newGroceryListName: $newGroceryListName,
+                showSuccessMessage: $showSuccessMessage,
+                successMessage: $successMessage,
+                onGroceryListCreated: { newListID in
+                    // After creating a new list, set the ID, name, and trigger navigation
+                    createdGroceryListID = newListID
+                    createdGroceryListName = newGroceryListName
+                    if let validUUID = UUID(uuidString: newListID) {
                         navigateToDetailView = true
-                        fetchGroceryLists()
+                        groceryLists.append(GroceryList(id: validUUID, name: newGroceryListName, items: [], username: username ?? ""))
+                    } else {
+                        print("Invalid UUID format for new list ID")
                     }
-                )
-            }
-            // Navigate to DietaryPreferencesView when the flag is set
-            .background(
-                NavigationLink(
-                    destination: DietaryPreferencesView(dietaryRestrictions: $dietaryRestrictions, onClose: {
-                        navigateToPreferences = false // Action to close the view
-                    }),
-                    isActive: $navigateToPreferences
-                ) {
-                    EmptyView()
                 }
             )
         }
+
+        // Preferences Navigation
+        .background(
+            NavigationLink(
+                destination: DietaryPreferencesView(dietaryRestrictions: $dietaryRestrictions, onClose: {
+                    navigateToPreferences = false // Action to close the view
+                }),
+                isActive: $navigateToPreferences
+            ) {
+                EmptyView()
+            }
+        )
     }
 
     private func fetchGroceryLists() {
@@ -145,7 +155,6 @@ struct MainGroceryListView: View {
             }
         }
     }
-
 
     private func navigateToPreferencesScreen() {
         // Only navigate if dietaryRestrictions is not nil

@@ -239,4 +239,108 @@ struct GroceryListAPI {
         // Assuming server responds with a success message
         print("Item updated successfully: \(String(data: data, encoding: .utf8) ?? "")")
     }
+    
+    // Function to archive a grocery list
+        static func archiveGroceryList(username: String, groceryList: GroceryList, completion: @escaping (Result<String, Error>) -> Void) {
+            let url = URL(string: "\(baseURL)/archive/\(username)")!
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            
+            do {
+                let jsonData = try JSONEncoder().encode(groceryList)
+                request.httpBody = jsonData
+            } catch {
+                completion(.failure(error))
+                return
+            }
+            
+            let task = URLSession.shared.dataTask(with: request) { data, response, error in
+                if let error = error {
+                    completion(.failure(error))
+                    return
+                }
+                
+                guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
+                    completion(.failure(NSError(domain: "Invalid response", code: 0, userInfo: nil)))
+                    return
+                }
+                
+                if let data = data, let result = String(data: data, encoding: .utf8) {
+                    completion(.success(result))
+                } else {
+                    completion(.failure(NSError(domain: "Data error", code: 0, userInfo: nil)))
+                }
+            }
+            
+            task.resume()
+        }
+        
+        // Function to get archived grocery lists
+        static func getArchivedGroceryLists(username: String, completion: @escaping (Result<[GroceryList], Error>) -> Void) {
+            let url = URL(string: "\(baseURL)/archived/\(username)")!
+            var request = URLRequest(url: url)
+            request.httpMethod = "GET"
+            
+            let task = URLSession.shared.dataTask(with: request) { data, response, error in
+                if let error = error {
+                    completion(.failure(error))
+                    return
+                }
+                
+                guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
+                    completion(.failure(NSError(domain: "Invalid response", code: 0, userInfo: nil)))
+                    return
+                }
+                
+                if let data = data {
+                    do {
+                        let archivedLists = try JSONDecoder().decode([GroceryList].self, from: data)
+                        completion(.success(archivedLists))
+                    } catch {
+                        completion(.failure(error))
+                    }
+                } else {
+                    completion(.failure(NSError(domain: "Data error", code: 0, userInfo: nil)))
+                }
+            }
+            
+            task.resume()
+        }
+        
+        // Function to restore an archived grocery list
+        static func restoreGroceryList(username: String, groceryList: GroceryList, completion: @escaping (Result<String, Error>) -> Void) {
+            let url = URL(string: "\(baseURL)/restore/\(username)")!
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            
+            do {
+                let jsonData = try JSONEncoder().encode(groceryList)
+                request.httpBody = jsonData
+            } catch {
+                completion(.failure(error))
+                return
+            }
+            
+            let task = URLSession.shared.dataTask(with: request) { data, response, error in
+                if let error = error {
+                    completion(.failure(error))
+                    return
+                }
+                
+                guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
+                    completion(.failure(NSError(domain: "Invalid response", code: 0, userInfo: nil)))
+                    return
+                }
+                
+                if let data = data, let result = String(data: data, encoding: .utf8) {
+                    completion(.success(result))
+                } else {
+                    completion(.failure(NSError(domain: "Data error", code: 0, userInfo: nil)))
+                }
+            }
+            
+            task.resume()
+        }
 }

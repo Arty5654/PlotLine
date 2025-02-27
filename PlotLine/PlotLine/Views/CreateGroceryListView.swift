@@ -11,7 +11,7 @@ struct CreateGroceryListView: View {
     @Binding var newGroceryListName: String
     @Binding var showSuccessMessage: Bool
     @Binding var successMessage: String
-    var onGroceryListCreated: (String) -> Void  // Modify to accept a String for the grocery list ID
+    var onGroceryListCreated: (String) -> Void  // Closure that returns the new grocery list ID
 
     @Environment(\.presentationMode) var presentationMode
 
@@ -65,7 +65,11 @@ struct CreateGroceryListView: View {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
                     self.showSuccessMessage = false
                 }
-                
+
+                // Call the parent view's closure with the new list's ID
+                onGroceryListCreated(newListID)
+
+                // Close the sheet
                 self.presentationMode.wrappedValue.dismiss()  // Close the sheet
 
             } catch {
