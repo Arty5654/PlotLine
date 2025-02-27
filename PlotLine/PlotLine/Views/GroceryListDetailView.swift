@@ -11,17 +11,29 @@ struct GroceryListDetailView: View {
     @State private var isEditPresented: Bool = false  // Flag to present the edit view
     
     @State private var shareSuccess: Bool? = nil // Track if sharing was successful
+    @State private var canArchiveList: Bool = false // Track if the list can be archived
+    @State private var archiveSuccess: Bool? = nil
+
+    // Helper variables for the running total
+    private var totalItems: Int { items.count }
+    private var purchasedItems: Int { items.filter { $0.checked }.count }
     
+    // Calculate item text based on totalItems
+    private var itemText: String {
+        return totalItems == 1 ? "Item" : "Items"
+    }
+
     var body: some View {
         ZStack {
             VStack {
-                
-                // Grocery List name and share button in this HStack
+                // Top section with List title and share button
                 HStack {
                     Text(groceryList.name)
                         .font(.largeTitle)
                         .fontWeight(.bold)
                         .padding()
+                    
+                    Spacer()
                     
                     // Custom share button
                     Button(action: {
@@ -38,13 +50,54 @@ struct GroceryListDetailView: View {
                             dismissButton: .default(Text("OK"))
                         )
                     }
+                    .padding()
+                }
+                .padding(.top)
+
+                // Check if there are items in the list
+                if !items.isEmpty {
+                    // Running total section with Archive button
+                    HStack {
+                        // Using itemText for pluralization
+                        Text("\(totalItems) \(itemText) - \(purchasedItems) Checked Off")
+                            .foregroundColor(.gray)
+                            .padding()
+                        
+                        Spacer()
+                        
+                        // Archive button (small)
+                        Button(action: {
+                            archiveList()
+                        }) {
+                            Text("Archive")
+                                .fontWeight(.bold)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 5)
+                                .background(canArchiveList ? Color.green : Color.gray)
+                                .foregroundColor(.white)
+                                .cornerRadius(10)
+                                .frame(height: 30)  // Make the Archive button short
+                        }
+                        .disabled(!canArchiveList)
+                        .alert(isPresented: .constant(archiveSuccess != nil)) {
+                            Alert(
+                                title: Text(archiveSuccess == true ? "Archive Successful" : "Archive Failed"),
+                                message: Text(archiveSuccess == true ? "Your grocery list was archived successfully." : "There was an issue archiving the list."),
+                                dismissButton: .default(Text("OK"))
+                            )
+                        }
+                        .padding()
+                    }
                 }
 
+                // Centered message if there are no items in the grocery list
                 if items.isEmpty {
+                    Spacer()
                     Text("No items in this grocery list.")
                         .font(.title2)
                         .foregroundColor(.gray)
                         .padding()
+                    Spacer()
                 } else {
                     List {
                         ForEach(items) { item in
@@ -83,47 +136,41 @@ struct GroceryListDetailView: View {
                     }
                     .navigationBarItems(trailing: EditButton())
                 }
+            }
 
-                // Section to add a new item
+            // Add New Item Section pinned to the bottom
+            VStack {
+                Spacer()
+
                 HStack {
+                    // Enter new item TextField
                     TextField("Enter new item", text: $newItemName)
                         .padding()
                         .textFieldStyle(RoundedBorderTextFieldStyle())
-                        .frame(maxWidth: .infinity)
-
-                    TextField("Qty", value: $newItemQuantity, formatter: NumberFormatter())
-                        .padding()
-                        .textFieldStyle(RoundedBorderTextFieldStyle())
-                        .frame(width: 50)
+                        .frame(maxWidth: .infinity)  // Makes the text field take up all available space
+                    
+                    // Add Item button with width based on text content
+                    Button(action: {
+                        addItemToList()
+                    }) {
+                        Text("Add Item")
+                            .fontWeight(.bold)
+                            .padding()
+                            .background(Color.blue)
+                            .foregroundColor(.white)
+                            .cornerRadius(10)
+                    }
+                    .padding()  // Optional padding for spacing
                 }
-                .padding()
-
-                Button(action: {
-                    addItemToList()
-                }) {
-                    Text("Add Item")
-                        .fontWeight(.bold)
-                        .padding()
-                        .background(Color.blue)
-                        .foregroundColor(.white)
-                        .cornerRadius(10)
-                }
-                .padding()
-            }
-
-            // Conditional overlay for the custom square window
-            if isEditPresented {
-                Color.black.opacity(0.5) // Background dimming
-                    .edgesIgnoringSafeArea(.all)
-                
-                GroceryItemInfoView(item: $selectedItem, onClose: {
-                    isEditPresented = false
-                })
+                .padding(.bottom) // Padding at the bottom
             }
         }
         .navigationTitle("Grocery List Details")
         .onAppear {
             fetchItems()
+        }
+        .onChange(of: items) { _ in
+            canArchiveList = isListCompleted()
         }
     }
 
@@ -137,6 +184,11 @@ struct GroceryListDetailView: View {
                 print("Failed to fetch items: \(error)")
             }
         }
+    }
+
+    func isListCompleted() -> Bool {
+        // Check if all items are checked off
+        return !items.isEmpty && items.allSatisfy { $0.checked }
     }
 
     func addItemToList() {
@@ -256,5 +308,24 @@ struct GroceryListDetailView: View {
         }
         
         return result
+    }
+    
+    // Archive function
+    func archiveList() {
+        let username: String? = UserDefaults.standard.string(forKey: "loggedInUsername")
+        
+        GroceryListAPI.archiveGroceryList(username: username ?? "", groceryList: groceryList) { result in
+            switch result {
+            case .success(let message):
+                // Handle success
+                print("Grocery list archived successfully: \(message)")
+                archiveSuccess = true // Set success flag
+                
+            case .failure(let error):
+                // Handle failure
+                print("Failed to archive grocery list: \(error.localizedDescription)")
+                archiveSuccess = false // Set failure flag
+            }
+        }
     }
 }

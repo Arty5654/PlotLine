@@ -37,7 +37,7 @@ struct ContentView: View {
         
         Spacer()
         
-        NavigationLink(destination: MainGroceryListView()) {
+        NavigationLink(destination: TopGroceryListView()) {
             Text("Go to Grocery Lists Page")
                 .foregroundColor(.white)
                 .padding()
