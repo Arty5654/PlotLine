@@ -263,4 +263,80 @@ public class S3Service {
     }
   }
 
+  public boolean resetGoalsInS3(String username) {
+    try {
+      String key = "users/" + username + "/weekly-goals.json";
+      System.out.println("📡 Resetting all goals for: " + key);
+
+      // Create an empty goal list
+      Map<String, List<TaskItem>> emptyGoalData = Map.of("weeklyGoals", new ArrayList<>());
+
+      // Convert to JSON
+      ObjectMapper objectMapper = new ObjectMapper();
+      String emptyJson = objectMapper.writeValueAsString(emptyGoalData);
+
+      // Upload empty JSON back to S3
+      PutObjectRequest putObjectRequest = PutObjectRequest.builder()
+          .bucket(bucketName)
+          .key(key)
+          .build();
+
+      s3Client.putObject(putObjectRequest, RequestBody.fromString(emptyJson));
+
+      return true; // Success
+
+    } catch (NoSuchKeyException e) {
+      System.out.println("⚠️ File not found, nothing to reset.");
+      return false;
+    } catch (Exception e) {
+      e.printStackTrace();
+      return false;
+    }
+  }
+
+  public boolean updateGoalCompletionInS3(String username, int taskId, boolean isCompleted) {
+    try {
+      String key = "users/" + username + "/weekly-goals.json";
+      System.out.println("📡 Fetching existing goals from: " + key);
+
+      // Fetch existing goals
+      GetObjectRequest getObjectRequest = GetObjectRequest.builder()
+          .bucket(bucketName)
+          .key(key)
+          .build();
+
+      ResponseBytes<GetObjectResponse> objectBytes = s3Client.getObjectAsBytes(getObjectRequest);
+      String jsonData = new String(objectBytes.asByteArray(), StandardCharsets.UTF_8);
+
+      ObjectMapper objectMapper = new ObjectMapper();
+      Map<String, List<TaskItem>> goalsData = objectMapper.readValue(jsonData, new TypeReference<>() {
+      });
+
+      // Update the completion status
+      List<TaskItem> updatedGoals = goalsData.get("weeklyGoals").stream()
+          .map(task -> task.getId() == taskId ? new TaskItem(task.getId(), task.getName(), isCompleted) : task)
+          .toList();
+
+      // Save updated goals back to S3
+      goalsData.put("weeklyGoals", updatedGoals);
+      String updatedJson = objectMapper.writeValueAsString(goalsData);
+
+      PutObjectRequest putObjectRequest = PutObjectRequest.builder()
+          .bucket(bucketName)
+          .key(key)
+          .build();
+
+      s3Client.putObject(putObjectRequest, RequestBody.fromString(updatedJson));
+
+      return true; // Success
+
+    } catch (NoSuchKeyException e) {
+      System.out.println("⚠️ File not found, cannot update.");
+      return false;
+    } catch (Exception e) {
+      e.printStackTrace();
+      return false;
+    }
+  }
+
 }

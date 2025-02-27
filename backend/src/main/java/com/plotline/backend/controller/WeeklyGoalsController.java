@@ -56,4 +56,27 @@ public class WeeklyGoalsController {
     }
   }
 
+  @DeleteMapping("/{username}/reset")
+  public ResponseEntity<String> resetGoals(@PathVariable String username) throws IOException {
+    boolean success = s3Service.resetGoalsInS3(username);
+    if (success) {
+      return ResponseEntity.ok("All goals have been reset!");
+    } else {
+      return ResponseEntity.status(500).body("Failed to reset goals.");
+    }
+  }
+
+  @PutMapping("/{username}/{taskId}/completion")
+  public ResponseEntity<String> updateGoalCompletion(@PathVariable String username,
+      @PathVariable int taskId,
+      @RequestBody Map<String, Boolean> request) throws IOException {
+    boolean isCompleted = request.get("isCompleted");
+    boolean success = s3Service.updateGoalCompletionInS3(username, taskId, isCompleted);
+    if (success) {
+      return ResponseEntity.ok("Task completion updated successfully!");
+    } else {
+      return ResponseEntity.status(500).body("Failed to update task completion.");
+    }
+  }
+
 }
