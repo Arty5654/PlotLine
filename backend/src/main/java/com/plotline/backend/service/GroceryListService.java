@@ -9,6 +9,8 @@ import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Object;
 import software.amazon.awssdk.core.ResponseInputStream;
 import software.amazon.awssdk.core.sync.RequestBody;
+import software.amazon.awssdk.services.s3.model.CopyObjectRequest;
+import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
@@ -375,6 +377,121 @@ public class GroceryListService {
         } catch (Exception e) {
             e.printStackTrace();
             return false;
+        }
+    }
+
+    // Method to archive a grocery list to S3 in JSON format
+    public String archiveGroceryList(GroceryList groceryList, String username) throws IOException {
+        // Ensure the list exists before attempting to archive
+        if (groceryList.getId() == null) {
+            throw new IllegalArgumentException("Grocery list ID is required.");
+        }
+
+        String groceryListID = groceryList.getId();
+
+        // Serialize the GroceryList object to JSON
+        ObjectMapper objectMapper = new ObjectMapper();
+        String jsonString = objectMapper.writeValueAsString(groceryList);
+
+        // Define the source and destination S3 keys
+        String sourceKey = "users/" + username + "/grocery/lists/" + groceryListID + ".json";
+        String destinationKey = "users/" + username + "/grocery/archived/" + groceryListID + ".json";
+
+        // Copy the grocery list from the original folder to the archived folder
+        try {
+            // Upload to archived folder
+            PutObjectRequest putObjectRequest = PutObjectRequest.builder()
+                    .bucket(BUCKET_NAME)
+                    .key(destinationKey)
+                    .build();
+            s3Client.putObject(putObjectRequest, RequestBody.fromBytes(jsonString.getBytes()));
+
+            // Delete the original grocery list from the "grocery/lists" folder
+            DeleteObjectRequest deleteObjectRequest = DeleteObjectRequest.builder()
+                    .bucket(BUCKET_NAME)
+                    .key(sourceKey)
+                    .build();
+            s3Client.deleteObject(deleteObjectRequest);
+
+            return destinationKey;  // Return the new S3 path of the archived list
+        } catch (Exception e) {
+            e.printStackTrace();
+            throw new IOException("Failed to archive the grocery list", e);
+        }
+    }
+
+    // Method to retrieve archived grocery lists from S3
+    public List<GroceryList> getArchivedGroceryLists(String username) throws IOException {
+        List<GroceryList> archivedLists = new ArrayList<>();
+
+        // Construct the S3 key path to list all archived grocery lists for the user
+        String s3Path = "users/" + username + "/grocery/archived/";
+
+        // List all objects in the archived grocery lists folder for the user
+        ListObjectsV2Request listObjectsV2Request = ListObjectsV2Request.builder()
+                .bucket(BUCKET_NAME)
+                .prefix(s3Path)
+                .build();
+
+        var objectSummaries = s3Client.listObjectsV2(listObjectsV2Request).contents();
+
+        // For each archived grocery list file, read and parse the content
+        for (S3Object object : objectSummaries) {
+            String key = object.key();
+            var s3Object = s3Client.getObject(b -> b.bucket(BUCKET_NAME).key(key));
+            var objectContent = new String(s3Object.readAllBytes());  // Read the content as a String
+
+            // Convert the JSON content to a GroceryList object
+            ObjectMapper objectMapper = new ObjectMapper();
+            GroceryList groceryList = objectMapper.readValue(objectContent, GroceryList.class);
+            archivedLists.add(groceryList);
+        }
+
+        return archivedLists;
+    }
+
+    // Method to restore an archived grocery list, unchecking all items
+    public String restoreArchivedGroceryList(GroceryList groceryList, String username) throws IOException {
+        // Ensure the list exists before attempting to restore
+        if (groceryList.getId() == null) {
+            throw new IllegalArgumentException("Grocery list ID is required.");
+        }
+
+        // Uncheck all items in the grocery list
+        for (GroceryItem item : groceryList.getItems()) {
+            item.setChecked(false); // Set each item's checked status to false
+        }
+
+        String groceryListID = groceryList.getId();
+
+        // Serialize the GroceryList object to JSON
+        ObjectMapper objectMapper = new ObjectMapper();
+        String jsonString = objectMapper.writeValueAsString(groceryList);
+
+        // Define the source and destination S3 keys
+        String sourceKey = "users/" + username + "/grocery/archived/" + groceryListID + ".json";
+        String destinationKey = "users/" + username + "/grocery/lists/" + groceryListID + ".json";
+
+        // Copy the grocery list from the archived folder to the original folder
+        try {
+            // Upload to the original folder
+            PutObjectRequest putObjectRequest = PutObjectRequest.builder()
+                    .bucket(BUCKET_NAME)
+                    .key(destinationKey)
+                    .build();
+            s3Client.putObject(putObjectRequest, RequestBody.fromBytes(jsonString.getBytes()));
+
+            // Delete the original grocery list from the "grocery/archived" folder
+            DeleteObjectRequest deleteObjectRequest = DeleteObjectRequest.builder()
+                    .bucket(BUCKET_NAME)
+                    .key(sourceKey)
+                    .build();
+            s3Client.deleteObject(deleteObjectRequest);
+
+            return destinationKey;  // Return the new S3 path of the restored list
+        } catch (Exception e) {
+            e.printStackTrace();
+            throw new IOException("Failed to restore the grocery list", e);
         }
     }
 }
