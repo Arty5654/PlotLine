@@ -15,82 +15,78 @@ struct ContentView: View {
     
     var body: some View {
         VStack {
-            Image(systemName: "globe")
-                .imageScale(.large)
-                .foregroundStyle(.tint)
-            Text("PlotLine - \(username)")
-        }
-        .padding()
-        
-        Spacer()
-        
-        NavigationLink(destination: BudgetView()) {
-            Text("Go to budget page")
-                .foregroundColor(.white)
-                .padding()
-                .frame(maxWidth: .infinity)
-                .background(Color(.red)) // Green theme color
-                .cornerRadius(8)
-                
-        }
-        .padding()
-        
-        Spacer()
-        
-        NavigationLink(destination: TopGroceryListView()) {
-            Text("Go to Grocery Lists Page")
-                .foregroundColor(.white)
-                .padding()
-                .frame(maxWidth: .infinity)
-                .background(Color(.green)) // Green theme color
-                .cornerRadius(8)
-                
-        }
-        .padding()
-        
-        Spacer()
-        
-        NavigationLink(destination: ProfileView()) {
-            Text("Go to profile page")
-                .foregroundColor(.white)
-                .padding()
-                .frame(maxWidth: .infinity)
-                .background(Color(.green)) // Green theme color
-                .cornerRadius(8)
-                
-        }
-        .padding()
-        
-        
-        Spacer()
-        
-        NavigationLink(destination: WeeklyGoalsView()) {
-            Text("Go to Goals page")
-                .foregroundColor(.white)
-                .padding()
-                .frame(maxWidth: .infinity)
-                .background(Color(.green)) // Green theme color
-                .cornerRadius(8)
-                
-        }
-        .padding()
-        
-        
-        Spacer()
-        
-        Button(action: {
-            //todo call auth function
+            // Header Section with Username
+            HStack {
+                Text("Welcome to PlotLine, \(username)!")
+                    .font(.title)
+                    .fontWeight(.bold)
+            }
+            .padding(.top, 40)
             
-            session.signOut()
-        }) {
-            Text("Sign Out")
-                .foregroundColor(.white)
-                .padding()
-                .frame(maxWidth: .infinity)
-                .background(Color(.red)) // Green theme color
-                .cornerRadius(8)
+            Spacer()
+            
+            // Buttons with icons
+            VStack(spacing: 20) {
+                NavigationLink(destination: ProfileView()) {
+                    Label("Profile", systemImage: "person.circle.fill")
+                        .font(.headline)
+                        .padding()
+                        .frame(maxWidth: .infinity)
+                        .background(Color(.blue))
+                        .cornerRadius(8)
+                        .foregroundColor(.white)
+                }
+                
+                NavigationLink(destination: BudgetView()) {
+                    Label("Budget", systemImage: "creditcard.fill")
+                        .font(.headline)
+                        .padding()
+                        .frame(maxWidth: .infinity)
+                        .background(Color(.green))
+                        .cornerRadius(8)
+                        .foregroundColor(.white)
+                }
+                
+                NavigationLink(destination: TopGroceryListView()) {
+                    Label("Grocery Lists", systemImage: "cart.fill")
+                        .font(.headline)
+                        .padding()
+                        .frame(maxWidth: .infinity)
+                        .background(Color(.green))
+                        .cornerRadius(8)
+                        .foregroundColor(.white)
+                }
+                
+                NavigationLink(destination: WeeklyGoalsView()) {
+                    Label("Goals", systemImage: "list.bullet.rectangle.fill")
+                        .font(.headline)
+                        .padding()
+                        .frame(maxWidth: .infinity)
+                        .background(Color(.green))
+                        .cornerRadius(8)
+                        .foregroundColor(.white)
+                }
+            }
+            .padding([.horizontal, .bottom])
+            
+            Spacer()
+            
+            // Sign out button
+            Button(action: {
+                // TODO: Call auth function
+                session.signOut()
+            }) {
+                Label("Sign Out", systemImage: "arrow.backward.circle.fill")
+                    .font(.headline)
+                    .padding()
+                    .frame(maxWidth: .infinity)
+                    .background(Color(.red))
+                    .cornerRadius(8)
+                    .foregroundColor(.white)
+            }
+            .padding([.horizontal, .bottom])
         }
-        .padding(.horizontal)
+        .padding()
     }
 }
 
