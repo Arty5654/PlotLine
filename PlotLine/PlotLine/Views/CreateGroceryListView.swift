@@ -60,12 +60,23 @@ struct CreateGroceryListView: View {
                 // Show success message
                 self.successMessage = "Grocery list created successfully: \(newGroceryListName)"
                 self.showSuccessMessage = true
+                
+                // Dismiss the success message after 3 seconds
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                    self.showSuccessMessage = false
+                }
+                
                 self.presentationMode.wrappedValue.dismiss()  // Close the sheet
 
             } catch {
                 // Handle error
                 self.successMessage = "Failed to create grocery list."
                 self.showSuccessMessage = true
+
+                // Dismiss the error message after 3 seconds
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                    self.showSuccessMessage = false
+                }
             }
         }
     }

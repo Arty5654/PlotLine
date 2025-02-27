@@ -20,6 +20,9 @@ struct MainGroceryListView: View {
     @State private var createdGroceryListID: String? = nil  // Store the newly created grocery list ID
     @State private var createdGroceryListName: String = ""  // Store the name of the created grocery list
 
+    @State private var navigateToPreferences = false  // Flag to control navigation to preferences view
+    @State private var dietaryRestrictions: DietaryRestrictions? // Store dietary restrictions here
+
     var body: some View {
         NavigationView {
             VStack {
@@ -33,7 +36,14 @@ struct MainGroceryListView: View {
                         .background(Color.green)
                         .cornerRadius(10)
                 }
-                .padding()
+                Button(action: {
+                    navigateToPreferencesScreen()
+                }) {
+                    Text("Preferences")
+                        .foregroundColor(.green)
+                        .padding()
+                        .cornerRadius(5)
+                }
 
                 if groceryLists.isEmpty {
                     Text("No grocery lists available.")
@@ -57,6 +67,7 @@ struct MainGroceryListView: View {
             .navigationTitle("Grocery Lists")
             .onAppear {
                 fetchGroceryLists()
+                fetchDietaryPreferences() // Fetch dietary preferences when the view appears
             }
             .sheet(isPresented: $showingCreateGroceryList) {
                 CreateGroceryListView(
@@ -67,11 +78,27 @@ struct MainGroceryListView: View {
                         // After creating a new list, set the ID, name, and trigger navigation
                         createdGroceryListID = newListID
                         createdGroceryListName = newGroceryListName
+                        if let validUUID = UUID(uuidString: newListID) {
+                            groceryLists.append(GroceryList(id: validUUID, name: newGroceryListName, items: [], username: username ?? ""))
+                        } else {
+                            print("Invalid UUID format for new list ID")
+                        }
                         navigateToDetailView = true
-                        fetchGroceryLists() // Refresh the list after creation (optional)
+                        fetchGroceryLists()
                     }
                 )
             }
+            // Navigate to DietaryPreferencesView when the flag is set
+            .background(
+                NavigationLink(
+                    destination: DietaryPreferencesView(dietaryRestrictions: $dietaryRestrictions, onClose: {
+                        navigateToPreferences = false // Action to close the view
+                    }),
+                    isActive: $navigateToPreferences
+                ) {
+                    EmptyView()
+                }
+            )
         }
     }
 
@@ -86,6 +113,46 @@ struct MainGroceryListView: View {
             } catch {
                 print("Failed to load grocery lists: \(error)")
             }
+        }
+    }
+
+    private func fetchDietaryPreferences() {
+        Task {
+            if let loggedInUsername = username {
+                DietaryRestrictionsAPI.shared.getDietaryRestrictions(username: loggedInUsername) { result in
+                    switch result {
+                    case .success(let restrictions):
+                        dietaryRestrictions = restrictions // Assign result here
+                    case .failure(let error):
+                        print("Failed to load dietary preferences: \(error.localizedDescription)")
+                        
+                        // If there is an error (e.g., no data), create a new object with defaults
+                        dietaryRestrictions = DietaryRestrictions(
+                            username: loggedInUsername,
+                            lactoseIntolerant: false,
+                            vegetarian: false,
+                            vegan: false,
+                            glutenFree: false,
+                            kosher: false,
+                            dairyFree: false,
+                            nutFree: false
+                        )
+                        print("Loaded default dietary restrictions.")
+                    }
+                }
+            } else {
+                print("Username not found!")
+            }
+        }
+    }
+
+
+    private func navigateToPreferencesScreen() {
+        // Only navigate if dietaryRestrictions is not nil
+        if dietaryRestrictions != nil {
+            navigateToPreferences = true
+        } else {
+            print("Dietary restrictions not available.")
         }
     }
 }
