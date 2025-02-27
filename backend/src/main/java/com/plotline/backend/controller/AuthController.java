@@ -38,6 +38,11 @@ public class AuthController {
     public ResponseEntity<AuthResponse> signUp(@RequestBody SignUpRequest request) {
 
         // if user already exists, return error
+
+        if (authService.googleUser(request.getUsername())) {
+            return ResponseEntity.ok(new AuthResponse(false, null, "Google account for this username exists"));
+        }
+
         if (authService.userExists(request.getUsername())) {
             AuthResponse response = new AuthResponse(false, null, "User already exists");
             return ResponseEntity.ok(response);
