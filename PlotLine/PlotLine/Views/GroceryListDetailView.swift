@@ -164,6 +164,16 @@ struct GroceryListDetailView: View {
                 }
                 .padding(.bottom) // Padding at the bottom
             }
+            
+            // Conditional overlay for the custom square window
+            if isEditPresented {
+                Color.black.opacity(0.5) // Background dimming
+                    .edgesIgnoringSafeArea(.all)
+                            
+                GroceryItemInfoView(item: $selectedItem, onClose: {
+                    isEditPresented = false
+                })
+            }
         }
         .navigationTitle("Grocery List Details")
         .onAppear {
