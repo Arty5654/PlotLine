@@ -24,7 +24,7 @@ public class GroceryListController {
     public ResponseEntity<String> createGroceryList(@RequestBody GroceryList groceryList) {
         try {
             String temp = groceryListService.createGroceryList(groceryList, groceryList.getUsername());
-            return ResponseEntity.ok("Grocery list created successfully with name: " + groceryList.getName() + " and path " + temp);
+            return ResponseEntity.ok(temp);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body("Error: " + e.getMessage());
         } catch (IOException e) {

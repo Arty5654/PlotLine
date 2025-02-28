@@ -110,7 +110,7 @@ public class GroceryListService {
                 .build();
         s3Client.putObject(putObjectRequest, RequestBody.fromBytes(jsonString.getBytes()));
 
-        return s3Key;  // Return the key of the uploaded object (i.e., the S3 file path)
+        return groceryListID;  // Return the key of the uploaded object (i.e., the S3 file path)
     }
 
     // Fetch all grocery lists for a specific user from S3
