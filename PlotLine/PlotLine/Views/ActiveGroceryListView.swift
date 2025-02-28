@@ -14,14 +14,9 @@ struct ActiveGroceryListView: View {
     @State private var showSuccessMessage: Bool = false
     @State private var successMessage: String = ""
     @State private var username: String? = UserDefaults.standard.string(forKey: "loggedInUsername")
-    
-    // New state for programmatically navigating to the grocery list detail view
-    @State private var navigateToDetailView = false
-    @State private var createdGroceryListID: String? = nil  // Store the newly created grocery list ID
-    @State private var createdGroceryListName: String = ""  // Store the name of the created grocery list
-    
-    @State private var navigateToPreferences = false  // Flag to control navigation to preferences view
-    @State private var dietaryRestrictions: DietaryRestrictions? // Store dietary restrictions here
+    @State private var isLoading: Bool = false
+    @State private var navigateToPreferences = false
+    @State private var dietaryRestrictions: DietaryRestrictions?
 
     var body: some View {
         VStack {
@@ -50,9 +45,12 @@ struct ActiveGroceryListView: View {
                 }
             }
             .padding(.top) // Space between the top and buttons
-
-            // If no grocery lists exist, show the message in the center
-            if groceryLists.isEmpty {
+            
+            if isLoading {
+                ProgressView("Loading Active Lists...")
+                    .padding()
+            }
+            else if groceryLists.isEmpty {
                 Spacer()  // Push content to the middle
                 Text("No active grocery lists available.")
                     .font(.title2)
@@ -67,38 +65,25 @@ struct ActiveGroceryListView: View {
                     }
                 }
             }
-
-            // Show success message
-            if showSuccessMessage {
-                Text(successMessage)
-                    .foregroundColor(.green)
-                    .padding()
-            }
         }
         .navigationTitle("Active Grocery Lists")
         .onAppear {
-            fetchGroceryLists()
-            fetchDietaryPreferences() // Fetch dietary preferences when the view appears
+            Task {
+                await fetchGroceryListsAndWait() // Call async function inside Task
+                fetchDietaryPreferences() // This can stay as is if it doesn't need to be awaited
+            }
         }
         .sheet(isPresented: $showingCreateGroceryList) {
             CreateGroceryListView(
                 newGroceryListName: $newGroceryListName,
-                showSuccessMessage: $showSuccessMessage,
-                successMessage: $successMessage,
-                onGroceryListCreated: { newListID in
-                    // After creating a new list, set the ID, name, and trigger navigation
-                    createdGroceryListID = newListID
-                    createdGroceryListName = newGroceryListName
-                    if let validUUID = UUID(uuidString: newListID) {
-                        navigateToDetailView = true
-                        groceryLists.append(GroceryList(id: validUUID, name: newGroceryListName, items: [], username: username ?? ""))
-                    } else {
-                        print("Invalid UUID format for new list ID")
+                onGroceryListCreated: {
+                    // After the list is created, fetch the updated grocery lists
+                    Task {
+                        await fetchGroceryListsAndWait()
                     }
                 }
             )
         }
-
         // Preferences Navigation
         .background(
             NavigationLink(
@@ -112,20 +97,49 @@ struct ActiveGroceryListView: View {
         )
     }
 
-    private func fetchGroceryLists() {
+    // Function to fire off the api to create a new list
+    private func createNewGroceryList() {
+        guard !newGroceryListName.isEmpty else {
+            print("Grocery list name cannot be empty.")
+            return
+        }
+
         Task {
             do {
-                if let loggedInUsername = username {
-                    groceryLists = try await GroceryListAPI.getGroceryLists(username: loggedInUsername)
-                } else {
-                    print("Username not found!")
-                }
+                // Create the new grocery list and get its ID
+                let newID = try await GroceryListAPI.createGroceryList(name: newGroceryListName)
+
+                // Fetch the grocery lists and wait until they are loaded
+                await fetchGroceryListsAndWait()
+
+                showingCreateGroceryList = false
+                newGroceryListName = ""
+
             } catch {
-                print("Failed to load grocery lists: \(error)")
+                print("Failed to create grocery list: \(error)")
             }
         }
     }
 
+    private func fetchGroceryListsAndWait() async {
+        isLoading = true
+
+        do {
+            if let loggedInUsername = username {
+                let lists = try await GroceryListAPI.getGroceryLists(username: loggedInUsername)
+                groceryLists = lists
+//                appState.groceryLists = lists // Update global state (if needed)
+            } else {
+                print("Username not found!")
+            }
+
+            isLoading = false
+        } catch {
+            print("Failed to load grocery lists: \(error)")
+            isLoading = false
+        }
+    }
+    
     private func fetchDietaryPreferences() {
         Task {
             if let loggedInUsername = username {
@@ -163,5 +177,15 @@ struct ActiveGroceryListView: View {
         } else {
             print("Dietary restrictions not available.")
         }
+    }
+    
+    private func getLastCreatedGroceryList(listId: String) -> GroceryList? {
+        print("List ID checking for in getLast: \(listId)")
+        
+        // Find the first grocery list with a matching id
+        let mostRecentList = groceryLists.first { $0.id == UUID(uuidString: listId)}
+        
+        print("from get last: \(mostRecentList)")
+        return mostRecentList
     }
 }
