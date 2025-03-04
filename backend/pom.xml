@@ -126,11 +126,17 @@
             <version>2.16.0</version>  <!-- Ensure same version -->
         </dependency>
     
-      <dependency>
-        <groupId>com.google.api-client</groupId>
-        <artifactId>google-api-client</artifactId>
-        <version>1.30.2</version>
-      </dependency>
+        <dependency>
+            <groupId>com.google.api-client</groupId>
+            <artifactId>google-api-client</artifactId>
+            <version>1.30.2</version>
+        </dependency>
+
+        <dependency>
+            <groupId>com.openai</groupId>
+            <artifactId>openai-java</artifactId>
+            <version>0.30.0</version>
+        </dependency>
       
     </dependencies>
 
