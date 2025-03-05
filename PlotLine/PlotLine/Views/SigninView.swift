@@ -106,6 +106,8 @@ struct SignInView: View {
                 
                 Button(action: {
                     session.isSignin = false
+                    session.loginErrorMessage = nil
+                    session.signupErrorMessage = nil
                 }) {
                     Text("No Account? Sign up now!")
                         .font(.system(size: 14))

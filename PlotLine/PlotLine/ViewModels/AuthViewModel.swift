@@ -113,6 +113,7 @@ class AuthViewModel: ObservableObject {
     func googleSignIn() {
         
         self.signupErrorMessage = nil
+        self.loginErrorMessage = nil
         
         
         // configure google to handle signin
@@ -128,17 +129,20 @@ class AuthViewModel: ObservableObject {
             .flatMap({ $0.windows })
             .first(where: { $0.isKeyWindow })?.rootViewController else {
                 self.signupErrorMessage = "Google Sign-In: Internal Error"
+                self.loginErrorMessage = "Google Sign-In: Internal Error"
                 return
         }
         
         GIDSignIn.sharedInstance.signIn(withPresenting: rootViewController) { result, error in
             if let error = error {
                 self.signupErrorMessage = "Google Sign-In failed: \(error.localizedDescription)"
+                self.loginErrorMessage = "Google Sign-In failed: \(error.localizedDescription)"
                 return
             }
             
             guard let user = result?.user, let idToken = user.idToken?.tokenString else {
                 self.signupErrorMessage = "Google Sign-In: User or ID Token not found"
+                self.loginErrorMessage = "Google Sign-In: User or ID Token not found"
                 return
             }
             
@@ -171,6 +175,7 @@ class AuthViewModel: ObservableObject {
                         }
                     }
                 } catch {
+                    self.loginErrorMessage = "Google Sign-In failed: \(error.localizedDescription)"
                     self.signupErrorMessage = "Google Sign-In failed: \(error.localizedDescription)"
                 }
             }
@@ -299,7 +304,7 @@ class AuthViewModel: ObservableObject {
                 }
                 
             } catch let authError as AuthError {
-                self.verificationErrorMessage = "Incorrect Code!"
+                self.verificationErrorMessage = "Incorrect or expired Code! Click below to a new one if necessary."
             } catch {
                 self.verificationErrorMessage = "An unexpected error occurred. Please try again"
             }

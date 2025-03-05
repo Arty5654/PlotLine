@@ -88,7 +88,6 @@ struct SignUpView: View {
                 .focused($focusedField, equals: .confPassword)
                 .padding(.horizontal)
             
-            //Error in signing up
             if let error = session.signupErrorMessage {
                 Text(error)
                     .foregroundColor(.red)
@@ -97,7 +96,9 @@ struct SignUpView: View {
                     .transition(.opacity)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity, alignment: .center)
+                    .fixedSize(horizontal: false, vertical: true) // Ensures text wraps instead of truncating
             }
+
             
             // Sign Up Button
             Button(action: {
@@ -136,6 +137,8 @@ struct SignUpView: View {
             // TODO make login page
             Button(action: {
                 session.isSignin = true
+                session.loginErrorMessage = nil
+                session.signupErrorMessage = nil
             }) {
                 Text("Have an Account? Log in instead!")
                     .font(.system(size: 14))
