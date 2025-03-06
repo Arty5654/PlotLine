@@ -9,7 +9,6 @@ import SwiftUI
 struct AuthView: View {
     
     @EnvironmentObject var session: AuthViewModel
-    // TODO replace ContentView() with home screen
     
     var body: some View {
         if session.isSignin {

@@ -11,6 +11,9 @@ import Foundation
 
 struct BudgetView: View {
     @State private var selectedTab = "Budgeting" // Toggle between Budgeting & Stocks
+    
+    @EnvironmentObject var viewModel: CalendarViewModel
+
 
     var body: some View {
         NavigationStack {
@@ -39,6 +42,8 @@ struct BudgetView: View {
 // MARK: - Budgeting Section
 struct BudgetSection: View {
     @State private var selectedChartView = "Weekly"
+    
+    @EnvironmentObject var calendarVM: CalendarViewModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 15) {
@@ -65,11 +70,11 @@ struct BudgetSection: View {
             .shadow(radius: 3)
 
             // Navigation Links to IncomeRentView and Other Input Views
-            NavigationLink(destination: IncomeRentView()) {
+            NavigationLink(destination: IncomeRentView().environmentObject(calendarVM)) {
                 BudgetButtonLabel(title: "Input Recurring Income & Rent")
             }
 
-            NavigationLink(destination: WeeklyMonthlyCostView()) {
+            NavigationLink(destination: WeeklyMonthlyCostView().environmentObject(calendarVM)) {
                 BudgetButtonLabel(title: "Input Weekly/Monthly Costs")
             }
 

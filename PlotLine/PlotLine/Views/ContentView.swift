@@ -10,6 +10,7 @@ import SwiftUI
 struct ContentView: View {
     
     @EnvironmentObject var session: AuthViewModel
+    @EnvironmentObject var calendarVM: CalendarViewModel
     
     let username = UserDefaults.standard.string(forKey: "loggedInUsername") ?? "Guest"
     
@@ -37,7 +38,7 @@ struct ContentView: View {
                         .foregroundColor(.white)
                 }
                 
-                NavigationLink(destination: BudgetView()) {
+                NavigationLink(destination: BudgetView().environmentObject(calendarVM)) {
                     Label("Budget", systemImage: "creditcard.fill")
                         .font(.headline)
                         .padding()
@@ -59,6 +60,16 @@ struct ContentView: View {
                 
                 NavigationLink(destination: WeeklyGoalsView()) {
                     Label("Goals", systemImage: "list.bullet.rectangle.fill")
+                        .font(.headline)
+                        .padding()
+                        .frame(maxWidth: .infinity)
+                        .background(Color(.green))
+                        .cornerRadius(8)
+                        .foregroundColor(.white)
+                }
+                
+                NavigationLink(destination: CalendarView().environmentObject(calendarVM)) {
+                    Label("Calendar", systemImage: "calendar")
                         .font(.headline)
                         .padding()
                         .frame(maxWidth: .infinity)
@@ -93,4 +104,5 @@ struct ContentView: View {
 #Preview {
     ContentView()
         .environmentObject(AuthViewModel())
+        .environmentObject(CalendarViewModel())
 }

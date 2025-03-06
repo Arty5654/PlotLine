@@ -12,12 +12,14 @@ import SwiftUI
 struct RootView: View {
     
     @EnvironmentObject var session: AuthViewModel
+    @EnvironmentObject var calendarVM: CalendarViewModel
     // TODO replace ContentView() with home screen
     
     var body: some View {
         if session.isLoggedIn && session.needVerification != true {
             ContentView()
                 .environmentObject(session)
+                .environmentObject(calendarVM)
         } else if (session.needVerification == true) {
             PhoneVerificationView()
                 .environmentObject(session)

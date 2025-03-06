@@ -3,6 +3,7 @@ import SwiftUI
 struct IncomeRentView: View {
     @State private var income: String = ""
     @State private var rent: String = ""
+    @State private var rentDueDate: Date = firstOfNextMonth()
     
     @State private var activeAlert: ActiveAlert? = nil
     
@@ -11,6 +12,8 @@ struct IncomeRentView: View {
     private var username: String {
         return UserDefaults.standard.string(forKey: "loggedInUsername") ?? "UnknownUser"
     }
+    
+    @EnvironmentObject var calendarViewModel: CalendarViewModel
     
     var body: some View {
         VStack(spacing: 20) {
@@ -27,6 +30,8 @@ struct IncomeRentView: View {
                 .keyboardType(.decimalPad)
                 .textFieldStyle(RoundedBorderTextFieldStyle())
                 .padding()
+            
+            DatePicker("Next Rent Due Date", selection: $rentDueDate, displayedComponents: .date)
             
             Button(action: checkRentThreshold) {
                 Text("Save")
@@ -178,13 +183,38 @@ struct IncomeRentView: View {
             
            // print("✅ Data successfully saved!")
             
+            
             DispatchQueue.main.async {
                 // Once saved successfully, show success alert
+                
+                // create rent calendar event
+                calendarViewModel.createEvent(
+                    title: "Rent Payment",
+                    description: "Monthly rent of $\(rent)",
+                    startDate: rentDueDate,
+                    endDate: rentDueDate,
+                    eventType: "rent",
+                    recurrence: "monthly"
+                )
+                
                 self.activeAlert = .success
                 UserDefaults.standard.set(self.income, forKey: "userIncome")
                 UserDefaults.standard.set(self.rent, forKey: "userRent")
             }
         }.resume()
+    }
+    
+    static func firstOfNextMonth() -> Date {
+        let cal = Calendar.current
+        let today = Date()
+        
+        guard let nextMonth = cal.date(byAdding: .month, value: 1, to: today) else {
+            return today
+        }
+        
+        //extract month and year
+        let comps = cal.dateComponents([.year, .month], from: nextMonth)
+        return cal.date(from: DateComponents(year: comps.year, month: comps.month, day: 1)) ?? nextMonth
     }
 }
 
@@ -203,6 +233,8 @@ enum ActiveAlert: Identifiable {
         }
     }
 }
+
+
 
 // MARK: - Response Model
 struct IncomeRentResponse: Codable {
