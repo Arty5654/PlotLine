@@ -26,6 +26,9 @@ struct ProfileView: View {
     @State private var isUploading = false
     @State private var showSuccessModal = false
     
+    @EnvironmentObject var session: AuthViewModel
+    @Environment(\.presentationMode) var presentationMode
+    
     var body: some View {
         
         NavigationView {
@@ -200,6 +203,19 @@ struct ProfileView: View {
                     .cornerRadius(10)
                     
                     Spacer()
+                    
+                    Button(action: {
+                        session.signOut()
+                    }) {
+                        Label("Sign Out", systemImage: "arrow.backward.circle.fill")
+                            .font(.headline)
+                            .padding()
+                            .frame(maxWidth: .infinity)
+                            .background(Color(.red))
+                            .cornerRadius(10)
+                            .foregroundColor(.white)
+                    }
+                    .padding([.horizontal, .bottom])
                 }
                 .padding()
                 .frame(maxWidth: .infinity)
@@ -234,6 +250,14 @@ struct ProfileView: View {
         }
         .sheet(isPresented: $showingImagePicker) {
             ImagePicker(image: $selectedImage)
+        }
+        .fullScreenCover(isPresented: .constant(!session.isLoggedIn)) {
+            AuthView()  // Redirects to AuthView when logged out
+        }
+        .onChange(of: session.isLoggedIn) { isLoggedIn in
+            if !isLoggedIn {
+                presentationMode.wrappedValue.dismiss() // Dismiss ProfileView
+            }
         }
         .sheet(isPresented: $showingChangePasswordSheet) {
                     ChangePasswordModalView(isPresented: $showingChangePasswordSheet)

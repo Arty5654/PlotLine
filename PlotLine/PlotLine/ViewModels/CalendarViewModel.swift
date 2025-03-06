@@ -25,7 +25,7 @@ class CalendarViewModel: ObservableObject {
     
     init() {
         // fetch events right away
-         //Task { await fetchEvents() }
+         Task { await fetchEvents() }
     }
     
     // cal nav
@@ -134,6 +134,7 @@ class CalendarViewModel: ObservableObject {
                 // local append
                 events.append(saved)
                 print("Created new event: \(saved.title)")
+                fetchEvents()
             } catch {
                 print("Error creating event: \(error)")
             }
@@ -154,6 +155,7 @@ class CalendarViewModel: ObservableObject {
                 print("Error updating event: \(error)")
             }
         }
+        fetchEvents()
     }
     
     @MainActor
@@ -169,6 +171,7 @@ class CalendarViewModel: ObservableObject {
                 print("Error deleting event: \(error)")
             }
         }
+        fetchEvents()
     }
     
     @MainActor

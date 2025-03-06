@@ -85,7 +85,7 @@ struct CalendarView: View {
                 }
                 .onAppear {
                     // on first appearance, fetch events
-                    viewModel.fetchEvents()
+                    //viewModel.fetchEvents()
                 }
             }
             .sheet(isPresented: $showingAddEventSheet) {
