@@ -13,6 +13,8 @@ struct ContentView: View {
     @EnvironmentObject var calendarVM: CalendarViewModel
     
     let username = UserDefaults.standard.string(forKey: "loggedInUsername") ?? "Guest"
+    @State private var isProfilePresented = false
+
     
     var body: some View {
         NavigationView {
@@ -74,19 +76,24 @@ struct ContentView: View {
                 }
                 .padding()
             }
-            .ignoresSafeArea(edges: .bottom) // Prevents content from being cut off
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    NavigationLink(destination: ProfileView().environmentObject(session)) {
-                        Image(systemName: "person.circle.fill")
-                            .resizable()
-                            .frame(width: 28, height: 28)
-                            .foregroundColor(.blue)
-                    }
-                }
+            .ignoresSafeArea(edges: .bottom)
+            .navigationBarItems(trailing: profileButton)
+            .sheet(isPresented: $isProfilePresented) {
+                ProfileView().environmentObject(session)
             }
         }
     }
+    
+    private var profileButton: some View {
+            Button(action: {
+                isProfilePresented = true
+            }) {
+                Image(systemName: "person.circle.fill")
+                    .resizable()
+                    .frame(width: 28, height: 28)
+                    .foregroundColor(.blue)
+            }
+        }
 }
 
 
