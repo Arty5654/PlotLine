@@ -13,6 +13,8 @@ import GoogleSignInSwift
 struct PlotLineApp: App {
     
     @StateObject private var session = AuthViewModel()
+    @StateObject var calendarVM = CalendarViewModel()
+    
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     
     var body: some Scene {
@@ -20,6 +22,7 @@ struct PlotLineApp: App {
             NavigationStack {
                 RootView()
                     .environmentObject(session)
+                    .environmentObject(calendarVM)
                     .onOpenURL { url in
                         GIDSignIn.sharedInstance.handle(url)
                     }

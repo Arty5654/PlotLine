@@ -26,6 +26,8 @@ struct WeeklyMonthlyCostView: View {
     @State private var newSubscriptionDueDate: Date = Date()
     @State private var showSubscriptionSaveAlert: Bool = false
     
+    @EnvironmentObject var calendarVM: CalendarViewModel
+    
     private var username: String {
         UserDefaults.standard.string(forKey: "loggedInUsername") ?? "UnknownUser"
     }
@@ -166,7 +168,9 @@ struct WeeklyMonthlyCostView: View {
                     ForEach($subscriptions) { $subscription in
                         HStack {
                             Text(subscription.name)
-                                .frame(width: 100, alignment: .leading)
+                                .frame(width: 80, alignment: .leading)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
                             TextField("Cost ($)", text: $subscription.cost)
                                 .keyboardType(.decimalPad)
                                 .textFieldStyle(RoundedBorderTextFieldStyle())
@@ -431,6 +435,7 @@ struct WeeklyMonthlyCostView: View {
         
         DispatchQueue.main.async {
             self.subscriptions.removeAll { $0.name == subscription.name }
+            calendarVM.deleteEventByType("subscription-\(subscription.name.lowercased())")
         }
         URLSession.shared.dataTask(with: request).resume()
 
@@ -442,6 +447,18 @@ struct WeeklyMonthlyCostView: View {
         var dict = [String: SubscriptionData]()
         for sub in subscriptions {
             dict[sub.name] = SubscriptionData(name: sub.name, cost: sub.cost, dueDate: sub.dueDate)
+            
+            DispatchQueue.main.async {
+                
+                calendarVM.createEvent(
+                    title: "\(sub.name) Subscription",
+                    description: "Monthly cost of $\(sub.cost)",
+                    startDate: sub.dueDate,
+                    endDate: sub.dueDate,
+                    eventType: "subscription-\(sub.name.lowercased())",
+                    recurrence: "monthly"
+                )
+            }
         }
         
         // Then create our 'SubscriptionMapUpload'
@@ -466,6 +483,7 @@ struct WeeklyMonthlyCostView: View {
         URLSession.shared.dataTask(with: request).resume()
         
         DispatchQueue.main.async {
+            
             self.showSubscriptionSaveAlert = true
         }
     }
