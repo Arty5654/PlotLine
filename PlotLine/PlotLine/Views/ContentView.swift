@@ -19,28 +19,22 @@ struct ContentView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack {
-                    Image("PlotLineLogo")
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 150, height: 150) // Adjust size as needed
-                        .padding(.bottom, 0)
+                VStack() {
                     
-                    // Title
-                    Text("PlotLine")
-                        .font(.custom("AvenirNext-Bold", size: 36))
-                        .foregroundColor(Color(.blue))
-                        .padding(.bottom, 10)
-                    
-                    // Today's Events Widget
-                    CalendarWidget()
-                        .environmentObject(calendarVM)
-                        .padding(.horizontal)
-
+                    //logo
+                    logoImage
+                        .padding(.bottom, 20)
                     Spacer()
-
-                    // Main Buttons
-                    VStack(spacing: 15) {
+                    
+                    // widgets
+                    VStack(spacing: 25) {
+                        
+                        // Today's Events Widget
+                        CalendarWidget()
+                            .environmentObject(calendarVM)
+                            .padding(.horizontal)
+                        
+                        
                         NavigationLink(destination: BudgetView().environmentObject(calendarVM)) {
                             Label("Budget", systemImage: "creditcard.fill")
                                 .font(.headline)
@@ -77,7 +71,10 @@ struct ContentView: View {
                 .padding()
             }
             .ignoresSafeArea(edges: .bottom)
-            .navigationBarItems(trailing: profileButton)
+            .navigationBarItems(
+                leading: chatFeedButton,
+                trailing: profileButton
+            )
             .sheet(isPresented: $isProfilePresented) {
                 ProfileView().environmentObject(session)
             }
@@ -94,6 +91,25 @@ struct ContentView: View {
                     .foregroundColor(.blue)
             }
         }
+    
+    private var chatFeedButton: some View {
+        Button(action: {
+            // TODO: create the feed after friend system is implemented (sprint 3)
+        }) {
+            Image(systemName: "bubble.left.and.bubble.right.fill")
+                .resizable()
+                .frame(width: 26, height: 22)
+                .foregroundColor(.blue)
+        }
+    }
+
+    
+    private var logoImage: some View {
+        Image("PlotLineLogo")
+            .resizable()
+            .scaledToFit()
+            .frame(width: 100, height: 100)
+    }
 }
 
 
@@ -144,7 +160,7 @@ struct CalendarWidget: View {
                                 } else if (event.eventType.lowercased().starts(with: "subscription")) {
                                     Text("Billed Today!")
                                         .font(.subheadline)
-                                        .foregroundColor(.yellow)
+                                        .foregroundColor(.orange)
                                         .frame(alignment: .trailing)
                                 } else if (event.startDate != event.endDate) {
                                     Text("Through \(formattedEndDate(event.endDate))")
