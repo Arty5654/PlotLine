@@ -31,7 +31,7 @@ struct ProfileView: View {
     
     var body: some View {
         
-        NavigationView {
+        NavigationStack {
             
             ScrollView {
                 
