@@ -137,6 +137,12 @@ private struct EventRow: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(event.title)
                 .font(.headline)
+                .foregroundColor(
+                    event.eventType == "rent" ? .red : //rent
+                    event.eventType.hasPrefix("subscription") ? .orange : //subscription
+                    event.eventType.hasPrefix("goal") ? .blue : //TODO: goal support
+                    .primary // other
+                )
             
             if !event.description.isEmpty {
                 Text(event.description)

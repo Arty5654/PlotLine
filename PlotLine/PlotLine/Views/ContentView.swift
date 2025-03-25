@@ -72,7 +72,7 @@ struct ContentView: View {
             }
             .ignoresSafeArea(edges: .bottom)
             .navigationBarItems(
-                leading: chatFeedButton,
+                leading: friendPageButton,
                 trailing: profileButton
             )
             .sheet(isPresented: $isProfilePresented) {
@@ -92,13 +92,13 @@ struct ContentView: View {
             }
         }
     
-    private var chatFeedButton: some View {
+    private var friendPageButton: some View {
         Button(action: {
-            // TODO: create the feed after friend system is implemented (sprint 3)
+            // TODO: make friends page
         }) {
-            Image(systemName: "bubble.left.and.bubble.right.fill")
+            Image(systemName: "person.2.fill")
                 .resizable()
-                .frame(width: 26, height: 22)
+                .frame(width: 28, height: 28)
                 .foregroundColor(.blue)
         }
     }
