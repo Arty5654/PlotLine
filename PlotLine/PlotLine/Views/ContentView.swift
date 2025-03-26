@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import Charts
 
 struct ContentView: View {
     
@@ -34,16 +35,22 @@ struct ContentView: View {
                             .environmentObject(calendarVM)
                             .padding(.horizontal)
                         
-                        
+                        // Budget Preview Widget
                         NavigationLink(destination: BudgetView().environmentObject(calendarVM)) {
-                            Label("Budget", systemImage: "creditcard.fill")
-                                .font(.headline)
-                                .padding()
-                                .frame(maxWidth: .infinity)
-                                .background(Color.green)
-                                .cornerRadius(8)
-                                .foregroundColor(.white)
+                            SpendingPreviewWidget()
                         }
+                        .buttonStyle(PlainButtonStyle())
+                        
+                        
+//                        NavigationLink(destination: BudgetView().environmentObject(calendarVM)) {
+//                            Label("Budget", systemImage: "creditcard.fill")
+//                                .font(.headline)
+//                                .padding()
+//                                .frame(maxWidth: .infinity)
+//                                .background(Color.green)
+//                                .cornerRadius(8)
+//                                .foregroundColor(.white)
+//                        }
 
                         NavigationLink(destination: TopGroceryListView()) {
                             Label("Grocery Lists", systemImage: "cart.fill")
@@ -181,12 +188,54 @@ struct CalendarWidget: View {
         }
         .buttonStyle(PlainButtonStyle())
     }
-
-
+    
     private func formattedEndDate(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "MMM dd"
         return formatter.string(from: date)
+    }
+}
+
+struct SpendingPreviewWidget: View {
+    @State private var spendingData: [SpendingEntry] = []
+    let username = UserDefaults.standard.string(forKey: "loggedInUsername") ?? "UnknownUser"
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Weekly Spending Preview")
+                .font(.headline)
+            
+            Chart {
+                ForEach(spendingData, id: \.category) { entry in
+                    BarMark(
+                        x: .value("Category", entry.category),
+                        y: .value("Amount", entry.amount)
+                    )
+                    .foregroundStyle(.blue)
+                }
+            }
+            .frame(height: 120)
+            .onAppear {
+                fetchSpendingData()
+            }
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(12)
+        .shadow(radius: 4)
+    }
+    
+    private func fetchSpendingData() {
+        guard let url = URL(string: "http://localhost:8080/api/costs/\(username)/weekly") else { return }
+        
+        URLSession.shared.dataTask(with: url) { data, _, _ in
+            guard let data = data,
+                  let decoded = try? JSONDecoder().decode(WeeklyMonthlyCostResponse.self, from: data) else { return }
+            
+            DispatchQueue.main.async {
+                self.spendingData = decoded.costs.map { SpendingEntry(category: $0.key, amount: $0.value) }
+            }
+        }.resume()
     }
 }
 
