@@ -18,6 +18,11 @@ struct GroceryListDetailView: View {
     private var totalItems: Int { items.count }
     private var purchasedItems: Int { items.filter { $0.checked }.count }
     
+    // Grocery cost estimates
+    @State private var showGroceryAddedAlert = false
+    @State private var recentlyAddedGroceryAmount: Double? = nil
+    @State private var canUndoGroceryAddition = false
+    
     // Calculate item text based on totalItems
     private var itemText: String {
         return totalItems == 1 ? "Item" : "Items"
@@ -135,6 +140,29 @@ struct GroceryListDetailView: View {
                         }
                     }
                     .navigationBarItems(trailing: EditButton())
+                    // Done shopping button so we can send cost of grocieres to weekly costs
+                    Button("Done Shopping") {
+                        estimateGroceryCostAndUpdateBudget()
+                    }
+                    .padding()
+                    .background(Color.green)
+                    .foregroundColor(.white)
+                    .cornerRadius(10)
+                    .alert(isPresented: $showGroceryAddedAlert) {
+                        Alert(
+                            title: Text("Groceries Added"),
+                            message: Text("Added $\(recentlyAddedGroceryAmount ?? 0, specifier: "%.2f") to Weekly Groceries."),
+                            dismissButton: .default(Text("OK"))
+                        )
+                    }
+                    if canUndoGroceryAddition, let undoAmount = recentlyAddedGroceryAmount {
+                        Button("Undo Grocery Cost (-$\(undoAmount, specifier: "%.2f"))") {
+                            undoGroceryCost(username: UserDefaults.standard.string(forKey: "loggedInUsername") ?? "UnknownUser", amount: undoAmount)
+                        }
+                        .padding(.bottom)
+                        .foregroundColor(.red)
+                    }
+
                 }
             }
 
@@ -338,4 +366,101 @@ struct GroceryListDetailView: View {
             }
         }
     }
+    
+    func estimateGroceryCostAndUpdateBudget() {
+        let username = UserDefaults.standard.string(forKey: "loggedInUsername") ?? "UnknownUser"
+        let location = "Indiana" // Could be fetched from CoreLocation if available
+
+        let groceryItems = items.map { ["name": $0.name, "quantity": $0.quantity] }
+
+        let payload: [String: Any] = [
+            "location": location,
+            "items": groceryItems
+        ]
+
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: payload) else { return }
+
+        var request = URLRequest(url: URL(string: "http://localhost:8080/api/groceryLists/estimate-grocery-cost")!)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = jsonData
+
+        URLSession.shared.dataTask(with: request) { data, _, _ in
+            guard let data = data, let cost = try? JSONDecoder().decode(Double.self, from: data) else { return }
+
+            DispatchQueue.main.async {
+                recentlyAddedGroceryAmount = cost
+                addCostToWeeklyGroceries(username: username, amount: cost)
+            }
+        }.resume()
+    }
+
+    func addCostToWeeklyGroceries(username: String, amount: Double) {
+        // Fetch current weekly costs
+        let getURL = URL(string: "http://localhost:8080/api/costs/\(username)/weekly")!
+        URLSession.shared.dataTask(with: getURL) { data, _, _ in
+            guard let data = data,
+                  var decoded = try? JSONDecoder().decode(WeeklyMonthlyCostResponse.self, from: data) else { return }
+
+            // Add to groceries
+            var current = decoded.costs["Groceries"] ?? 0.0
+            current += amount
+            decoded.costs["Groceries"] = current
+
+            // Re-upload
+            let uploadPayload: [String: Any] = [
+                "username": username,
+                "type": "weekly",
+                "costs": decoded.costs
+            ]
+
+            guard let newJson = try? JSONSerialization.data(withJSONObject: uploadPayload) else { return }
+
+            var uploadRequest = URLRequest(url: URL(string: "http://localhost:8080/api/costs")!)
+            uploadRequest.httpMethod = "POST"
+            uploadRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            uploadRequest.httpBody = newJson
+
+            URLSession.shared.dataTask(with: uploadRequest) { _, _, _ in
+                DispatchQueue.main.async {
+                    showGroceryAddedAlert = true
+                    canUndoGroceryAddition = true
+                }
+            }.resume()
+        }.resume()
+    }
+    
+    func undoGroceryCost(username: String, amount: Double) {
+        let getURL = URL(string: "http://localhost:8080/api/costs/\(username)/weekly")!
+        URLSession.shared.dataTask(with: getURL) { data, _, _ in
+            guard let data = data,
+                  var decoded = try? JSONDecoder().decode(WeeklyMonthlyCostResponse.self, from: data) else { return }
+
+            // Subtract from groceries
+            var current = decoded.costs["Groceries"] ?? 0.0
+            current = max(0.0, current - amount) // prevent negative cost
+            decoded.costs["Groceries"] = current
+
+            let uploadPayload: [String: Any] = [
+                "username": username,
+                "type": "weekly",
+                "costs": decoded.costs
+            ]
+
+            guard let newJson = try? JSONSerialization.data(withJSONObject: uploadPayload) else { return }
+
+            var uploadRequest = URLRequest(url: URL(string: "http://localhost:8080/api/costs")!)
+            uploadRequest.httpMethod = "POST"
+            uploadRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            uploadRequest.httpBody = newJson
+
+            URLSession.shared.dataTask(with: uploadRequest) { _, _, _ in
+                DispatchQueue.main.async {
+                    canUndoGroceryAddition = false
+                    recentlyAddedGroceryAmount = nil
+                }
+            }.resume()
+        }.resume()
+    }
+
 }

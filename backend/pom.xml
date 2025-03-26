@@ -135,7 +135,7 @@
         <dependency>
             <groupId>com.openai</groupId>
             <artifactId>openai-java</artifactId>
-            <version>0.30.0</version>
+            <version>0.37.0</version>
         </dependency>
       
     </dependencies>

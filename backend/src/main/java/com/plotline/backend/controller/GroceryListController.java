@@ -1,13 +1,18 @@
 package com.plotline.backend.controller;
+import com.plotline.backend.service.OpenAIService;
 
 import com.plotline.backend.dto.GroceryItem;
 import com.plotline.backend.dto.GroceryList;
 import com.plotline.backend.service.GroceryListService;
+import com.plotline.backend.dto.GroceryCostEstimateRequest;
 
 import org.apache.http.HttpStatus;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
 
 import java.io.IOException;
 import java.util.List;
@@ -18,6 +23,10 @@ public class GroceryListController {
 
     @Autowired
     private GroceryListService groceryListService;
+
+    @Autowired
+    private OpenAIService openAIService;
+
 
     // Create grocery list
     @PostMapping("/create-grocery-list")
@@ -161,5 +170,28 @@ public class GroceryListController {
             return ResponseEntity.status(HttpStatus.SC_INTERNAL_SERVER_ERROR).body("Failed to restore grocery list: " + e.getMessage());
         }
     }
+
+    // Endpoint to estimate cost of groccery items
+    @PostMapping("/estimate-grocery-cost")
+    public ResponseEntity<Double> estimateGroceryCost(@RequestBody GroceryCostEstimateRequest request) {
+        try {
+            String location = request.getLocation() != null ? request.getLocation() : "United States";
+            StringBuilder sb = new StringBuilder("Estimate the total cost in USD of buying the following groceries in " + location +
+            ". Here are the groceries to get an average cost of with quantities:\n"
+            );
+
+            for (GroceryItem item : request.getItems()) {
+                sb.append(item.getQuantity()).append(" x ").append(item.getName()).append("\n");
+            }
+
+            String response = openAIService.generateResponseGC(sb.toString());
+            Double estimatedCost = Double.parseDouble(response);
+            return ResponseEntity.ok(estimatedCost);
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.SC_INTERNAL_SERVER_ERROR)
+                    .body(-1.0);
+        }
+}
+
 }
 

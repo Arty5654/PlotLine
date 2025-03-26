@@ -4,11 +4,17 @@ package com.plotline.backend.service;
 import com.openai.client.OpenAIClient;
 import com.openai.client.okhttp.OpenAIOkHttpClient;
 import com.openai.errors.OpenAIException;
-import com.openai.models.ChatCompletion;
-import com.openai.models.ChatCompletionCreateParams;
 import com.openai.models.ChatModel;
 
+import com.openai.models.responses.Response;
+import com.openai.models.responses.ResponseCreateParams;
+import com.openai.models.responses.ResponseOutputItem;
+import com.openai.models.responses.ResponseOutputMessage;
+import com.openai.models.responses.ResponseOutputText;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.JsonNode;
 
 import io.github.cdimascio.dotenv.Dotenv;
@@ -22,6 +28,7 @@ import java.util.List;
 public class OpenAIService {
 
   private final OpenAIClient openAIClient;
+  private final ObjectMapper objectMapper = new ObjectMapper();
 
   public OpenAIService() {
 
@@ -51,15 +58,49 @@ public class OpenAIService {
 
       String systemMessage = "You are a helpful assistant. You must ALWAYS respond with a single string of text. If multiple paragraphs are needed, break them up with a single newline character";
 
-      ChatCompletionCreateParams params = ChatCompletionCreateParams.builder()
-        .addSystemMessage(systemMessage)
-        .addUserMessage(userMessage)
+      ResponseCreateParams params = ResponseCreateParams.builder()
+        .input(userMessage)
+        .instructions(systemMessage)
         .model(ChatModel.GPT_4O_MINI)
         .build();
 
-      ChatCompletion chatCompletion = openAIClient.chat().completions().create(params);
+        Response response = openAIClient.responses().create(params);
 
-      return chatCompletion.choices().get(0).message().content().orElse("Service Error");
+        ResponseOutputText rot = response.output().get(0).message().get().content().get(0).asOutputText();
+        String output = rot.text();
+
+      //System.out.println("OpenAI response:\n" + result);
+
+      return output;
+
+    } catch (OpenAIException e) {
+      // error handling and types of errors found in SDK readme
+
+      e.printStackTrace();
+      return "Service Error";
+    }
+
+  }
+
+  // Response for Estimating Groccery Costs
+  public String generateResponseGC(String userMessage) {
+
+    try {
+        String systemMessage = "You are a helpful financial assistant." +
+        "Respond with ONLY a single plain text number rounded to 2 decimals (e.g., 15.75) with no extra characters, punctuation, " +
+        "or JSON formatting. Do not wrap your answer in braces or quotes.";
+        ResponseCreateParams params = ResponseCreateParams.builder()
+            .input(userMessage)
+            .instructions(systemMessage)
+            .model(ChatModel.GPT_4O_MINI)
+            .build();
+
+        Response response = openAIClient.responses().create(params);
+        ResponseOutputText rot = response.output().get(0).message().get().content().get(0).asOutputText();
+        String output = rot.text();
+
+        System.out.println("OpenAI response: " + output);
+        return output;
 
     } catch (OpenAIException e) {
       // error handling and types of errors found in SDK readme
