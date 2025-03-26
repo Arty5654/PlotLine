@@ -81,9 +81,33 @@ class CalendarViewModel: ObservableObject {
             return []
         }
         
-        return events.filter { event in
+        // all events on a given day
+        let allEvents =  events.filter { event in
             event.startDate < dayEnd && event.endDate >= dayStart
         }
+        
+        // sort to show:
+        // 1. rent if it exists
+        // 2. subscriptions
+        // TODO: 3. goals
+        // 4. all others
+        let sortedEvents = allEvents.sorted { a, b in
+            func priority(for event: Event) -> Int {
+                if event.eventType == "rent" {
+                    return 0
+                } else if event.eventType.hasPrefix("subscription") {
+                    return 1
+                } else if event.eventType.hasPrefix("goal"){
+                    return 2
+                } else {
+                    return 3
+                }
+            }
+
+                return priority(for: a) < priority(for: b)
+        }
+
+        return sortedEvents
     }
     
     private func startOfDay(for date: Date) -> Date {
