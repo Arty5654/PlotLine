@@ -282,6 +282,6 @@ struct WeekContent: View {
 
 
 #Preview {
-    CalendarView()
+    CalendarView().environmentObject(CalendarViewModel())
 }
 

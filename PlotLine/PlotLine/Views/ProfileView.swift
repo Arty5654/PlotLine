@@ -224,9 +224,9 @@ struct ProfileView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .principal) {
-                    Text(self.username)  // Customize this title
-                        .font(.custom("AvenirNext-Bold", size: 20))  // Custom Font
-                        .foregroundColor(Color.blue)  // Custom Color
+                    Text(self.username)
+                        .font(.custom("AvenirNext-Bold", size: 20))
+                        .foregroundColor(Color.blue)
                 }
             }
             .navigationBarItems(
@@ -553,6 +553,7 @@ struct ChangePasswordModalView: View {
 struct Profile_preview: PreviewProvider {
     static var previews: some View {
         ProfileView()
+            .environmentObject(AuthViewModel())
     }
 }
 

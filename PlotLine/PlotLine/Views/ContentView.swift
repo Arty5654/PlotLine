@@ -40,6 +40,7 @@ struct ContentView: View {
                             SpendingPreviewWidget()
                         }
                         .buttonStyle(PlainButtonStyle())
+                        .padding(.horizontal)
                         
                         
 //                        NavigationLink(destination: BudgetView().environmentObject(calendarVM)) {
@@ -78,10 +79,13 @@ struct ContentView: View {
                 .padding()
             }
             .ignoresSafeArea(edges: .bottom)
+            
             .navigationBarItems(
                 leading: friendPageButton,
                 trailing: profileButton
             )
+            .navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("My Dashboard")
             .sheet(isPresented: $isProfilePresented) {
                 ProfileView().environmentObject(session)
             }
@@ -105,7 +109,6 @@ struct ContentView: View {
         }) {
             Image(systemName: "person.2.fill")
                 .resizable()
-                .frame(width: 28, height: 28)
                 .foregroundColor(.blue)
         }
     }
