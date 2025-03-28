@@ -18,8 +18,6 @@ public class IncomeController {
     @Autowired
     private S3Service s3Service;
 
-    //private final String BUCKET_NAME = "plotline-income-rent";
-
     @PostMapping
     public ResponseEntity<String> saveIncomeData(@RequestBody IncomeRentRequest request) {
         try {

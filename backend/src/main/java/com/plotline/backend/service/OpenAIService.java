@@ -108,6 +108,36 @@ public class OpenAIService {
       e.printStackTrace();
       return "Service Error";
     }
+  }
+
+    public String generateResponsePortfolio(String userMessage) {
+      try {
+          String systemMessage = """
+          You are a helpful financial assistant. Your job is to build personalized investment portfolios.
+          Always respond with specific investment assets (e.g., stock tickers like AAPL, MSFT, or ETFs like VTI, QQQ, etc.), their percentage allocation, and a short reason for each.
+          Also include how often the user should invest and how much based on their budget.
+          Make sure the total adds to 100%%.
+          """;          
+          //String systemMessage = "You are a helpful financial assistant." + "Your job is to build personalized investment portfolios";
+          ResponseCreateParams params = ResponseCreateParams.builder()
+              .input(userMessage)
+              .instructions(systemMessage)
+              .model(ChatModel.GPT_4O_MINI)
+              .build();
+  
+          Response response = openAIClient.responses().create(params);
+          ResponseOutputText rot = response.output().get(0).message().get().content().get(0).asOutputText();
+          String output = rot.text();
+  
+          System.out.println("OpenAI response: " + output);
+          return output;
+  
+      } catch (OpenAIException e) {
+        // error handling and types of errors found in SDK readme
+  
+        e.printStackTrace();
+        return "Service Error";
+      }
 
   } 
   

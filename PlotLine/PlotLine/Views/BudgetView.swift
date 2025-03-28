@@ -17,7 +17,7 @@ struct BudgetView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 20) {
+            VStack(spacing: 25) {
                 // Toggle Button for Budgeting and Stocks
                 Picker("View", selection: $selectedTab) {
                     Text("Budgeting").tag("Budgeting")
@@ -29,12 +29,13 @@ struct BudgetView: View {
                 if selectedTab == "Budgeting" {
                     BudgetSection()
                 } else {
-                    StockTrackingView()
+                    StockView()
                 }
 
                 Spacer()
             }
             .padding()
+            .navigationBarTitleDisplayMode(.inline)
         }
     }
 }
@@ -258,15 +259,11 @@ struct StockTrackingView: View {
                 .font(.largeTitle)
                 .bold()
                 .padding(.bottom, 10)
-
-            Text("Stock Information Coming Soon...")
-                .font(.headline)
-                .padding()
+                .frame(maxWidth: .infinity, minHeight: 300)
+                .background(Color.green.opacity(0.1))
+                .cornerRadius(15)
+                .shadow(radius: 3)
         }
-        .frame(maxWidth: .infinity, minHeight: 300)
-        .background(Color.green.opacity(0.1))
-        .cornerRadius(15)
-        .shadow(radius: 3)
     }
 }
 
