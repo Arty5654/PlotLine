@@ -16,7 +16,8 @@ struct InvestmentQuizView: View {
     @State private var age = ""
     @State private var quizCompleted = false
     @State private var llmRecommendation: String? = nil
-    
+    @Environment(\.dismiss) var dismiss
+
     private var username: String {
         return UserDefaults.standard.string(forKey: "loggedInUsername") ?? "UnknownUser"
     }
@@ -34,8 +35,8 @@ struct InvestmentQuizView: View {
                         .font(.body)
                         .padding()
 
-                    Button("Save Portfolio") {
-                        savePortfolioToBackend(recommendation)
+                    Button("Back to Stocks Page") {
+                        dismiss()
                     }
                     .buttonStyle(.borderedProminent)
                 }
@@ -79,6 +80,7 @@ struct InvestmentQuizView: View {
             "experience": investingExperience,
             "age": age
         ]
+        print("Username: " + username)
 
         guard let jsonData = try? JSONEncoder().encode(payload) else { return }
 
@@ -89,16 +91,36 @@ struct InvestmentQuizView: View {
 
         do {
             let (data, _) = try await URLSession.shared.data(for: request)
-            llmRecommendation = String(data: data, encoding: .utf8)
+            if let response = String(data: data, encoding: .utf8) {
+                llmRecommendation = response
+                savePortfolioToBackend(response)
+            }
+            
         } catch {
             llmRecommendation = "Error getting portfolio from LLM."
         }
     }
 
     func savePortfolioToBackend(_ recommendation: String) {
-        // TODO: Send `recommendation` and user's risk tolerance to backend
-        print("Portfolio Saved:\n\(recommendation)")
+        let url = URL(string: "http://localhost:8080/api/llm/portfolio/save")!
+        let payload: [String: String] = [
+            "username": username,
+            "portfolio": recommendation,
+            "riskTolerance": riskTolerance
+        ]
+
+        guard let jsonData = try? JSONEncoder().encode(payload) else { return }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = jsonData
+
+        URLSession.shared.dataTask(with: request) { _, _, _ in
+            print("Portfolio saved to backend.")
+        }.resume()
     }
+
 }
 
 
