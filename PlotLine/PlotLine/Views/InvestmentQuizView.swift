@@ -124,6 +124,8 @@ struct InvestmentQuizView: View {
 }
 
 
+
+
 #Preview {
     InvestmentQuizView()
 }
