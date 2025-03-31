@@ -314,7 +314,10 @@ public class S3Service {
 
       // Update the completion status
       List<TaskItem> updatedGoals = goalsData.get("weeklyGoals").stream()
-          .map(task -> task.getId() == taskId ? new TaskItem(task.getId(), task.getName(), isCompleted) : task)
+          .map(task -> task.getId() == taskId
+              ? new TaskItem(task.getId(), task.getName(), isCompleted, task.getPriority())
+              : task)
+
           .toList();
 
       // Save updated goals back to S3
