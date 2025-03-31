@@ -102,12 +102,14 @@ struct InvestmentQuizView: View {
     }
 
     func savePortfolioToBackend(_ recommendation: String) {
-        let url = URL(string: "http://localhost:8080/api/llm/portfolio/save")!
+        let url = URL(string: "http://localhost:8080/api/llm/portfolio/save-original")!
         let payload: [String: String] = [
             "username": username,
             "portfolio": recommendation,
             "riskTolerance": riskTolerance
         ]
+        
+        print("Risk after quiz completion: " + riskTolerance)
 
         guard let jsonData = try? JSONEncoder().encode(payload) else { return }
 

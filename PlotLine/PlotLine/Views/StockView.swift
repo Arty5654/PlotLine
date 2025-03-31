@@ -36,9 +36,13 @@ struct StockView: View {
                     Divider()
                     Text("Your Portfolio Allocation")
                         .font(.headline)
+                    
+                    // Read only
+                    PieChartView(assets: .constant(portfolio.parsedAssets.map {
+                        EditableAsset(name: $0.name, percentage: $0.percentage, amount: $0.amount)
+                    }), editable: false, selectedAssetID: .constant(nil))
+                    .frame(height: 300)
 
-                    PieChartView(assets: portfolio.parsedAssets)
-                        .frame(height: 300)
 
                     Text("Investment Breakdown (\(portfolio.investmentFrequency))")
                         .font(.subheadline)
@@ -53,7 +57,7 @@ struct StockView: View {
                         .padding(.horizontal)
                     }
 
-                    Text("Total: \(portfolio.totalMonthlyAmount)")
+                    Text("Total: \(portfolio.totalMonthlyAmountDouble, specifier: "%.2f")")
                         .bold()
                         .padding(.top, 5)
 
@@ -64,6 +68,34 @@ struct StockView: View {
                             .background(Color(.systemGray6))
                             .cornerRadius(8)
                     }
+                    
+                    if let portfolio = savedPortfolio {
+                        HStack {
+                            NavigationLink(destination:
+                            EditPortfolioView(
+                                assets: portfolio.parsedAssets.map {
+                                    EditableAsset(name: $0.name, percentage: $0.percentage, amount: $0.amount)
+                                },
+                                investmentFrequency: portfolio.investmentFrequency,
+                                totalAmount: Double(portfolio.totalMonthlyAmountDouble)
+                            )
+                            ) {
+                                Text("Edit Portfolio")
+                                    .foregroundColor(.white)
+                                    .padding()
+                                    .background(Color.blue)
+                                    .cornerRadius(8)
+                            }
+
+                            Button("Revert to LLM Portfolio") {
+                                revertToLLMGeneratedPortfolio()
+                            }
+                            .foregroundColor(.red)
+                            .padding()
+                        }
+                    }
+
+
                 }
             }
             .padding()
@@ -71,6 +103,7 @@ struct StockView: View {
         .onAppear {
             fetchSavedPortfolio()
         }
+
     }
 
     func fetchSavedPortfolio() {
@@ -85,10 +118,24 @@ struct StockView: View {
             }
         }.resume()
     }
+    
+    func revertToLLMGeneratedPortfolio() {
+        guard let url = URL(string: "http://localhost:8080/api/llm/portfolio/revert/\(username)") else { return }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+
+        URLSession.shared.dataTask(with: request) { _, _, _ in
+            fetchSavedPortfolio()
+        }.resume()
+    }
+
 }
 
 struct PieChartView: View {
-    let assets: [InvestmentAsset]
+    @Binding var assets: [EditableAsset]
+    var editable: Bool = false
+    @Binding var selectedAssetID: UUID?
 
     var body: some View {
         Chart {
@@ -99,15 +146,29 @@ struct PieChartView: View {
                     angularInset: 1
                 )
                 .foregroundStyle(by: .value("Asset", asset.name))
+                .opacity(selectedAssetID == asset.id ? 1.0 : 0.6)
                 .annotation(position: .overlay) {
                     Text(asset.name)
                         .font(.caption)
                 }
             }
         }
+        .chartOverlay { proxy in
+            GeometryReader { geometry in
+                Rectangle()
+                    .fill(Color.clear)
+                    .contentShape(Rectangle())
+                    .gesture(
+                        TapGesture()
+                            .onEnded { value in
+                                // Optional: add logic to detect tapped sector
+                                print("Pie chart tapped – add logic if needed.")
+                            }
+                    )
+            }
+        }
     }
 }
-
 
 struct SavedPortfolio: Codable {
     let username: String
@@ -143,13 +204,25 @@ struct SavedPortfolio: Codable {
         return "Frequency not found"
     }
 
-    var totalMonthlyAmount: String {
-        if let match = portfolio.range(of: #"\$\d+(,\d{3})*(\.\d+)?/month"#, options: .regularExpression) {
-            return String(portfolio[match])
-        }
-        return "Amount not found"
+//    var totalMonthlyAmount: String {
+//        let pattern = #"(?i)\*\*Total Investment per Month:\*\*\s*\$([\d,]+\.\d{2})"#
+//        if let regex = try? NSRegularExpression(pattern: pattern),
+//           let match = regex.firstMatch(in: portfolio, range: NSRange(portfolio.startIndex..., in: portfolio)),
+//           let range = Range(match.range(at: 1), in: portfolio) {
+//            return "$" + String(portfolio[range])
+//        }
+//        return "Amount not found"
+//    }
+    
+    var totalMonthlyAmountDouble: Double {
+        return parsedAssets.reduce(0.0) { $0 + $1.amount }
     }
+
+
+
 }
+
+
 
 
 struct InvestmentAsset: Identifiable {

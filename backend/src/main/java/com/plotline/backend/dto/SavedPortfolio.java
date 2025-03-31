@@ -2,14 +2,17 @@ package com.plotline.backend.dto;
 
 public class SavedPortfolio {
     private String username;
-    private String portfolio;
+    private String portfolio;           // Current version (may be edited by user)
+    private String originalPortfolio;   // Original LLM-generated portfolio
     private String riskTolerance;
 
+    // Constructors
     public SavedPortfolio() {}
 
-    public SavedPortfolio(String username, String portfolio, String riskTolerance) {
+    public SavedPortfolio(String username, String portfolio, String originalPortfolio, String riskTolerance) {
         this.username = username;
         this.portfolio = portfolio;
+        this.originalPortfolio = originalPortfolio;
         this.riskTolerance = riskTolerance;
     }
 
@@ -20,6 +23,10 @@ public class SavedPortfolio {
 
     public String getPortfolio() {
         return portfolio;
+    }
+
+    public String getOriginalPortfolio() {
+        return originalPortfolio;
     }
 
     public String getRiskTolerance() {
@@ -35,16 +42,11 @@ public class SavedPortfolio {
         this.portfolio = portfolio;
     }
 
-    public void setRiskTolerance(String riskTolerance) {
-        this.riskTolerance = riskTolerance;
+    public void setOriginalPortfolio(String originalPortfolio) {
+        this.originalPortfolio = originalPortfolio;
     }
 
-    @Override
-    public String toString() {
-        return "SavedPortfolio{" +
-                "username='" + username + '\'' +
-                ", portfolio='" + portfolio + '\'' +
-                ", riskTolerance='" + riskTolerance + '\'' +
-                '}';
+    public void setRiskTolerance(String riskTolerance) {
+        this.riskTolerance = riskTolerance;
     }
 }

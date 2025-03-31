@@ -10,33 +10,55 @@ import java.nio.charset.StandardCharsets;
 
 @Service
 public class PortfolioService {
-
-    private final ObjectMapper objectMapper = new ObjectMapper();
-    private final String S3_KEY_TEMPLATE = "users/%s/saved-portfolio.json";
-
     @Autowired
     private S3Service s3Service;
 
-    public void savePortfolio(String username, SavedPortfolio portfolio) {
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
+    private String getOriginalKey(String username) {
+        return "users/" + username + "/original-portfolio.json";
+    }
+    
+    private String getEditedKey(String username) {
+        return "users/" + username + "/edited-portfolio.json";
+    }
+    
+    public void saveOriginalPortfolio(String username, SavedPortfolio portfolio) {
+        saveToS3(getOriginalKey(username), portfolio);
+    }
+    
+    public void saveEditedPortfolio(String username, SavedPortfolio portfolio) {
+        saveToS3(getEditedKey(username), portfolio);
+    }
+    
+    public SavedPortfolio loadOriginalPortfolio(String username) {
+        return loadFromS3(getOriginalKey(username));
+    }
+    
+    public SavedPortfolio loadEditedPortfolio(String username) {
+        return loadFromS3(getEditedKey(username));
+    }
+    
+    private void saveToS3(String key, SavedPortfolio portfolio) {
         try {
-            String jsonData = objectMapper.writeValueAsString(portfolio);
-            ByteArrayInputStream inputStream = new ByteArrayInputStream(jsonData.getBytes(StandardCharsets.UTF_8));
-            String key = String.format(S3_KEY_TEMPLATE, username);
-            s3Service.uploadFile(key, inputStream, jsonData.length());
+            String json = objectMapper.writeValueAsString(portfolio);
+            byte[] jsonBytes = json.getBytes(StandardCharsets.UTF_8);
+            ByteArrayInputStream stream = new ByteArrayInputStream(jsonBytes);
+            s3Service.uploadFile(key, stream, jsonBytes.length);
         } catch (Exception e) {
-            throw new RuntimeException("Error saving portfolio to S3", e);
+            throw new RuntimeException("Failed to save portfolio", e);
         }
     }
-
-    public SavedPortfolio loadPortfolio(String username) {
+    
+    
+    private SavedPortfolio loadFromS3(String key) {
         try {
-            String key = String.format(S3_KEY_TEMPLATE, username);
-            byte[] fileData = s3Service.downloadFile(key);
-            String jsonData = new String(fileData, StandardCharsets.UTF_8);
-            return objectMapper.readValue(jsonData, SavedPortfolio.class);
+            byte[] data = s3Service.downloadFile(key);
+            String json = new String(data, StandardCharsets.UTF_8);
+            return new ObjectMapper().readValue(json, SavedPortfolio.class);
         } catch (Exception e) {
-            System.out.println("Portfolio not found for user: " + username);
+            System.out.println("Could not load from " + key + ": " + e.getMessage());
             return null;
         }
     }
-}
+}    

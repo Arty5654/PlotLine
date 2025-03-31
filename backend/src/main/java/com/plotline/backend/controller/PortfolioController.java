@@ -12,10 +12,13 @@ import org.springframework.web.bind.annotation.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.JsonNode;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @RestController
 @RequestMapping("/api/llm")
@@ -84,6 +87,13 @@ public class PortfolioController {
             );
 
             String response = openAIService.generateResponsePortfolio(prompt);
+
+            // Automatically save original portfolio
+            // SavedPortfolio original = new SavedPortfolio();
+            // original.setUsername(username);
+            // original.setPortfolio(response);
+            // original.setRiskTolerance(quizData.get("riskTolerance"));
+            // portfolioService.saveOriginalPortfolio(username, original);            
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
@@ -92,22 +102,54 @@ public class PortfolioController {
         }
     }
 
-
-    @PostMapping("/portfolio/save")
-    public ResponseEntity<String> savePortfolio(@RequestBody SavedPortfolio portfolio) {
-        portfolioService.savePortfolio(portfolio.getUsername(), portfolio);
-        return ResponseEntity.ok("Saved");
-    }
-
-    @GetMapping("/portfolio/{username}")
-    public ResponseEntity<SavedPortfolio> getSavedPortfolio(@PathVariable String username) {
-        SavedPortfolio portfolio = portfolioService.loadPortfolio(username);
-        if (portfolio != null) {
-            return ResponseEntity.ok(portfolio);
-        } else {
-            return ResponseEntity.notFound().build();
+    @PostMapping("/portfolio/save-original")
+    public ResponseEntity<String> saveOriginalPortfolio(@RequestBody SavedPortfolio portfolio) {
+        try {
+            portfolioService.saveOriginalPortfolio(portfolio.getUsername(), portfolio);
+            return ResponseEntity.ok("Original portfolio saved");
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body("Failed to save original portfolio: " + e.getMessage());
         }
     }
 
+
+
+    @PostMapping("/portfolio/save")
+    public ResponseEntity<String> saveEditedPortfolio(@RequestBody SavedPortfolio newPortfolio) {
+        try {
+            portfolioService.saveEditedPortfolio(newPortfolio.getUsername(), newPortfolio);
+            return ResponseEntity.ok("Edited portfolio saved.");
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.status(500).body("Failed to save edited portfolio.");
+        }
+    }
+
+    @GetMapping("/portfolio/{username}")
+    public ResponseEntity<SavedPortfolio> getPortfolio(@PathVariable String username) {
+        SavedPortfolio edited = portfolioService.loadEditedPortfolio(username);
+        
+        if (edited != null) {
+            return ResponseEntity.ok(edited);
+        } else {
+            // Fallback to original if edited doesn't exist
+            SavedPortfolio original = portfolioService.loadOriginalPortfolio(username);
+            if (original != null) {
+                return ResponseEntity.ok(original);
+            }
+        }
+    
+        return ResponseEntity.notFound().build();
+    }    
+
+    @PostMapping("/portfolio/revert/{username}")
+    public ResponseEntity<String> revertToOriginal(@PathVariable String username) {
+        SavedPortfolio original = portfolioService.loadOriginalPortfolio(username);
+        if (original == null) {
+            return ResponseEntity.status(404).body("Original portfolio not found");
+        }
+        portfolioService.saveEditedPortfolio(username, original);
+        return ResponseEntity.ok("Reverted to original portfolio");
+    }
 }
 
