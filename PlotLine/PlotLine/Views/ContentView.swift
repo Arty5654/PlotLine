@@ -12,9 +12,11 @@ struct ContentView: View {
     
     @EnvironmentObject var session: AuthViewModel
     @EnvironmentObject var calendarVM: CalendarViewModel
+    @EnvironmentObject var friendsVM: FriendsViewModel
     
     let username = UserDefaults.standard.string(forKey: "loggedInUsername") ?? "Guest"
     @State private var isProfilePresented = false
+    @State private var isFriendsPresented = false
 
     
     var body: some View {
@@ -89,6 +91,12 @@ struct ContentView: View {
             .sheet(isPresented: $isProfilePresented) {
                 ProfileView().environmentObject(session)
             }
+            .sheet(isPresented: $isFriendsPresented) {
+                FriendsView().environmentObject(friendsVM)
+            }
+        }
+        .task {
+            calendarVM.fetchEvents()
         }
     }
     
@@ -105,7 +113,7 @@ struct ContentView: View {
     
     private var friendPageButton: some View {
         Button(action: {
-            // TODO: make friends page
+            isFriendsPresented = true
         }) {
             Image(systemName: "person.2.fill")
                 .resizable()

@@ -18,3 +18,7 @@ struct FriendList: Codable {
     let friends: [String]
 }
 
+struct RequestList: Codable {
+    let username: String
+    let pendingRequests: [String]
+}
