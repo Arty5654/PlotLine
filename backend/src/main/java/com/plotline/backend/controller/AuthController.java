@@ -212,5 +212,14 @@ public class AuthController {
         }
     }
 
+    @GetMapping("/user-exists")
+    public ResponseEntity<Boolean> userExists(@RequestParam String username) {
+        if (authService.userExists(username)) {
+            return ResponseEntity.ok(true);
+        } else {
+            return ResponseEntity.ok(false);
+        }
+    }
+
         
 }
