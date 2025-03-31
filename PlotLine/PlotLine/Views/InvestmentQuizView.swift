@@ -7,8 +7,6 @@
 
 import SwiftUI
 
-import SwiftUI
-
 struct InvestmentQuizView: View {
     @State private var goals = ""
     @State private var riskTolerance = ""
@@ -48,28 +46,48 @@ struct InvestmentQuizView: View {
             } else {
                 Form {
                     Section(header: Text("Investment Goals")) {
-                        TextField("e.g., Retirement, Wealth Growth", text: $goals)
+                        Picker("Goal", selection: $goals) {
+                            Text("Retirement").tag("Retirement")
+                            Text("Wealth Growth").tag("Wealth Growth")
+                            Text("Education").tag("Education")
+                            Text("Buying a Home").tag("Buying a Home")
+                        }
+                        .pickerStyle(.inline)
                     }
+
                     Section(header: Text("Risk Tolerance")) {
-                        TextField("e.g., Low, Medium, High", text: $riskTolerance)
+                        Picker("Risk Tolerance", selection: $riskTolerance) {
+                            Text("Low").tag("Low")
+                            Text("Medium").tag("Medium")
+                            Text("High").tag("High")
+                        }
+                        .pickerStyle(.segmented)
                     }
+
                     Section(header: Text("Investing Experience")) {
-                        TextField("e.g., Beginner, Intermediate, Advanced", text: $investingExperience)
+                        Picker("Experience", selection: $investingExperience) {
+                            Text("Beginner").tag("Beginner")
+                            Text("Intermediate").tag("Intermediate")
+                            Text("Advanced").tag("Advanced")
+                        }
+                        .pickerStyle(.inline)
                     }
-                    
+
                     Section(header: Text("Age")) {
-                        TextField("Input age", text: $age)
+                        TextField("Enter your age", text: $age)
+                            .keyboardType(.numberPad)
                     }
 
                     Button("Submit Quiz") {
                         quizCompleted = true
                     }
+                    .disabled(goals.isEmpty || riskTolerance.isEmpty || investingExperience.isEmpty || age.isEmpty)
                 }
             }
         }
         .padding()
         .navigationTitle("Investor Quiz")
-    }
+}
 
     func generatePortfolioFromLLM() async {
         let url = URL(string: "http://localhost:8080/api/llm/portfolio")!

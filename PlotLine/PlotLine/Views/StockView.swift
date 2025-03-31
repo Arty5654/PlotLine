@@ -204,7 +204,7 @@ struct SavedPortfolio: Codable {
         if let match = portfolio.range(of: #"(?i)Invest.*?(Monthly|Weekly|Annually)"#, options: .regularExpression) {
             return String(portfolio[match])
         }
-        return "Frequency not found"
+        return "Monthly"
     }
 
 //    var totalMonthlyAmount: String {

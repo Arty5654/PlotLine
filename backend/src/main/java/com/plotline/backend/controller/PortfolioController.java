@@ -93,7 +93,11 @@ public class PortfolioController {
             // original.setUsername(username);
             // original.setPortfolio(response);
             // original.setRiskTolerance(quizData.get("riskTolerance"));
-            // portfolioService.saveOriginalPortfolio(username, original);            
+            // portfolioService.saveOriginalPortfolio(username, original);
+            
+            // Clean up old edited portfolio
+            portfolioService.deleteEditedPortfolio(username);
+
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
@@ -149,19 +153,31 @@ public class PortfolioController {
             return ResponseEntity.status(404).body("Original portfolio not found");
         }
         portfolioService.saveEditedPortfolio(username, original);
+        // Clean up old edited portfolio
+        //portfolioService.deleteEditedPortfolio(username);
         return ResponseEntity.ok("Reverted to original portfolio");
     }
 
     // For Stock News
     @GetMapping("/portfolio/risk/{username}")
     public ResponseEntity<String> getRiskTolerance(@PathVariable String username) {
+        // Try to load the edited portfolio first
         SavedPortfolio portfolio = portfolioService.loadEditedPortfolio(username);
+    
+        // If no edited portfolio or risk is invalid, try to load the original
         if (portfolio == null || portfolio.getRiskTolerance() == null || portfolio.getRiskTolerance().equalsIgnoreCase("Edited")) {
-            return ResponseEntity.ok("Medium");
+            portfolio = portfolioService.loadOriginalPortfolio(username);
+    
+            // If still null or invalid, return default
+            if (portfolio == null || portfolio.getRiskTolerance() == null) {
+                return ResponseEntity.ok("Medium");
+            }
         }
+    
         System.out.println("RISK FOR NEWS: " + portfolio.getRiskTolerance());
         return ResponseEntity.ok(portfolio.getRiskTolerance());
     }
+    
 
 }
 

@@ -21,30 +21,46 @@ struct StockNewsView: View {
 
 
     var body: some View {
-        VStack(alignment: .leading) {
-            Text("Trending News (\(riskTolerance) Risk)")
-                .font(.headline)
-                .padding(.bottom, 5)
-
-            if articles.isEmpty {
-                ProgressView("Loading news...")
-            } else {
-                ForEach(articles, id: \.title) { article in
-                    Link(destination: URL(string: article.url)!) {
-                        VStack(alignment: .leading, spacing: 5) {
-                            Text(article.title).font(.subheadline).bold()
-                            Text(article.description ?? "").font(.caption)
+        NavigationStack {
+            List(articles, id: \.title) { article in
+                Link(destination: URL(string: article.url)!) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(article.title)
+                            .font(.headline)
+                            .foregroundColor(.primary)
+                            .multilineTextAlignment(.leading)
+                        
+                        if let desc = article.description {
+                            Text(desc)
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                                .lineLimit(3)
                         }
-                        .padding(.vertical, 8)
+
+                        HStack {
+                            Spacer()
+                            Text("Read more →")
+                                .font(.caption)
+                                .foregroundColor(.blue)
+                        }
                     }
+                    .padding(.vertical, 8)
                 }
             }
-        }
-        .padding()
-        .onAppear {
-            fetchRiskAndNews()
+            .listStyle(PlainListStyle())
+            .navigationTitle("Market News")
+            .overlay {
+                if articles.isEmpty {
+                    ProgressView("Loading news...")
+                        .padding()
+                }
+            }
+            .onAppear {
+                fetchRiskAndNews()
+            }
         }
     }
+
 
     func fetchRiskAndNews() {
         guard let url = URL(string: "http://localhost:8080/api/llm/portfolio/risk/\(username)") else { return }
