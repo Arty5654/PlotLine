@@ -10,6 +10,11 @@ import Charts
 
 struct StockView: View {
     @State private var savedPortfolio: SavedPortfolio? = nil
+    
+    // For watchlists
+    @State private var watchlist: [String] = []
+    @State private var newSymbol: String = ""
+
 
     private var username: String {
         return UserDefaults.standard.string(forKey: "loggedInUsername") ?? "UnknownUser"
@@ -18,9 +23,6 @@ struct StockView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
-                Text("Investing Tools")
-                    .font(.largeTitle)
-                    .bold()
 
                 NavigationLink(destination: InvestmentQuizView()) {
                     Label("Take Investing Quiz", systemImage: "questionmark.circle.fill")
@@ -93,6 +95,8 @@ struct StockView: View {
                             .foregroundColor(.red)
                             .padding()
                         }
+                        Text("Disclaimer: The information provided is NOT financial advice. We are not financial advisers, accountants or the like.")
+                            .font(.system(size: 10))
                     }
 
 
@@ -129,7 +133,6 @@ struct StockView: View {
             fetchSavedPortfolio()
         }.resume()
     }
-
 }
 
 struct PieChartView: View {

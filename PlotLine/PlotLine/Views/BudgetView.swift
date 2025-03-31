@@ -17,7 +17,7 @@ struct BudgetView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 25) {
+            VStack(spacing: 0) {
                 // Toggle Button for Budgeting and Stocks
                 Picker("View", selection: $selectedTab) {
                     Text("Budgeting").tag("Budgeting")
@@ -26,15 +26,22 @@ struct BudgetView: View {
                 .pickerStyle(SegmentedPickerStyle())
                 .padding()
 
-                if selectedTab == "Budgeting" {
-                    BudgetSection()
-                } else {
-                    StockView()
-                }
+                Divider()
 
-                Spacer()
+                // Toggle between views
+                Group {
+                    if selectedTab == "Budgeting" {
+                        ScrollView {
+                            BudgetSection()
+                                .environmentObject(viewModel)
+                        }
+                    } else {
+                        InvestmentHomeView()
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .padding()
+            .navigationTitle("Dashboard")
             .navigationBarTitleDisplayMode(.inline)
         }
     }
