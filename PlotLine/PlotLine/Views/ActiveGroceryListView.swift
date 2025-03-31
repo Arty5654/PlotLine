@@ -46,11 +46,11 @@ struct ActiveGroceryListView: View {
             }
             .padding(.top) // Space between the top and buttons
             
-            if isLoading {
+            /*if isLoading {
                 ProgressView("Loading Active Lists...")
                     .padding()
             }
-            else if groceryLists.isEmpty {
+            else*/ if groceryLists.isEmpty {
                 Spacer()  // Push content to the middle
                 Text("No active grocery lists available.")
                     .font(.title2)
