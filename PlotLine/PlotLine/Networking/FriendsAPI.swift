@@ -1,0 +1,113 @@
+//
+//  FriendsAPI.swift
+//  PlotLine
+//
+//  Created by Alex Younkers on 3/27/25.
+//
+
+import Foundation
+import SwiftUI
+
+struct FriendsAPI {
+    static let baseURL = "http://localhost:8080"
+    
+    static func createOrUpdateFriendRequest(senderUsername: String, receiverUsername: String, status: String) async throws -> String {
+        
+        guard let url = URL(string: "\(baseURL)/friends/request") else {
+            throw URLError(.badURL)
+        }
+        
+        let requestBody = FriendRequest(senderUsername: senderUsername, receiverUsername: receiverUsername, status: status)
+        
+        let jsonData: Data
+        do {
+            jsonData = try JSONEncoder().encode(requestBody)
+        } catch {
+            throw error
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "PUT"
+        request.httpBody = jsonData
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            
+            guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
+                throw AuthError.serverError
+            }
+            
+            let responseString = String(data: data, encoding: .utf8) ?? "Successfully Sent Friend Request"
+            return responseString
+            
+        } catch {
+            throw error
+        }
+    }
+    
+    static func fetchFriendList(username: String) async throws -> FriendList {
+        guard let url = URL(string: "\(baseURL)/friends/get-friends?username=\(username)") else {
+            throw URLError(.badURL)
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
+                throw AuthError.serverError
+            }
+
+            let fetchedList = try JSONDecoder().decode(FriendList.self, from: data)
+            return fetchedList
+        } catch {
+            throw error // Handle networking or decoding errors
+        }
+    }
+    
+    static func fetchFriendRequests(username: String) async throws -> RequestList {
+        guard let url = URL(string: "\(baseURL)/friends/get-friend-requests?username=\(username)") else {
+            throw URLError(.badURL)
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
+                throw AuthError.serverError
+            }
+
+            let fetchedList = try JSONDecoder().decode(RequestList.self, from: data)
+            return fetchedList
+        } catch {
+            throw error // Handle networking or decoding errors
+        }
+    }
+    
+    static func userExists(username: String) async throws -> Bool {
+        guard let url = URL(string: "\(baseURL)/auth/user-exists?username=\(username)") else {
+            throw URLError(.badURL)
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
+            throw AuthError.serverError
+        }
+        
+        // Decode the Boolean from the response
+        let exists = try JSONDecoder().decode(Bool.self, from: data)
+        return exists
+    }
+    
+    
+}

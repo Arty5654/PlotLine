@@ -14,6 +14,7 @@ struct PlotLineApp: App {
     
     @StateObject private var session = AuthViewModel()
     @StateObject var calendarVM = CalendarViewModel()
+    @StateObject var friendsVM = FriendsViewModel()
     
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     
@@ -23,6 +24,7 @@ struct PlotLineApp: App {
                 RootView()
                     .environmentObject(session)
                     .environmentObject(calendarVM)
+                    .environmentObject(friendsVM)
                     .onOpenURL { url in
                         GIDSignIn.sharedInstance.handle(url)
                     }
