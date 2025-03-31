@@ -19,14 +19,13 @@ struct InvestmentHomeView: View {
                 .tabItem {
                     Label("Watchlist", systemImage: "eye.fill")
                 }
+            StockNewsView()
+                .tabItem {
+                    Label("Stock News", systemImage: "newspaper.fill")
+                }
         }
     }
 }
-
-#Preview {
-    InvestmentHomeView()
-}
-
 
 #Preview {
     InvestmentHomeView()

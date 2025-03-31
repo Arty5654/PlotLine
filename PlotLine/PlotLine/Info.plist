@@ -17,5 +17,7 @@
 	<string>$(GID_CLIENT_ID)</string>
 	<key>GIDServerClientID</key>
 	<string>$(GID_SERVER_CLIENT_ID)</string>
+    <key>NewsAPIKey</key>
+    <string>$(NEWS_KEY)</string>
 </dict>
 </plist>

@@ -151,5 +151,17 @@ public class PortfolioController {
         portfolioService.saveEditedPortfolio(username, original);
         return ResponseEntity.ok("Reverted to original portfolio");
     }
+
+    // For Stock News
+    @GetMapping("/portfolio/risk/{username}")
+    public ResponseEntity<String> getRiskTolerance(@PathVariable String username) {
+        SavedPortfolio portfolio = portfolioService.loadEditedPortfolio(username);
+        if (portfolio == null || portfolio.getRiskTolerance() == null || portfolio.getRiskTolerance().equalsIgnoreCase("Edited")) {
+            return ResponseEntity.ok("Medium");
+        }
+        System.out.println("RISK FOR NEWS: " + portfolio.getRiskTolerance());
+        return ResponseEntity.ok(portfolio.getRiskTolerance());
+    }
+
 }
 
