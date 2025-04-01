@@ -15,6 +15,10 @@ struct InvestmentQuizView: View {
     @State private var quizCompleted = false
     @State private var llmRecommendation: String? = nil
     @Environment(\.dismiss) var dismiss
+    
+    // Sometimes pie chart wont refresh
+    var onFinish: (() -> Void)? = nil
+
 
     private var username: String {
         return UserDefaults.standard.string(forKey: "loggedInUsername") ?? "UnknownUser"
@@ -34,6 +38,7 @@ struct InvestmentQuizView: View {
                         .padding()
 
                     Button("Back to Stocks Page") {
+                        //onFinish?()
                         dismiss()
                     }
                     .buttonStyle(.borderedProminent)
@@ -138,7 +143,12 @@ struct InvestmentQuizView: View {
 
         URLSession.shared.dataTask(with: request) { _, _, _ in
             print("Portfolio saved to backend.")
+            
+//            DispatchQueue.main.async {
+//                onFinish?()
+//            }
         }.resume()
+
     }
 
 }

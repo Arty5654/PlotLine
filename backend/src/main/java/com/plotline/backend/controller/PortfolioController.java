@@ -132,6 +132,7 @@ public class PortfolioController {
     @GetMapping("/portfolio/{username}")
     public ResponseEntity<SavedPortfolio> getPortfolio(@PathVariable String username) {
         SavedPortfolio edited = portfolioService.loadEditedPortfolio(username);
+        System.out.println("Edited: " + edited);
         
         if (edited != null) {
             return ResponseEntity.ok(edited);
@@ -139,6 +140,7 @@ public class PortfolioController {
             // Fallback to original if edited doesn't exist
             SavedPortfolio original = portfolioService.loadOriginalPortfolio(username);
             if (original != null) {
+                System.out.println("Here??");
                 return ResponseEntity.ok(original);
             }
         }
@@ -154,7 +156,7 @@ public class PortfolioController {
         }
         portfolioService.saveEditedPortfolio(username, original);
         // Clean up old edited portfolio
-        //portfolioService.deleteEditedPortfolio(username);
+        portfolioService.deleteEditedPortfolio(username);
         return ResponseEntity.ok("Reverted to original portfolio");
     }
 

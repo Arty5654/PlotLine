@@ -111,6 +111,7 @@ struct StockView: View {
     }
 
     func fetchSavedPortfolio() {
+        print("Fetching portfolio for: \(username)")
         guard let url = URL(string: "http://localhost:8080/api/llm/portfolio/\(username)") else { return }
 
         URLSession.shared.dataTask(with: url) { data, _, _ in

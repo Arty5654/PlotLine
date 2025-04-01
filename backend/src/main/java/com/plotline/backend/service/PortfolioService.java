@@ -54,18 +54,23 @@ public class PortfolioService {
     private SavedPortfolio loadFromS3(String key) {
         try {
             byte[] data = s3Service.downloadFile(key);
+            if (data == null || data.length == 0) {
+                System.out.println("Empty file or data for key: " + key);
+                return null;
+            }
             String json = new String(data, StandardCharsets.UTF_8);
-            return new ObjectMapper().readValue(json, SavedPortfolio.class);
+            return objectMapper.readValue(json, SavedPortfolio.class);
         } catch (Exception e) {
             System.out.println("Could not load from " + key + ": " + e.getMessage());
             return null;
         }
     }
+    
 
     public void deleteEditedPortfolio(String username) {
         try {
             s3Service.deleteFile(getEditedKey(username));
-            System.out.println("🧹 Deleted edited portfolio for: " + username);
+            System.out.println("Deleted edited portfolio for: " + username);
         } catch (Exception e) {
             System.out.println("⚠️ Failed to delete edited portfolio: " + e.getMessage());
         }
