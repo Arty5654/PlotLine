@@ -8,11 +8,19 @@
 import SwiftUI
 
 struct WeeklyGoalsView: View {
+    // Weekly goals state variables
     @State private var tasks: [TaskItem] = []
     @State private var newTask: String = ""
     @State private var newTaskPriority: Priority = .medium
     @State private var selectedPriorityFilter: Priority? = nil
     @State private var selectedView: GoalViewType = .weekly
+    
+    // Long-term goals state variables
+    @State private var longTermGoals: [LongTermGoal] = []
+    @State private var newLongTermTitle: String = ""
+    @State private var newStep: String = ""
+    @State private var newLongTermSteps: [String] = []
+
 
 
     
@@ -51,6 +59,7 @@ struct WeeklyGoalsView: View {
                 }
                 .padding(.horizontal)
                 
+                // Weekly View
                 if selectedView == .weekly {
                     Picker("Priority Filter", selection: $selectedPriorityFilter) {
                         Text("All").tag(nil as Priority?)
@@ -204,19 +213,127 @@ struct WeeklyGoalsView: View {
                             .padding()
                     }
                     
+                // Long Term View
                 } else {
-                    // Long Term Goals Placeholder
-                        Spacer()
-                        Text("No long-term goals yet")
-                            .foregroundColor(.gray)
-                            .font(.subheadline)
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 24) {
+                            // Creation Section
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text("Create a Long-Term Goal")
+                                    .font(.headline)
+
+                                TextField("Enter goal title", text: $newLongTermTitle)
+                                    .textFieldStyle(RoundedBorderTextFieldStyle())
+
+                                HStack {
+                                    TextField("Enter a step", text: $newStep)
+                                        .textFieldStyle(RoundedBorderTextFieldStyle())
+
+                                    Button(action: {
+                                        guard !newStep.isEmpty else { return }
+                                        newLongTermSteps.append(newStep)
+                                        newStep = ""
+                                    }) {
+                                        Image(systemName: "plus.circle.fill")
+                                            .font(.title2)
+                                            .foregroundColor(.blue)
+                                    }
+                                }
+
+                                if !newLongTermSteps.isEmpty {
+                                    Text("Steps:")
+                                        .font(.subheadline)
+                                        .bold()
+
+                                    ForEach(newLongTermSteps, id: \.self) { step in
+                                        Text("• \(step)")
+                                    }
+                                }
+
+                                Button(action: addLongTermGoal) {
+                                    Text("Save Goal")
+                                        .font(.headline)
+                                        .foregroundColor(.white)
+                                        .padding()
+                                        .frame(maxWidth: .infinity)
+                                        .background(Color.green)
+                                        .cornerRadius(10)
+                                }
+
+                            }
                             .padding()
-                        Spacer()
-                }
+                            .background(Color(.systemGray6))
+                            .cornerRadius(12)
+                            .padding(.horizontal)
+
+                            // Display Section
+                            if !longTermGoals.isEmpty {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    ForEach(longTermGoals) { goal in
+                                        VStack(alignment: .leading, spacing: 6) {
+                                            Text(goal.title)
+                                                .font(.title3)
+                                                .bold()
+
+                                            // Step List
+                                            ForEach(goal.steps) { step in
+                                                HStack {
+                                                    Text(step.name)
+                                                        .strikethrough(step.isCompleted)
+                                                        .foregroundColor(step.isCompleted ? .gray : .primary)
+
+                                                    Spacer()
+
+                                                    Button(action: {
+                                                        toggleLongStepCompletion(goalId: goal.id, stepId: step.id)
+                                                    }) {
+                                                        Image(systemName: step.isCompleted ? "checkmark.circle.fill" : "circle")
+                                                            .foregroundColor(step.isCompleted ? .green : .gray)
+                                                            .font(.title2)
+                                                    }
+                                                }
+                                            }
+
+                                            // Progress Bar
+                                            let completedSteps = goal.steps.filter { $0.isCompleted }.count
+                                            let totalSteps = goal.steps.count
+                                            let progress = totalSteps > 0 ? Double(completedSteps) / Double(totalSteps) : 0
+
+                                            ProgressView(value: progress)
+                                                .accentColor(.green)
+                                                .padding(.top, 4)
+
+                                            Text("\(Int(progress * 100))% completed")
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
+
+                                            Divider() // Divider between goals
+                                        }
+                                        .padding(.top, 8)
+                                    }
+
+                                }
+                                .padding(.horizontal)
+                            }
+                        }
+                    }
+                } // end else
                     
-            }.onAppear(perform: fetchGoals) // Fetch goals when the view appears
+            }.onAppear {
+                fetchGoals()
+                fetchLongTermGoals()
+            }
         }
     }
+    
+    private func toggleStepCompletion(goalId: UUID, stepId: UUID) {
+        if let goalIndex = longTermGoals.firstIndex(where: { $0.id == goalId }) {
+            if let stepIndex = longTermGoals[goalIndex].steps.firstIndex(where: { $0.id == stepId }) {
+                longTermGoals[goalIndex].steps[stepIndex].isCompleted.toggle()
+            }
+        }
+    }
+
     
     private func deleteTaskById(_ id: Int) {
         guard let index = tasks.firstIndex(where: { $0.id == id }) else { return }
@@ -441,7 +558,130 @@ struct WeeklyGoalsView: View {
         }.resume()
     }
     
+    private func fetchLongTermGoals() {
+        guard username != "Guest",
+              let url = URL(string: "http://localhost:8080/api/goals/\(username)/long-term") else {
+            print("⚠️ Invalid username or URL")
+            return
+        }
+
+        print("📡 Fetching long-term goals from: \(url)")
+
+        URLSession.shared.dataTask(with: url) { data, response, error in
+            if let error = error {
+                print("❌ Network error: \(error.localizedDescription)")
+                return
+            }
+
+            if let httpResponse = response as? HTTPURLResponse {
+                print("🔍 HTTP Status Code: \(httpResponse.statusCode)")
+            }
+
+            guard let data = data else {
+                print("⚠️ No data received from backend")
+                return
+            }
+
+            do {
+                let jsonString = String(data: data, encoding: .utf8)
+                print("📜 Raw Long-Term JSON Response: \(jsonString ?? "No Data")")
+
+                let decodedResponse = try JSONDecoder().decode(LongTermGoalsResponse.self, from: data)
+                DispatchQueue.main.async {
+                    self.longTermGoals = decodedResponse.longTermGoals
+                    print("✅ Successfully loaded \(self.longTermGoals.count) long-term goals")
+                }
+            } catch {
+                print("❌ Error decoding long-term goals JSON: \(error)")
+            }
+        }.resume()
+    }
+
+    private func addLongTermGoal() {
+        guard !newLongTermTitle.isEmpty else { return }
+
+        let newGoal = LongTermGoal(
+            id: UUID(),
+            title: newLongTermTitle,
+            steps: newLongTermSteps.map {
+                LongTermStep(id: UUID(), name: $0, isCompleted: false)
+            }
+        )
+
+        guard let url = URL(string: "http://localhost:8080/api/goals/\(username)/long-term") else {
+            print("❌ Invalid URL")
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        do {
+            let jsonData = try JSONEncoder().encode(newGoal)
+            request.httpBody = jsonData
+        } catch {
+            print("❌ Error encoding long-term goal JSON: \(error)")
+            return
+        }
+
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            if let error = error {
+                print("❌ Network error: \(error.localizedDescription)")
+                return
+            }
+
+            if let httpResponse = response as? HTTPURLResponse {
+                print("Long Term Goals: 🔍 HTTP Status Code: \(httpResponse.statusCode)")
+            }
+
+            DispatchQueue.main.async {
+                self.longTermGoals.append(newGoal)
+                self.newLongTermTitle = ""
+                self.newLongTermSteps = []
+            }
+        }.resume()
+    }
     
+    private func toggleLongStepCompletion(goalId: UUID, stepId: UUID) {
+        guard let goalIndex = longTermGoals.firstIndex(where: { $0.id == goalId }),
+              let stepIndex = longTermGoals[goalIndex].steps.firstIndex(where: { $0.id == stepId }) else { return }
+
+        // Toggle local state
+        longTermGoals[goalIndex].steps[stepIndex].isCompleted.toggle()
+
+        // Prepare backend update
+        guard let url = URL(string: "http://localhost:8080/api/goals/\(username)/long-term/\(goalId)/steps/\(stepId)") else {
+            print("❌ Invalid URL for step update")
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "PUT"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let payload = ["isCompleted": longTermGoals[goalIndex].steps[stepIndex].isCompleted]
+
+        do {
+            let jsonData = try JSONEncoder().encode(payload)
+            request.httpBody = jsonData
+        } catch {
+            print("❌ Error encoding step completion update: \(error)")
+            return
+        }
+
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            if let error = error {
+                print("❌ Network error: \(error.localizedDescription)")
+                return
+            }
+
+            if let httpResponse = response as? HTTPURLResponse {
+                print("🔍 Step completion update status code: \(httpResponse.statusCode)")
+            }
+        }.resume()
+    }
+
 
 
 }
@@ -484,6 +724,27 @@ struct TaskItem: Identifiable, Codable {
     }
 }
 
+struct LongTermGoal: Identifiable, Codable {
+    let id: UUID
+    var title: String
+    var steps: [LongTermStep]
+}
+
+struct LongTermStep: Identifiable, Codable {
+    let id: UUID
+    var name: String
+    var isCompleted: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case isCompleted = "completed"
+    }
+}
+
+struct LongTermGoalsResponse: Codable {
+    let longTermGoals: [LongTermGoal]
+}
 
 
 struct GoalsResponse: Codable {
