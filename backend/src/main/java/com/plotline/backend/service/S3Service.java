@@ -1,6 +1,9 @@
 package com.plotline.backend.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.plotline.backend.dto.LongTermGoal;
+import com.plotline.backend.dto.LongTermStep;
 import com.plotline.backend.dto.TaskItem;
 
 import org.springframework.stereotype.Service;
@@ -336,6 +339,139 @@ public class S3Service {
     } catch (NoSuchKeyException e) {
       System.out.println("⚠️ File not found, cannot update.");
       return false;
+    } catch (Exception e) {
+      e.printStackTrace();
+      return false;
+    }
+  }
+
+  public boolean addLongTermGoalToS3(String username, LongTermGoal newGoal) {
+    try {
+      String key = "users/" + username + "/long-term-goals.json";
+
+      GetObjectRequest getObjectRequest = GetObjectRequest.builder()
+          .bucket(bucketName)
+          .key(key)
+          .build();
+
+      ResponseBytes<GetObjectResponse> objectBytes = s3Client.getObjectAsBytes(getObjectRequest);
+      String jsonData = new String(objectBytes.asByteArray(), StandardCharsets.UTF_8);
+
+      ObjectMapper objectMapper = new ObjectMapper();
+      Map<String, List<LongTermGoal>> goalsData = objectMapper.readValue(jsonData, new TypeReference<>() {
+      });
+      goalsData.get("longTermGoals").add(newGoal);
+
+      String updatedJson = objectMapper.writeValueAsString(goalsData);
+
+      PutObjectRequest putObjectRequest = PutObjectRequest.builder()
+          .bucket(bucketName)
+          .key(key)
+          .build();
+
+      s3Client.putObject(putObjectRequest, RequestBody.fromString(updatedJson));
+      return true;
+
+    } catch (NoSuchKeyException e) {
+      // First goal, create new file
+      Map<String, List<LongTermGoal>> newData = new HashMap<>();
+      newData.put("longTermGoals", new ArrayList<>(List.of(newGoal)));
+
+      try {
+        String newJson = new ObjectMapper().writeValueAsString(newData);
+
+        PutObjectRequest putObjectRequest = PutObjectRequest.builder()
+            .bucket(bucketName)
+            .key("users/" + username + "/long-term-goals.json")
+            .build();
+
+        s3Client.putObject(putObjectRequest, RequestBody.fromString(newJson));
+        return true;
+      } catch (IOException ex) {
+        ex.printStackTrace();
+        return false;
+      }
+    } catch (Exception e) {
+      e.printStackTrace();
+      return false;
+    }
+  }
+
+  public Map<String, Object> getLongTermGoals(String username) {
+    try {
+      String key = "users/" + username + "/long-term-goals.json";
+
+      System.out.println("📡 Fetching long-term goals from: " + key);
+
+      GetObjectRequest getObjectRequest = GetObjectRequest.builder()
+          .bucket(bucketName)
+          .key(key)
+          .build();
+
+      ResponseBytes<GetObjectResponse> objectBytes = s3Client.getObjectAsBytes(getObjectRequest);
+      byte[] data = objectBytes.asByteArray();
+
+      ObjectMapper objectMapper = new ObjectMapper();
+      return objectMapper.readValue(data, Map.class);
+
+    } catch (NoSuchKeyException e) {
+      System.out.println("⚠️ No long-term goals file found, returning empty list.");
+
+      Map<String, Object> emptyData = new HashMap<>();
+      emptyData.put("longTermGoals", new ArrayList<>());
+      return emptyData;
+
+    } catch (IOException e) {
+      throw new RuntimeException("Error parsing long-term goals JSON from S3", e);
+
+    } catch (Exception e) {
+      throw new RuntimeException("Error retrieving long-term goals file from S3", e);
+    }
+  }
+
+  public boolean updateStepCompletionInS3(String username, UUID goalId, UUID stepId, boolean isCompleted) {
+    try {
+      String key = "users/" + username + "/long-term-goals.json";
+      GetObjectRequest getObjectRequest = GetObjectRequest.builder()
+          .bucket(bucketName)
+          .key(key)
+          .build();
+
+      ResponseBytes<GetObjectResponse> objectBytes = s3Client.getObjectAsBytes(getObjectRequest);
+      String jsonData = new String(objectBytes.asByteArray(), StandardCharsets.UTF_8);
+
+      ObjectMapper objectMapper = new ObjectMapper();
+      objectMapper.registerModule(new JavaTimeModule());
+
+      Map<String, List<LongTermGoal>> goalsData = objectMapper.readValue(
+          jsonData, new TypeReference<>() {
+          });
+
+      List<LongTermGoal> longTermGoals = goalsData.get("longTermGoals");
+
+      for (LongTermGoal goal : longTermGoals) {
+        if (goal.getId().equals(goalId)) {
+          for (LongTermStep step : goal.getSteps()) {
+            if (step.getId().equals(stepId)) {
+              step.setCompleted(isCompleted);
+              break;
+            }
+          }
+          break;
+        }
+      }
+
+      // Save updated JSON
+      String updatedJson = objectMapper.writeValueAsString(goalsData);
+
+      PutObjectRequest putObjectRequest = PutObjectRequest.builder()
+          .bucket(bucketName)
+          .key(key)
+          .build();
+
+      s3Client.putObject(putObjectRequest, RequestBody.fromString(updatedJson));
+      return true;
+
     } catch (Exception e) {
       e.printStackTrace();
       return false;

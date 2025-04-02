@@ -1,12 +1,14 @@
 package com.plotline.backend.controller;
 
 import com.plotline.backend.service.S3Service;
+import com.plotline.backend.dto.LongTermGoal;
 import com.plotline.backend.dto.TaskItem;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import java.io.IOException;
 import java.util.Map;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/goals")
@@ -76,6 +78,36 @@ public class WeeklyGoalsController {
       return ResponseEntity.ok("Task completion updated successfully!");
     } else {
       return ResponseEntity.status(500).body("Failed to update task completion.");
+    }
+  }
+
+  @PostMapping("/{username}/long-term")
+  public ResponseEntity<String> addLongTermGoal(@PathVariable String username, @RequestBody LongTermGoal newGoal) {
+    boolean success = s3Service.addLongTermGoalToS3(username, newGoal);
+    return success
+        ? ResponseEntity.ok("Long-term goal added!")
+        : ResponseEntity.status(500).body("Failed to add long-term goal.");
+  }
+
+  @GetMapping("/{username}/long-term")
+  public Map<String, Object> getLongTermGoals(@PathVariable String username) {
+    return s3Service.getLongTermGoals(username);
+  }
+
+  @PutMapping("/{username}/long-term/{goalId}/steps/{stepId}")
+  public ResponseEntity<String> updateStepCompletion(
+      @PathVariable String username,
+      @PathVariable UUID goalId,
+      @PathVariable UUID stepId,
+      @RequestBody Map<String, Boolean> request) {
+
+    boolean isCompleted = request.get("isCompleted");
+    boolean success = s3Service.updateStepCompletionInS3(username, goalId, stepId, isCompleted);
+
+    if (success) {
+      return ResponseEntity.ok("Step completion updated successfully!");
+    } else {
+      return ResponseEntity.status(500).body("Failed to update step.");
     }
   }
 
