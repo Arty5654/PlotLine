@@ -15,6 +15,10 @@ struct WeeklyGoalsView: View {
     @State private var selectedPriorityFilter: Priority? = nil
     @State private var selectedView: GoalViewType = .weekly
     @State private var newTaskDueDate = Date()
+    @State private var notificationsEnabled = false
+    @State private var notificationType: String = "dueDate" // or "priority", "custom"
+    @State private var notificationTime: Date = Date()
+
     
     // Long-term goals state variables
     @State private var longTermGoals: [LongTermGoal] = []
@@ -46,6 +50,7 @@ struct WeeklyGoalsView: View {
                             .cornerRadius(8)
                     }
                     
+                    
                     Button(action: {
                         selectedView = .longTerm
                     }) {
@@ -62,6 +67,21 @@ struct WeeklyGoalsView: View {
                 
                 // Weekly View
                 if selectedView == .weekly {
+                    Toggle("Enable Notifications", isOn: $notificationsEnabled)
+
+                    if notificationsEnabled {
+                        Picker("Notification Type", selection: $notificationType) {
+                            Text("Due Date").tag("dueDate")
+                            Text("Priority-based").tag("priority")
+                            Text("Custom Time").tag("custom")
+                        }
+
+                        if notificationType == "custom" {
+                            DatePicker("Select Time", selection: $notificationTime, displayedComponents: .hourAndMinute)
+                        }
+                    }
+
+                    
                     Picker("Priority Filter", selection: $selectedPriorityFilter) {
                         Text("All").tag(nil as Priority?)
                         ForEach(Priority.allCases, id: \.self) { level in
@@ -334,6 +354,13 @@ struct WeeklyGoalsView: View {
             }.onAppear {
                 fetchGoals()
                 fetchLongTermGoals()
+                UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
+                        if granted {
+                            print("🟢 Notification permission granted")
+                        } else if let error = error {
+                            print("🔴 Notification error: \(error.localizedDescription)")
+                        }
+                    }
             }
         }
     }
@@ -406,8 +433,12 @@ struct WeeklyGoalsView: View {
             name: newTask,
             isCompleted: false,
             priority: newTaskPriority,
-            dueDate: newTaskDueDate
+            dueDate: newTaskDueDate,
+            notificationsEnabled: true, 
+            notificationType: notificationType,
+            notificationTime: notificationTime
         )
+
 
         guard let url = URL(string: "http://localhost:8080/api/goals/\(username)") else {
             print("❌ Invalid URL")
@@ -459,6 +490,8 @@ struct WeeklyGoalsView: View {
                 self.tasks.append(newTaskItem)
                 self.newTask = ""
                 self.newTaskPriority = .medium
+                
+                scheduleNotification(for: newTaskItem)
             }
             
         }.resume()
@@ -717,8 +750,92 @@ struct WeeklyGoalsView: View {
             }
         }.resume()
     }
+    
+    func scheduleNotification(for task: TaskItem) {
+        guard task.notificationsEnabled else {
+            print("🔕 Notifications disabled for task: \(task.name)")
+            return
+        }
+
+        let content = UNMutableNotificationContent()
+        content.title = "Reminder: \(task.name)"
+        content.body = "Your goal \"\(task.name)\" is due soon!"
+        content.sound = .default
+
+        var triggerDate: Date?
+
+        let calendar = Calendar.current
+        let now = Date()
+
+        if let dueDate = task.dueDate {
+            let isToday = calendar.isDate(dueDate, inSameDayAs: now)
+
+            if isToday {
+                // 🔧 Today’s task – fire in 5 seconds (for testing)
+                triggerDate = now.addingTimeInterval(5)
+            } else {
+                // Schedule for 9 AM on the due date
+                var dateComponents = calendar.dateComponents([.year, .month, .day], from: dueDate)
+                dateComponents.hour = 9
+                dateComponents.minute = 0
+                triggerDate = calendar.date(from: dateComponents)
+            }
+
+        } else if task.notificationType == "priority" {
+            // ⏰ Priority-based fallback
+            switch task.priority {
+            case .high:
+                triggerDate = now.addingTimeInterval(5) // 5 seconds
+            case .medium:
+                triggerDate = now.addingTimeInterval(10) // 10
+            case .low:
+                triggerDate = now.addingTimeInterval(60 * 60 * 8) // 8 hours
+            }
+
+        } else if task.notificationType == "custom", let customTime = task.notificationTime {
+            triggerDate = customTime
+        }
+
+        guard let date = triggerDate else {
+            print("⚠️ Could not determine notification time for task: \(task.name)")
+            return
+        }
+
+        print("🟡 Scheduling notification for \(task.name) at \(date)")
+
+        let triggerComponents = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute, .second], from: date)
+        let trigger = UNCalendarNotificationTrigger(dateMatching: triggerComponents, repeats: false)
+
+        let request = UNNotificationRequest(
+            identifier: "\(task.id)",
+            content: content,
+            trigger: trigger
+        )
+
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error = error {
+                print("🔴 Error scheduling notification: \(error.localizedDescription)")
+            } else {
+                print("✅ Notification scheduled for task: \(task.name)")
+            }
+        }
+    }
 
 
+
+
+
+    private func requestNotificationPermissions() {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
+            if let error = error {
+                print("❌ Notification permission error: \(error.localizedDescription)")
+            } else {
+                print("✅ Notifications permission granted: \(granted)")
+            }
+        }
+    }
+
+    
 
 }
 
@@ -752,15 +869,74 @@ struct TaskItem: Identifiable, Codable {
     var priority: Priority
     var isEditing: Bool? = false
     var dueDate: Date?
+    var notificationsEnabled: Bool
+    var notificationType: String?
+    var notificationTime: Date?
 
     enum CodingKeys: String, CodingKey {
         case id
         case name
         case isCompleted = "completed"
         case priority
+        case isEditing
         case dueDate
+        case notificationsEnabled
+        case notificationType
+        case notificationTime
     }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+
+        id = try container.decode(Int.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        isCompleted = try container.decode(Bool.self, forKey: .isCompleted)
+        priority = try container.decode(Priority.self, forKey: .priority)
+        isEditing = try? container.decode(Bool.self, forKey: .isEditing)
+        dueDate = try? container.decode(Date.self, forKey: .dueDate)
+        notificationsEnabled = (try? container.decode(Bool.self, forKey: .notificationsEnabled)) ?? false
+        notificationType = try? container.decode(String.self, forKey: .notificationType)
+        notificationTime = try? container.decode(Date.self, forKey: .notificationTime)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encode(isCompleted, forKey: .isCompleted)
+        try container.encode(priority, forKey: .priority)
+        try? container.encode(isEditing, forKey: .isEditing)
+        try? container.encode(dueDate, forKey: .dueDate)
+        try container.encode(notificationsEnabled, forKey: .notificationsEnabled)
+        try? container.encode(notificationType, forKey: .notificationType)
+        try? container.encode(notificationTime, forKey: .notificationTime)
+    }
+    
+    init(
+        id: Int,
+        name: String,
+        isCompleted: Bool,
+        priority: Priority,
+        isEditing: Bool? = false,
+        dueDate: Date? = nil,
+        notificationsEnabled: Bool = false,
+        notificationType: String? = nil,
+        notificationTime: Date? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.isCompleted = isCompleted
+        self.priority = priority
+        self.isEditing = isEditing
+        self.dueDate = dueDate
+        self.notificationsEnabled = notificationsEnabled
+        self.notificationType = notificationType
+        self.notificationTime = notificationTime
+    }
+
 }
+
 
 
 struct LongTermGoal: Identifiable, Codable {
