@@ -50,15 +50,15 @@ struct ContentView: View {
                         .buttonStyle(PlainButtonStyle())
                         .padding(.horizontal)
 
+                        // Goals Widget
                         NavigationLink(destination: WeeklyGoalsView().environmentObject(calendarVM)) {
-                            Label("Goals", systemImage: "list.bullet.rectangle.fill")
-                                .font(.headline)
-                                .padding()
-                                .frame(maxWidth: .infinity)
-                                .background(Color.green)
-                                .cornerRadius(8)
-                                .foregroundColor(.white)
+                            GoalsWidget()
+                                .environmentObject(calendarVM)
                         }
+                        .buttonStyle(PlainButtonStyle())
+                        .padding(.horizontal)
+
+
                         
                         NavigationLink(destination: HealthView()) {
                             HealthWidget()
@@ -240,6 +240,118 @@ struct SpendingPreviewWidget: View {
         }.resume()
     }
 }
+
+struct GoalsWidget: View {
+    @EnvironmentObject var calendarVM: CalendarViewModel
+    @State private var tasks: [TaskItem] = []
+    @State private var isLoading = true
+    let username = UserDefaults.standard.string(forKey: "loggedInUsername") ?? "Guest"
+    
+    var body: some View {
+        NavigationLink(destination: WeeklyGoalsView().environmentObject(calendarVM)) {
+            VStack(alignment: .leading, spacing: 8) {
+                ZStack {
+                    Text("Goals")
+                        .font(.custom("AvenirNext-Bold", size: 18))
+                        .foregroundColor(.blue)
+                    
+                    HStack {
+                        Spacer()
+                        Image(systemName: "list.bullet.rectangle.fill")
+                            .foregroundColor(.green)
+                            .font(.title3)
+                    }
+                }
+                .padding(.horizontal)
+                
+                if isLoading {
+                    HStack {
+                        Spacer()
+                        ProgressView()
+                        Spacer()
+                    }
+                    .padding(.vertical, 10)
+                } else if tasks.isEmpty {
+                    Text("No goals yet")
+                        .foregroundColor(.gray)
+                        .italic()
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.vertical, 10)
+                } else {
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(Array(tasks.prefix(3)), id: \.id) { task in
+                            VStack(alignment: .leading) {
+                                Text(task.name)
+                                    .font(.body)
+                                Text("Due: \(formatDate(task.dueDate))")
+                                    .font(.caption)
+                                    .foregroundColor(.gray)
+                            }
+                        }
+                        if tasks.count > 3 {
+                            Text("+ \(tasks.count - 3) more goals")
+                                .font(.caption)
+                                .foregroundColor(.gray)
+                                .padding(.top, 2)
+                        }
+                    }
+                }
+            }
+            .padding()
+            .background(Color(.systemGray6))
+            .cornerRadius(12)
+            .shadow(color: Color.black.opacity(0.2), radius: 6, x: 0, y: 3)
+        }
+        .buttonStyle(PlainButtonStyle())
+        .onAppear {
+            fetchGoals()
+        }
+    }
+
+    private func fetchGoals() {
+        guard let url = URL(string: "http://localhost:8080/api/goals/\(username)") else {
+            print("❌ Invalid URL")
+            return
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        
+        URLSession.shared.dataTask(with: request) { data, _, error in
+            guard let data = data, error == nil else {
+                print("❌ Error fetching goals: \(error?.localizedDescription ?? "Unknown error")")
+                return
+            }
+
+            let decoder = JSONDecoder()
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyy-MM-dd" // match backend format
+            decoder.dateDecodingStrategy = .formatted(formatter)
+
+            do {
+                let jsonObject = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+                if let weeklyGoals = jsonObject?["weeklyGoals"],
+                   let jsonData = try? JSONSerialization.data(withJSONObject: weeklyGoals) {
+                    let decodedTasks = try decoder.decode([TaskItem].self, from: jsonData)
+                    DispatchQueue.main.async {
+                        self.tasks = decodedTasks
+                        self.isLoading = false
+                    }
+                }
+            } catch {
+                print("❌ JSON Decoding error: \(error)")
+            }
+        }.resume()
+    }
+
+    private func formatDate(_ date: Date?) -> String {
+        guard let date = date else { return "No date" }
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        return formatter.string(from: date)
+    }
+}
+
 
 struct HealthWidget: View {
     @State private var sleepData: SleepEntry?
