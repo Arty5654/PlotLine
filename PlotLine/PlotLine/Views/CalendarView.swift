@@ -251,11 +251,13 @@ struct WeekContent: View {
             .padding(.vertical, 8)
             .padding(.horizontal)
             .background(
-                viewModel.hasEvent(on: day) ? Color.blue.opacity(0.1) : Color.clear
+                viewModel.hasEvent(on: day) ? colorForDay(day) : Color.clear
             )
             .cornerRadius(8)
             .padding(.horizontal)
         }
+        
+        
     }
     
     // Helpers
@@ -275,6 +277,27 @@ struct WeekContent: View {
         calendar.firstWeekday = 1
         let components = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: date)
         return calendar.date(from: components) ?? date
+    }
+    
+    private func colorForDay(_ day: Date) -> Color {
+        // Get all events for this day
+        let dayEvents = viewModel.eventsOnDay(day)
+        if dayEvents.isEmpty {
+            return .clear
+        }
+
+        if dayEvents.contains(where: { $0.eventType == "rent" }) {
+            // on rent due dates, color red
+            return Color.red.opacity(0.2)
+        } else if dayEvents.contains(where: { $0.eventType.lowercased().starts(with: "subscription") }) {
+            // on subscription due dates, color yellow
+            return Color.yellow.opacity(0.2)
+        } else if dayEvents.contains(where: { $0.eventType.lowercased().starts(with: "weekly-goal")}) {
+            // on goal dates, green
+            return Color.green.opacity(0.2)
+        } else {
+            return Color.blue.opacity(0.2)
+        }
     }
     
 
