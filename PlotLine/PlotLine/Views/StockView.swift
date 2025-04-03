@@ -23,10 +23,11 @@ struct StockView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
-
-                NavigationLink(destination: InvestmentQuizView()) {
+                
+                NavigationLink(destination: InvestmentQuizView(onFinish: {
+                    fetchSavedPortfolio()
+                })) {
                     Label("Take Investing Quiz", systemImage: "questionmark.circle.fill")
-                        .font(.headline)
                         .padding()
                         .frame(maxWidth: .infinity)
                         .background(Color.green)
@@ -113,10 +114,12 @@ struct StockView: View {
     func fetchSavedPortfolio() {
         print("Fetching portfolio for: \(username)")
         guard let url = URL(string: "http://localhost:8080/api/llm/portfolio/\(username)") else { return }
+        
 
         URLSession.shared.dataTask(with: url) { data, _, _ in
             if let data = data,
                let decoded = try? JSONDecoder().decode(SavedPortfolio.self, from: data) {
+                print("Decoded portfolio: \(decoded)")
                 DispatchQueue.main.async {
                     self.savedPortfolio = decoded
                 }
@@ -202,11 +205,15 @@ struct SavedPortfolio: Codable {
     }
 
     var investmentFrequency: String {
-        if let match = portfolio.range(of: #"(?i)Invest.*?(Monthly|Weekly|Annually)"#, options: .regularExpression) {
-            return String(portfolio[match])
+        let pattern = #"(?i)\b(Monthly|Weekly|Annually)\b"#
+        if let regex = try? NSRegularExpression(pattern: pattern),
+           let match = regex.firstMatch(in: portfolio, range: NSRange(portfolio.startIndex..., in: portfolio)),
+           let range = Range(match.range(at: 1), in: portfolio) {
+            return portfolio[range].capitalized
         }
         return "Monthly"
     }
+
 
 //    var totalMonthlyAmount: String {
 //        let pattern = #"(?i)\*\*Total Investment per Month:\*\*\s*\$([\d,]+\.\d{2})"#

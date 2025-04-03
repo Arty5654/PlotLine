@@ -38,7 +38,7 @@ struct InvestmentQuizView: View {
                         .padding()
 
                     Button("Back to Stocks Page") {
-                        //onFinish?()
+                        onFinish?()
                         dismiss()
                     }
                     .buttonStyle(.borderedProminent)
@@ -115,14 +115,14 @@ struct InvestmentQuizView: View {
         do {
             let (data, _) = try await URLSession.shared.data(for: request)
             if let response = String(data: data, encoding: .utf8) {
-                llmRecommendation = response
                 savePortfolioToBackend(response)
             }
-            
         } catch {
-            llmRecommendation = "Error getting portfolio from LLM."
+            print("Error generating portfolio from LLM.")
+            dismiss()
         }
     }
+
 
     func savePortfolioToBackend(_ recommendation: String) {
         let url = URL(string: "http://localhost:8080/api/llm/portfolio/save-original")!
@@ -131,7 +131,7 @@ struct InvestmentQuizView: View {
             "portfolio": recommendation,
             "riskTolerance": riskTolerance
         ]
-        
+
         print("Risk after quiz completion: " + riskTolerance)
 
         guard let jsonData = try? JSONEncoder().encode(payload) else { return }
@@ -143,13 +143,13 @@ struct InvestmentQuizView: View {
 
         URLSession.shared.dataTask(with: request) { _, _, _ in
             print("Portfolio saved to backend.")
-            
-//            DispatchQueue.main.async {
-//                onFinish?()
-//            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                onFinish?()  // Notifies StockView to refresh and pops view
+                dismiss()    // Navigates back
+            }
         }.resume()
-
     }
+
 
 }
 
