@@ -196,6 +196,7 @@ public class S3Service {
       String jsonData = new String(objectBytes.asByteArray(), StandardCharsets.UTF_8);
 
       ObjectMapper objectMapper = new ObjectMapper();
+      objectMapper.registerModule(new JavaTimeModule());
       Map<String, List<TaskItem>> goalsData = objectMapper.readValue(jsonData, new TypeReference<>() {
       });
 

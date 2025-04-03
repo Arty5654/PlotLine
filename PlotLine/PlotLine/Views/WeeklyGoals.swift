@@ -376,7 +376,29 @@ struct WeeklyGoalsView: View {
     
     private func deleteTaskById(_ id: Int) {
         guard let index = tasks.firstIndex(where: { $0.id == id }) else { return }
-        deleteTask(at: IndexSet(integer: index))
+
+        guard let url = URL(string: "http://localhost:8080/api/goals/\(username)/\(id)") else {
+            print("❌ Invalid DELETE URL")
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            if let error = error {
+                print("❌ Network error during deletion: \(error.localizedDescription)")
+                return
+            }
+
+            if let httpResponse = response as? HTTPURLResponse {
+                print("🗑️ DELETE status: \(httpResponse.statusCode)")
+            }
+
+            DispatchQueue.main.async {
+                tasks.remove(at: index)
+            }
+        }.resume()
     }
 
     private func fetchGoals() {
