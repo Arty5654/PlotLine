@@ -55,15 +55,12 @@ struct ContentView: View {
 //                                .foregroundColor(.white)
 //                        }
 
+                        // In your ContentView's VStack where other widgets are
                         NavigationLink(destination: TopGroceryListView()) {
-                            Label("Grocery Lists", systemImage: "cart.fill")
-                                .font(.headline)
-                                .padding()
-                                .frame(maxWidth: .infinity)
-                                .background(Color.green)
-                                .cornerRadius(8)
-                                .foregroundColor(.white)
+                            GroceryListWidget()
                         }
+                        .buttonStyle(PlainButtonStyle())
+                        .padding(.horizontal)
 
                         NavigationLink(destination: WeeklyGoalsView()) {
                             Label("Goals", systemImage: "list.bullet.rectangle.fill")
@@ -269,13 +266,13 @@ struct HealthWidget: View {
         VStack(alignment: .leading, spacing: 8) {
             // Header with icon
             ZStack {
-                Text("Sleep Health")
+                Text("Health")
                     .font(.custom("AvenirNext-Bold", size: 18))
                     .foregroundColor(.blue)
                             
                 HStack {
                     Spacer()
-                    Image(systemName: "bed.double.fill")
+                    Image(systemName: "heart.fill")
                         .foregroundColor(.green)
                         .font(.title3)
                 }
@@ -476,6 +473,91 @@ struct HealthWidget: View {
 struct SleepEntry {
     let hoursSlept: Int
     let mood: String
+}
+
+struct GroceryListWidget: View {
+    @State private var groceryLists: [GroceryList] = []
+    @State private var isLoading: Bool = false
+    let username = UserDefaults.standard.string(forKey: "loggedInUsername") ?? "UnknownUser"
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // Header with icon
+            ZStack {
+                Text("Grocery Lists")
+                    .font(.custom("AvenirNext-Bold", size: 18))
+                    .foregroundColor(.blue)
+                            
+                HStack {
+                    Spacer()
+                    Image(systemName: "cart.fill")
+                        .foregroundColor(.green)
+                        .font(.title3)
+                }
+            }
+            .padding(.horizontal)
+            
+            if isLoading {
+                HStack {
+                    Spacer()
+                    ProgressView()
+                    Spacer()
+                }
+                .padding(.vertical, 10)
+            } else if groceryLists.isEmpty {
+                Text("No active grocery lists")
+                    .foregroundColor(.gray)
+                    .italic()
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, 10)
+            } else {
+                VStack(alignment: .leading, spacing: 6) {
+                    // Display up to 3 lists
+                    ForEach(Array(groceryLists.prefix(3).enumerated()), id: \.element.id) { index, list in
+                        HStack {
+                            Text("• \(list.name)")
+                                .font(.body)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                    
+                    // Show total count if more than 3 lists
+                    if groceryLists.count > 3 {
+                        Text("+ \(groceryLists.count - 3) more lists")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                            .padding(.top, 4)
+                    }
+                }
+            }
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(12)
+        .shadow(color: Color.black.opacity(0.2), radius: 6, x: 0, y: 3)
+        .onAppear {
+            fetchGroceryLists()
+        }
+    }
+    
+    private func fetchGroceryLists() {
+        isLoading = true
+        
+        Task {
+            do {
+                let lists = try await GroceryListAPI.getGroceryLists(username: username)
+                DispatchQueue.main.async {
+                    self.groceryLists = lists
+                    self.isLoading = false
+                }
+            } catch {
+                print("Failed to load grocery lists: \(error)")
+                DispatchQueue.main.async {
+                    self.isLoading = false
+                }
+            }
+        }
+    }
 }
 
 #Preview {
