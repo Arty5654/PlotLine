@@ -204,6 +204,9 @@ struct MonthContent: View {
         } else if dayEvents.contains(where: { $0.eventType.lowercased().starts(with: "subscription") }) {
             // on subscription due dates, color yellow
             return Color.yellow.opacity(0.2)
+        } else if dayEvents.contains(where: { $0.eventType.lowercased().starts(with: "weekly-goal")}) {
+            // on goal dates, green
+            return Color.green.opacity(0.2)
         } else {
             return Color.blue.opacity(0.2)
         }

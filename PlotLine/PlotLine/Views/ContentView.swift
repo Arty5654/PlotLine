@@ -44,25 +44,13 @@ struct ContentView: View {
                         .buttonStyle(PlainButtonStyle())
                         .padding(.horizontal)
                         
-                        
-//                        NavigationLink(destination: BudgetView().environmentObject(calendarVM)) {
-//                            Label("Budget", systemImage: "creditcard.fill")
-//                                .font(.headline)
-//                                .padding()
-//                                .frame(maxWidth: .infinity)
-//                                .background(Color.green)
-//                                .cornerRadius(8)
-//                                .foregroundColor(.white)
-//                        }
-
-                        // In your ContentView's VStack where other widgets are
                         NavigationLink(destination: TopGroceryListView()) {
                             GroceryListWidget()
                         }
                         .buttonStyle(PlainButtonStyle())
                         .padding(.horizontal)
 
-                        NavigationLink(destination: WeeklyGoalsView()) {
+                        NavigationLink(destination: WeeklyGoalsView().environmentObject(calendarVM)) {
                             Label("Goals", systemImage: "list.bullet.rectangle.fill")
                                 .font(.headline)
                                 .padding()

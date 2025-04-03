@@ -23,7 +23,7 @@ struct WeeklyGoalsView: View {
     @State private var newLongTermSteps: [String] = []
 
 
-
+    @EnvironmentObject var calendarVM: CalendarViewModel
     
     // Fetch the logged-in username from UserDefaults
     private var username: String {
@@ -442,11 +442,25 @@ struct WeeklyGoalsView: View {
                 print("🔍 HTTP Status Code: \(httpResponse.statusCode)")
             }
 
+            // MARK: save goal to calendar
+            DispatchQueue.main.async {
+                
+                calendarVM.createEvent(
+                    title: "\(newTask)",
+                    description: "Weekly Goal - Priority: \(newTaskPriority)",
+                    startDate: newTaskDueDate,
+                    endDate: newTaskDueDate,
+                    eventType: "weekly-goal-\(newTask.lowercased())",
+                    recurrence: "none"
+                )
+            }
+            
             DispatchQueue.main.async {
                 self.tasks.append(newTaskItem)
                 self.newTask = ""
                 self.newTaskPriority = .medium
             }
+            
         }.resume()
     }
 
@@ -548,6 +562,7 @@ struct WeeklyGoalsView: View {
                 }
 
                 DispatchQueue.main.async {
+                    calendarVM.deleteEventByType("weekly-goal-\(task.name.lowercased())")
                     self.tasks.removeAll { $0.id == task.id } // Remove from UI
                 }
             }.resume()

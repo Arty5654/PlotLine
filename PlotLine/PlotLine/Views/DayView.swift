@@ -140,7 +140,7 @@ private struct EventRow: View {
                 .foregroundColor(
                     event.eventType == "rent" ? .red : //rent
                     event.eventType.hasPrefix("subscription") ? .orange : //subscription
-                    event.eventType.hasPrefix("goal") ? .blue : //TODO: goal support
+                    event.eventType.hasPrefix("weekly-goal") ? .green : //goal
                     .primary // other
                 )
             
