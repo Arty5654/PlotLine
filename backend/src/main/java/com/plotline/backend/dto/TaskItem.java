@@ -1,7 +1,11 @@
 package com.plotline.backend.dto;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonProperty;
+
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 public class TaskItem {
 
@@ -9,6 +13,9 @@ public class TaskItem {
   private String name;
   private boolean isCompleted;
   private Priority priority;
+
+  @JsonFormat(pattern = "yyyy-MM-dd")
+  private LocalDate dueDate;
 
   // --- Priority enum ---
   public enum Priority {
@@ -31,14 +38,12 @@ public class TaskItem {
   public TaskItem() {
   }
 
-  public TaskItem(@JsonProperty("id") int id,
-      @JsonProperty("name") String name,
-      @JsonProperty("completed") boolean isCompleted,
-      @JsonProperty("priority") Priority priority) {
+  public TaskItem(int id, String name, boolean isCompleted, Priority priority, LocalDate dueDate) {
     this.id = id;
     this.name = name;
     this.isCompleted = isCompleted;
     this.priority = priority;
+    this.dueDate = dueDate;
   }
 
   // --- Getters & Setters ---
@@ -74,6 +79,14 @@ public class TaskItem {
     this.priority = priority;
   }
 
+  public LocalDate getDueDate() {
+    return dueDate;
+  }
+
+  public void setDueDate(LocalDate dueDate) {
+    this.dueDate = dueDate;
+  }
+
   @Override
   public String toString() {
     return "TaskItem{" +
@@ -81,6 +94,7 @@ public class TaskItem {
         ", name='" + name + '\'' +
         ", isCompleted=" + isCompleted +
         ", priority=" + priority +
+        ", dueDate=" + dueDate +
         '}';
   }
 }

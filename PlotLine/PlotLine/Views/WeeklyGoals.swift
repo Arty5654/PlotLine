@@ -14,6 +14,7 @@ struct WeeklyGoalsView: View {
     @State private var newTaskPriority: Priority = .medium
     @State private var selectedPriorityFilter: Priority? = nil
     @State private var selectedView: GoalViewType = .weekly
+    @State private var newTaskDueDate = Date()
     
     // Long-term goals state variables
     @State private var longTermGoals: [LongTermGoal] = []
@@ -92,6 +93,10 @@ struct WeeklyGoalsView: View {
                             .pickerStyle(SegmentedPickerStyle())
                         }
                         
+                        DatePicker("Due Date", selection: $newTaskDueDate, displayedComponents: .date)
+                            .datePickerStyle(CompactDatePickerStyle())
+
+                        
                         HStack {
                             Spacer()
                             Button(action: addTask) {
@@ -165,6 +170,13 @@ struct WeeklyGoalsView: View {
                                         Text("Priority: \(task.priority.rawValue)")
                                             .font(.caption)
                                             .foregroundColor(.secondary)
+                                        
+                                        if let dueDate = task.dueDate {
+                                            Text("Due: \(dueDate.formatted(date: .abbreviated, time: .omitted))")
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
+                                        }
+
                                     }
                                     
                                     Spacer()
@@ -366,9 +378,14 @@ struct WeeklyGoalsView: View {
 
             do {
                 let jsonString = String(data: data, encoding: .utf8)
-                print("📜 Raw JSON Response: \(jsonString ?? "No Data")")  // Print raw JSON
+                print("📜 Raw JSON Response: \(jsonString ?? "No Data")")
 
-                let decodedResponse = try JSONDecoder().decode(GoalsResponse.self, from: data)
+                let decoder = JSONDecoder()
+                let formatter = DateFormatter()
+                formatter.dateFormat = "yyyy-MM-dd" // 👈 Match backend format
+                decoder.dateDecodingStrategy = .formatted(formatter)
+
+                let decodedResponse = try decoder.decode(GoalsResponse.self, from: data)
                 DispatchQueue.main.async {
                     self.tasks = decodedResponse.weeklyGoals
                     print("✅ Successfully loaded \(self.tasks.count) goals")
@@ -380,6 +397,7 @@ struct WeeklyGoalsView: View {
     }
 
 
+
     private func addTask() {
         guard !newTask.isEmpty else { return }
 
@@ -387,7 +405,8 @@ struct WeeklyGoalsView: View {
             id: Int.random(in: 1000...9999),
             name: newTask,
             isCompleted: false,
-            priority: newTaskPriority
+            priority: newTaskPriority,
+            dueDate: newTaskDueDate
         )
 
         guard let url = URL(string: "http://localhost:8080/api/goals/\(username)") else {
@@ -399,13 +418,19 @@ struct WeeklyGoalsView: View {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
+        let encoder = JSONEncoder()
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd" // 👈 Match backend format
+        encoder.dateEncodingStrategy = .formatted(formatter)
+
         do {
-            let jsonData = try JSONEncoder().encode(newTaskItem)
+            let jsonData = try encoder.encode(newTaskItem)
             request.httpBody = jsonData
         } catch {
             print("❌ Error encoding JSON: \(error)")
             return
         }
+
 
         URLSession.shared.dataTask(with: request) { data, response, error in
             if let error = error {
@@ -427,14 +452,13 @@ struct WeeklyGoalsView: View {
 
 
 
+
     private func toggleTaskCompletion(task: TaskItem) {
         guard let index = tasks.firstIndex(where: { $0.id == task.id }) else { return }
-        
-        // Toggle the completed state
         tasks[index].isCompleted.toggle()
-        
-        guard let url = URL(string: "http://localhost:8080/api/goals/\(username)/\(task.id)") else {
-            print("❌ Invalid URL for updating task")
+
+        guard let url = URL(string: "http://localhost:8080/api/goals/\(username)/\(task.id)/completion") else {
+            print("❌ Invalid URL")
             return
         }
 
@@ -442,11 +466,11 @@ struct WeeklyGoalsView: View {
         request.httpMethod = "PUT"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
+        let body = ["isCompleted": tasks[index].isCompleted]
         do {
-            let jsonData = try JSONEncoder().encode(tasks[index]) // Encode updated task
-            request.httpBody = jsonData
+            request.httpBody = try JSONEncoder().encode(body)
         } catch {
-            print("❌ Error encoding JSON: \(error)")
+            print("❌ Error encoding body: \(error)")
             return
         }
 
@@ -457,14 +481,11 @@ struct WeeklyGoalsView: View {
             }
 
             if let httpResponse = response as? HTTPURLResponse {
-                print("🔍 HTTP Status Code: \(httpResponse.statusCode)")
-            }
-
-            DispatchQueue.main.async {
-                print("✅ Task completion updated successfully in the backend")
+                print("🔍 Update completion HTTP Status Code: \(httpResponse.statusCode)")
             }
         }.resume()
     }
+
 
     
     private func updateTask(task: TaskItem) {
@@ -715,14 +736,17 @@ struct TaskItem: Identifiable, Codable {
     var isCompleted: Bool
     var priority: Priority
     var isEditing: Bool? = false
+    var dueDate: Date?
 
     enum CodingKeys: String, CodingKey {
         case id
         case name
         case isCompleted = "completed"
         case priority
+        case dueDate
     }
 }
+
 
 struct LongTermGoal: Identifiable, Codable {
     let id: UUID
