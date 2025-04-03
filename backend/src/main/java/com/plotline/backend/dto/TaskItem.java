@@ -6,6 +6,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 
 public class TaskItem {
 
@@ -13,6 +14,9 @@ public class TaskItem {
   private String name;
   private boolean isCompleted;
   private Priority priority;
+  private boolean notificationsEnabled;
+  private String notificationType; // e.g., "dueDate", "priority", "custom"
+  private LocalTime notificationTime; // optional for time-of-day reminders
 
   @JsonFormat(pattern = "yyyy-MM-dd")
   private LocalDate dueDate;
