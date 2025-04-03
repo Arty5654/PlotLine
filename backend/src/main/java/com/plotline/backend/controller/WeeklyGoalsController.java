@@ -69,7 +69,8 @@ public class WeeklyGoalsController {
   }
 
   @PutMapping("/{username}/{taskId}/completion")
-  public ResponseEntity<String> updateGoalCompletion(@PathVariable String username,
+  public ResponseEntity<String> updateGoalCompletion(
+      @PathVariable String username,
       @PathVariable int taskId,
       @RequestBody Map<String, Boolean> request) throws IOException {
     boolean isCompleted = request.get("isCompleted");

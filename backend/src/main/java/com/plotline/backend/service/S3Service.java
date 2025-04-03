@@ -127,7 +127,10 @@ public class S3Service {
       ResponseBytes<GetObjectResponse> objectBytes = s3Client.getObjectAsBytes(getObjectRequest);
       String jsonData = new String(objectBytes.asByteArray(), StandardCharsets.UTF_8);
 
+      // Register JavaTimeModule to support LocalDate serialization
       ObjectMapper objectMapper = new ObjectMapper();
+      objectMapper.registerModule(new JavaTimeModule());
+
       Map<String, List<TaskItem>> goalsData = objectMapper.readValue(jsonData, new TypeReference<>() {
       });
 
@@ -155,7 +158,10 @@ public class S3Service {
       newGoalData.put("weeklyGoals", new ArrayList<>(Collections.singletonList(newTask)));
 
       try {
-        String newJson = new ObjectMapper().writeValueAsString(newGoalData);
+        ObjectMapper objectMapper = new ObjectMapper();
+        objectMapper.registerModule(new JavaTimeModule());
+
+        String newJson = objectMapper.writeValueAsString(newGoalData);
 
         PutObjectRequest putObjectRequest = PutObjectRequest.builder()
             .bucket(bucketName)
@@ -312,18 +318,16 @@ public class S3Service {
       String jsonData = new String(objectBytes.asByteArray(), StandardCharsets.UTF_8);
 
       ObjectMapper objectMapper = new ObjectMapper();
+      objectMapper.registerModule(new JavaTimeModule());
+
       Map<String, List<TaskItem>> goalsData = objectMapper.readValue(jsonData, new TypeReference<>() {
       });
-
-      // Update the completion status
       List<TaskItem> updatedGoals = goalsData.get("weeklyGoals").stream()
           .map(task -> task.getId() == taskId
-              ? new TaskItem(task.getId(), task.getName(), isCompleted, task.getPriority())
+              ? new TaskItem(task.getId(), task.getName(), isCompleted, task.getPriority(), task.getDueDate())
               : task)
-
           .toList();
 
-      // Save updated goals back to S3
       goalsData.put("weeklyGoals", updatedGoals);
       String updatedJson = objectMapper.writeValueAsString(goalsData);
 
@@ -333,8 +337,7 @@ public class S3Service {
           .build();
 
       s3Client.putObject(putObjectRequest, RequestBody.fromString(updatedJson));
-
-      return true; // Success
+      return true;
 
     } catch (NoSuchKeyException e) {
       System.out.println("⚠️ File not found, cannot update.");
