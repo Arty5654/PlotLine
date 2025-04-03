@@ -241,18 +241,8 @@ struct PortfolioExplanationView: View {
 
     var body: some View {
         ScrollView {
-            
-            if let attributedString = try? AttributedString(
-                markdown: portfolioText,
-                options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-            ) {
-                Text(attributedString)
-                    .padding()
-            } else {
-                // if markdown parsing fails
-                Text(portfolioText)
-                    .padding()
-            }
+            Text(portfolioText)
+                .padding()
         }
         .navigationTitle("Investment Rationale")
     }
@@ -265,4 +255,3 @@ struct PortfolioExplanationView: View {
 #Preview {
     StockView()
 }
-

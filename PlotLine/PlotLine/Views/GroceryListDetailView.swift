@@ -29,175 +29,162 @@ struct GroceryListDetailView: View {
     }
 
     var body: some View {
-        ZStack {
-            VStack {
-                // Top section with List title and share button
-                HStack {
-                    Text(groceryList.name)
-                        .font(.largeTitle)
-                        .fontWeight(.bold)
-                        .padding()
-                    
-                    Spacer()
-                    
-                    // Custom share button
-                    Button(action: {
-                        shareGroceryList()
-                        shareSuccess = nil
-                    }) {
-                        Image(systemName: "square.and.arrow.up")
-                            .imageScale(.medium)
-                    }
-                    .alert(isPresented: .constant(shareSuccess != nil)) {
-                        Alert(
-                            title: Text(shareSuccess == true ? "Share Successful" : "Share Failed"),
-                            message: Text(shareSuccess == true ? "Your grocery list was shared successfully." : "There was an issue sharing the list."),
-                            dismissButton: .default(Text("OK"))
-                        )
-                    }
-                    .padding()
-                }
-                .padding(.top)
-
-                // Check if there are items in the list
-                if !items.isEmpty {
-                    // Running total section with Archive button
+        VStack {
+            ScrollView {
+                VStack(spacing: 16) {
+                    // Top section with List title and share button
                     HStack {
-                        // Using itemText for pluralization
-                        Text("\(totalItems) \(itemText) - \(purchasedItems) Checked Off")
-                            .foregroundColor(.gray)
+                        Text(groceryList.name)
+                            .font(.largeTitle)
+                            .fontWeight(.bold)
                             .padding()
-                        
+
                         Spacer()
-                        
-                        // Archive button (small)
+
                         Button(action: {
-                            archiveList()
+                            shareGroceryList()
+                            shareSuccess = nil
                         }) {
-                            Text("Archive")
-                                .fontWeight(.bold)
-                                .padding(.horizontal, 5)
-                                .padding(.vertical, 5)
-                                .background(canArchiveList ? Color.green : Color.gray)
-                                .foregroundColor(.white)
-                                .cornerRadius(10)
-                                .frame(height: 30)  // Make the Archive button short
+                            Image(systemName: "square.and.arrow.up")
+                                .imageScale(.medium)
                         }
-                        .disabled(!canArchiveList)
-                        .alert(isPresented: .constant(archiveSuccess != nil)) {
+                        .alert(isPresented: .constant(shareSuccess != nil)) {
                             Alert(
-                                title: Text(archiveSuccess == true ? "Archive Successful" : "Archive Failed"),
-                                message: Text(archiveSuccess == true ? "Your grocery list was archived successfully." : "There was an issue archiving the list."),
+                                title: Text(shareSuccess == true ? "Share Successful" : "Share Failed"),
+                                message: Text(shareSuccess == true ? "Your grocery list was shared successfully." : "There was an issue sharing the list."),
                                 dismissButton: .default(Text("OK"))
                             )
                         }
                         .padding()
                     }
-                }
 
-                // Centered message if there are no items in the grocery list
-                if items.isEmpty {
-                    Spacer()
-                    Text("No items in this grocery list.")
-                        .font(.title2)
-                        .foregroundColor(.gray)
-                        .padding()
-                    Spacer()
-                } else {
-                    List {
-                        ForEach(items) { item in
-                            HStack {
-                                Image(systemName: item.checked ? "checkmark.square" : "square")
-                                    .foregroundColor(item.checked ? .green : .gray)
-                                    .onTapGesture {
-                                        toggleChecked(item: item)
-                                    }
+                    // Archive bar
+                    if !items.isEmpty {
+                        HStack {
+                            Text("\(totalItems) \(itemText) - \(purchasedItems) Checked Off")
+                                .foregroundColor(.gray)
+                                .padding(.leading)
 
-                                Text(item.name)
-                                    .font(.body)
-                                    .strikethrough(item.checked, color: .green)
-                                    .foregroundColor(item.checked ? .gray : .primary)
-                                    .onTapGesture {
-                                        // When an item is tapped, show the edit view in the center
-                                        selectedItem = item
-                                        isEditPresented = true
-                                    }
+                            Spacer()
 
-                                Spacer()
-
-                                Text("x \(item.quantity)")
-                                    .foregroundColor(.gray)
-
-                                Image(systemName: "trash")
-                                    .foregroundColor(.red)
-                                    .onTapGesture {
-                                        deleteItem(item)
-                                    }
+                            Button(action: {
+                                archiveList()
+                            }) {
+                                Text("Archive")
+                                    .fontWeight(.bold)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 6)
+                                    .background(canArchiveList ? Color.green : Color.gray)
+                                    .foregroundColor(.white)
+                                    .cornerRadius(8)
                             }
+                            .disabled(!canArchiveList)
+                            .alert(isPresented: .constant(archiveSuccess != nil)) {
+                                Alert(
+                                    title: Text(archiveSuccess == true ? "Archive Successful" : "Archive Failed"),
+                                    message: Text(archiveSuccess == true ? "Your grocery list was archived successfully." : "There was an issue archiving the list."),
+                                    dismissButton: .default(Text("OK"))
+                                )
+                            }
+                            .padding(.trailing)
                         }
-                        .onMove { indices, newOffset in
-                            moveItem(from: indices, to: newOffset)
-                        }
-                    }
-                    .navigationBarItems(trailing: EditButton())
-                    // Done shopping button so we can send cost of grocieres to weekly costs
-                    Button("Done Shopping") {
-                        estimateGroceryCostAndUpdateBudget()
-                    }
-                    .padding()
-                    .background(Color.green)
-                    .foregroundColor(.white)
-                    .cornerRadius(10)
-                    .alert(isPresented: $showGroceryAddedAlert) {
-                        Alert(
-                            title: Text("Groceries Added"),
-                            message: Text("Added $\(recentlyAddedGroceryAmount ?? 0, specifier: "%.2f") to Weekly Groceries."),
-                            dismissButton: .default(Text("OK"))
-                        )
-                    }
-                    if canUndoGroceryAddition, let undoAmount = recentlyAddedGroceryAmount {
-                        Button("Undo Grocery Cost (-$\(undoAmount, specifier: "%.2f"))") {
-                            undoGroceryCost(username: UserDefaults.standard.string(forKey: "loggedInUsername") ?? "UnknownUser", amount: undoAmount)
-                        }
-                        .padding(.bottom)
-                        .foregroundColor(.red)
                     }
 
-                }
-            }
-
-            // Add New Item Section pinned to the bottom
-            VStack {
-                Spacer()
-
-                HStack {
-                    // Enter new item TextField
-                    TextField("Enter new item", text: $newItemName)
-                        .padding()
-                        .textFieldStyle(RoundedBorderTextFieldStyle())
-                        .frame(maxWidth: .infinity)  // Makes the text field take up all available space
-                    
-                    // Add Item button with width based on text content
-                    Button(action: {
-                        addItemToList()
-                    }) {
-                        Text("Add Item")
-                            .fontWeight(.bold)
+                    // No items message
+                    if items.isEmpty {
+                        Spacer()
+                        Text("No items in this grocery list.")
+                            .font(.title2)
+                            .foregroundColor(.gray)
                             .padding()
-                            .background(Color.blue)
+                        Spacer()
+                    } else {
+                        VStack {
+                            ForEach(items) { item in
+                                HStack {
+                                    Image(systemName: item.checked ? "checkmark.square" : "square")
+                                        .foregroundColor(item.checked ? .green : .gray)
+                                        .onTapGesture {
+                                            toggleChecked(item: item)
+                                        }
+
+                                    Text(item.name)
+                                        .font(.body)
+                                        .strikethrough(item.checked, color: .green)
+                                        .foregroundColor(item.checked ? .gray : .primary)
+                                        .onTapGesture {
+                                            selectedItem = item
+                                            isEditPresented = true
+                                        }
+
+                                    Spacer()
+
+                                    Text("x \(item.quantity)")
+                                        .foregroundColor(.gray)
+
+                                    Image(systemName: "trash")
+                                        .foregroundColor(.red)
+                                        .onTapGesture {
+                                            deleteItem(item)
+                                        }
+                                }
+                                .padding(.horizontal)
+                            }
+
+                            // Done shopping button
+                            Button("Done Shopping") {
+                                estimateGroceryCostAndUpdateBudget()
+                            }
+                            .padding()
+                            .background(Color.green)
                             .foregroundColor(.white)
                             .cornerRadius(10)
+                            .alert(isPresented: $showGroceryAddedAlert) {
+                                Alert(
+                                    title: Text("Groceries Added"),
+                                    message: Text("Added $\(recentlyAddedGroceryAmount ?? 0, specifier: "%.2f") to Weekly Groceries."),
+                                    dismissButton: .default(Text("OK"))
+                                )
+                            }
+
+                            // Undo grocery cost
+                            if canUndoGroceryAddition, let undoAmount = recentlyAddedGroceryAmount {
+                                Button("Undo Grocery Cost (-$\(undoAmount, specifier: "%.2f"))") {
+                                    undoGroceryCost(username: UserDefaults.standard.string(forKey: "loggedInUsername") ?? "UnknownUser", amount: undoAmount)
+                                }
+                                .foregroundColor(.red)
+                            }
+                        }
                     }
-                    .padding()  // Optional padding for spacing
+
+                    // Add item input section
+                    HStack {
+                        TextField("Enter new item", text: $newItemName)
+                            .padding(12)
+                            .background(Color(.systemGray6))
+                            .cornerRadius(8)
+
+                        Button(action: {
+                            addItemToList()
+                        }) {
+                            Text("Add Item")
+                                .fontWeight(.bold)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 10)
+                                .background(Color.blue)
+                                .foregroundColor(.white)
+                                .cornerRadius(10)
+                        }
+                    }
+                    .padding()
                 }
-                .padding(.bottom) // Padding at the bottom
             }
-            
-            // Conditional overlay for the custom square window
+
+            // Overlay edit view
             if isEditPresented {
-                Color.black.opacity(0.5) // Background dimming
+                Color.black.opacity(0.5)
                     .edgesIgnoringSafeArea(.all)
-                            
+
                 GroceryItemInfoView(item: $selectedItem, onClose: {
                     isEditPresented = false
                 })
