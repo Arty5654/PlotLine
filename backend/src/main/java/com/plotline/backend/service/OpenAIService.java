@@ -140,5 +140,54 @@ public class OpenAIService {
       }
 
   } 
-  
+
+  public String generateGroceryListFromMeal(String mealName, String username) throws Exception {
+    // Create a properly formatted meal name for the OpenAI prompt
+    String prompt = "Meal: " + mealName;
+
+    // Get raw JSON response from OpenAI
+    String rawResponse = generateGroceryListFromMeal(prompt);
+
+    // Return the raw response - the service class will handle the parsing
+    return rawResponse;
+  }
+
+  public String generateGroceryListFromMeal(String userMessage) {
+    try {
+      String systemMessage = """
+        You are a smart recipe assistant.
+        When given a meal name, respond with a JSON array of grocery items required to make it. Do not include the instructions or meal name.
+        Each item should include name (string), quantity (int), and notes (string). Do not include any explanations.
+        Make sure to include the quantity of each item needed for a single serving.
+        The quantity is measured as number of items to grab from the store.
+        You can include specific measurements or general notes in the notes field.
+        For example, if the meal is "Pasta", you might include {"name": "pasta", "quantity": 1, "notes": "1 box of spaghetti"}.
+        If the meal is "Chicken Salad", you might include {"name": "chicken", "quantity": 1, "notes": "1 lb of chicken breast"}.
+        If the meal is not recognized, respond with an empty array: []
+        Do not include any extra characters, punctuation, or JSON formatting.
+        Respond with ONLY a single plain text JSON array with no extra characters, punctuation, or JSON formatting.
+        Do not wrap your answer in braces or quotes.
+        Example: [{"name": "eggs", "quantity": 6}, {"name": "milk", "quantity": 1}]
+        """;
+
+      ResponseCreateParams params = ResponseCreateParams.builder()
+          .input(userMessage)
+          .instructions(systemMessage)
+          .model(ChatModel.GPT_4O_MINI)
+          .build();
+
+      Response response = openAIClient.responses().create(params);
+      ResponseOutputText rot = response.output().get(0).message().get().content().get(0).asOutputText();
+
+      // Print the raw JSON response
+      String jsonResponse = rot.text();
+      System.out.println("Raw JSON response: " + jsonResponse);
+
+      return rot.text();
+
+    } catch (OpenAIException e) {
+      e.printStackTrace();
+      return "Service Error";
+    }
+  }
 }

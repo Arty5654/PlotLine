@@ -11,11 +11,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.JsonNode;
-
 import java.io.IOException;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/groceryLists")
@@ -191,7 +189,36 @@ public class GroceryListController {
             return ResponseEntity.status(HttpStatus.SC_INTERNAL_SERVER_ERROR)
                     .body(-1.0);
         }
-}
+    }
 
+    @PostMapping("/generate-from-meal")
+    public ResponseEntity<String> generateListFromMeal(@RequestBody Map<String, String> request) {
+        try {
+            // Extract meal name and username from the request
+            String mealName = request.get("mealName");
+            String username = request.get("username");
+
+            // Validate input
+            if (mealName == null || mealName.trim().isEmpty()) {
+                return ResponseEntity.badRequest().body("Meal name is required");
+            }
+
+            if (username == null || username.trim().isEmpty()) {
+                return ResponseEntity.badRequest().body("Username is required");
+            }
+
+            // Get raw response from OpenAI
+            String rawResponse = openAIService.generateGroceryListFromMeal("Meal: " + mealName);
+
+            // Use the service to generate the grocery list
+            String listId = groceryListService.generateGroceryListFromMeal(mealName, username, rawResponse);
+
+            // Return the list ID
+            return ResponseEntity.ok(listId);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.status(500).body("Error generating grocery list from meal: " + e.getMessage());
+        }
+    }
 }
 

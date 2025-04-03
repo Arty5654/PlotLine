@@ -1,15 +1,16 @@
 package com.plotline.backend.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.plotline.backend.dto.GroceryItem;
 import com.plotline.backend.dto.GroceryList;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Object;
+import software.amazon.awssdk.core.ResponseBytes;
 import software.amazon.awssdk.core.ResponseInputStream;
 import software.amazon.awssdk.core.sync.RequestBody;
-import software.amazon.awssdk.services.s3.model.CopyObjectRequest;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
@@ -34,7 +35,7 @@ public class GroceryListService {
 
     // Helper function to construct the S3 path for the grocery list items
     private String getS3Path(String username, String listId) {
-        return "users/" + username + "/grocery/lists/" + listId + ".json";
+        return "users/" + username + "/grocery/lists/" + listId.toUpperCase() + ".json";
     }
 
     // Method to fetch a grocery list from S3
@@ -87,7 +88,7 @@ public class GroceryListService {
             throw new IllegalArgumentException("A grocery list with this name already exists.");
         }
 
-        String groceryListID = groceryList.getId() != null ? groceryList.getId() : UUID.randomUUID().toString();
+        String groceryListID = groceryList.getId() != null ? groceryList.getId() : UUID.randomUUID().toString().toUpperCase();
 
         groceryList.setId(groceryListID);
 
@@ -145,33 +146,36 @@ public class GroceryListService {
 
     private ObjectMapper objectMapper = new ObjectMapper();
 
-    // Fetch grocery list items from S3
     public List<GroceryItem> getItems(String username, String listId) {
-        try {
-            // Construct the S3 path using the username and listId
-            String s3Path = getS3Path(username, listId);
+    try {
+        // Construct the exact S3 key path
+        String s3Path = getS3Path(username, listId);
 
-            // Get the object from S3
-            GetObjectRequest getObjectRequest = GetObjectRequest.builder()
-                    .bucket(BUCKET_NAME)
-                    .key(s3Path)
-                    .build();
+        System.out.println("about to fetch grocery list from S3: " + s3Path);
 
-            // Download the file from S3
-            ResponseInputStream<GetObjectResponse> response = s3Client.getObject(getObjectRequest);
+        // Get the grocery list from S3
+        GetObjectRequest getObjectRequest = GetObjectRequest.builder()
+                .bucket(BUCKET_NAME)
+                .key(s3Path)
+                .build();
 
-            // Deserialize the grocery list JSON into an object
-            GroceryList groceryList = objectMapper.readValue(response, GroceryList.class);
+        ResponseBytes<GetObjectResponse> objectBytes = s3Client.getObjectAsBytes(getObjectRequest);
+        String jsonContent = objectBytes.asUtf8String();
 
-            return groceryList.getItems();  // Return the list of items
+        // Parse the JSON to get the grocery list
+        ObjectMapper mapper = new ObjectMapper();
+        GroceryList groceryList = mapper.readValue(jsonContent, GroceryList.class);
 
-        } catch (Exception e) {
-            // Log the error if there is any issue
-            System.out.println("Error while fetching items: " + e.getMessage());
-            e.printStackTrace();
-            return new ArrayList<>();  // Return an empty list if an error occurs
-        }
+        System.out.println("Fetched grocery list: " + groceryList.getItems());
+
+        // Return the items from the grocery list
+        return groceryList.getItems();
+    } catch (Exception e) {
+        System.out.println("Error while fetching items: " + e.getMessage());
+        e.printStackTrace();
+        return new ArrayList<>(); // Return empty list on error
     }
+}
 
     // Add an item to the grocery list in S3
     public boolean addItem(String username, String listId, GroceryItem item) {
@@ -493,5 +497,51 @@ public class GroceryListService {
             e.printStackTrace();
             throw new IOException("Failed to restore the grocery list", e);
         }
+    }
+
+    public String generateGroceryListFromMeal(String mealName, String username, String rawOpenAIResponse) throws Exception {
+        // Parse the raw JSON response from OpenAI
+        ObjectMapper mapper = new ObjectMapper();
+        List<GroceryItem> items = new ArrayList<>();
+        JsonNode array = mapper.readTree(rawOpenAIResponse);
+
+        // Generate a UUID for the list
+        String listId = UUID.randomUUID().toString().toUpperCase();
+
+        // Create all items first
+        for (JsonNode node : array) {
+            GroceryItem item = new GroceryItem();
+            item.setListId(listId);
+            item.setId(UUID.randomUUID().toString().toUpperCase());
+            item.setName(node.get("name").asText());
+            item.setQuantity(node.get("quantity").asInt());
+            item.setChecked(false);
+            item.setPrice(0.0);
+            item.setStore("");
+
+            // Check if the node has notes and set them if available
+            if (node.has("notes")) {
+                item.setNotes(node.get("notes").asText());
+            } else {
+                item.setNotes("");
+            }
+
+            items.add(item);
+        }
+
+        // Create a new grocery list with all items included
+        GroceryList list = new GroceryList();
+        list.setId(listId);
+        list.setUsername(username);
+        list.setName("Ingredients for " + mealName);
+        list.setItems(items); // Set all items before saving
+        list.setAI(true);
+        list.setCreatedAt(String.valueOf(System.currentTimeMillis()));
+        list.setUpdatedAt(String.valueOf(System.currentTimeMillis()));
+
+        // Save the complete list with all items
+        String savedListId = createGroceryList(list, username);
+
+        return savedListId;
     }
 }
