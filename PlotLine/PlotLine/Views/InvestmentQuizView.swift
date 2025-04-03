@@ -33,9 +33,17 @@ struct InvestmentQuizView: View {
                         .bold()
                         .padding(.bottom)
 
-                    Text(recommendation)
-                        .font(.body)
-                        .padding()
+                    if let attributedString = try? AttributedString(
+                        markdown: recommendation,
+                        options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+                    ) {
+                        Text(attributedString)
+                            .padding()
+                    } else {
+                        // if markdown parsing fails
+                        Text(recommendation)
+                            .padding()
+                    }
 
                     Button("Back to Stocks Page") {
                         //onFinish?()
