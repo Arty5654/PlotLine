@@ -10,6 +10,7 @@ import SwiftUI
 struct ActiveGroceryListView: View {
     @State private var groceryLists: [GroceryList] = []
     @State private var showingCreateGroceryList = false
+    @State private var showingMealGenerator = false
     @State private var newGroceryListName: String = ""
     @State private var showSuccessMessage: Bool = false
     @State private var successMessage: String = ""
@@ -33,6 +34,21 @@ struct ActiveGroceryListView: View {
                         .background(Color.green)
                         .cornerRadius(10)
                 }
+                
+                // Generate from Meal Button
+                Button(action: {
+                    showingMealGenerator.toggle()
+                }) {
+                    HStack {
+                        Image(systemName: "fork.knife")
+                        Text("Generate List from Meal")
+                    }
+                    .font(.headline)
+                    .foregroundColor(.white)
+                    .padding()
+                    .background(Color.blue)
+                    .cornerRadius(10)
+                }
 
                 // Preferences Button
                 Button(action: {
@@ -46,11 +62,10 @@ struct ActiveGroceryListView: View {
             }
             .padding(.top) // Space between the top and buttons
             
-            /*if isLoading {
+            if isLoading {
                 ProgressView("Loading Active Lists...")
                     .padding()
-            }
-            else*/ if groceryLists.isEmpty {
+            } else if groceryLists.isEmpty {
                 Spacer()  // Push content to the middle
                 Text("No active grocery lists available.")
                     .font(.title2)
@@ -61,7 +76,15 @@ struct ActiveGroceryListView: View {
                 // Display the active grocery lists
                 List(groceryLists) { groceryList in
                     NavigationLink(destination: GroceryListDetailView(groceryList: groceryList)) {
-                        Text(groceryList.name)
+                        HStack {
+                            Text(groceryList.name)
+                            
+                            if groceryList.isAI == true {
+                                Spacer()
+                                Image(systemName: "sparkles")
+                                    .foregroundColor(.blue)
+                            }
+                        }
                     }
                 }
             }
@@ -69,13 +92,23 @@ struct ActiveGroceryListView: View {
         .navigationTitle("Active Grocery Lists")
         .onAppear {
             Task {
-                await fetchGroceryListsAndWait() // Call async function inside Task
-                fetchDietaryPreferences() // This can stay as is if it doesn't need to be awaited
+                await fetchGroceryListsAndWait()
+                fetchDietaryPreferences()
             }
         }
         .sheet(isPresented: $showingCreateGroceryList) {
             CreateGroceryListView(
                 newGroceryListName: $newGroceryListName,
+                onGroceryListCreated: {
+                    // After the list is created, fetch the updated grocery lists
+                    Task {
+                        await fetchGroceryListsAndWait()
+                    }
+                }
+            )
+        }
+        .sheet(isPresented: $showingMealGenerator) {
+            GenerateFromMealView(
                 onGroceryListCreated: {
                     // After the list is created, fetch the updated grocery lists
                     Task {
@@ -128,7 +161,6 @@ struct ActiveGroceryListView: View {
             if let loggedInUsername = username {
                 let lists = try await GroceryListAPI.getGroceryLists(username: loggedInUsername)
                 groceryLists = lists
-//                appState.groceryLists = lists // Update global state (if needed)
             } else {
                 print("Username not found!")
             }

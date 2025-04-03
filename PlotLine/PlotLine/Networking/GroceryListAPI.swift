@@ -343,4 +343,40 @@ struct GroceryListAPI {
             
             task.resume()
         }
+    
+    static func generateGroceryListFromMeal(mealName: String) async throws -> String {
+        guard let username = UserDefaults.standard.string(forKey: "loggedInUsername") else {
+            throw URLError(.userAuthenticationRequired)
+        }
+        
+        let url = URL(string: "http://localhost:8080/api/groceryLists/generate-from-meal")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        // Create the request payload
+        let payload: [String: String] = [
+            "mealName": mealName,
+            "username": username
+        ]
+        
+        // Serialize the payload to JSON
+        request.httpBody = try JSONSerialization.data(withJSONObject: payload)
+        
+        // Perform the network request
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        // Check for a successful response
+        guard let httpResponse = response as? HTTPURLResponse,
+              httpResponse.statusCode == 200 else {
+            throw URLError(.badServerResponse)
+        }
+        
+        // Parse the response (the list ID is returned as a plain string)
+        guard let listId = String(data: data, encoding: .utf8) else {
+            throw URLError(.cannotParseResponse)
+        }
+        
+        return listId
+    }
 }
