@@ -74,6 +74,12 @@ struct ContentView: View {
                                 .cornerRadius(8)
                                 .foregroundColor(.white)
                         }
+                        
+                        NavigationLink(destination: HealthView()) {
+                            HealthWidget()
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                        .padding(.horizontal)
                     }
                     .padding([.horizontal, .bottom])
                     
@@ -250,10 +256,227 @@ struct SpendingPreviewWidget: View {
     }
 }
 
+struct HealthWidget: View {
+    @State private var sleepData: SleepEntry?
+    @State private var sleepSchedule: SleepSchedule?
+    @State private var isLoading = true
+    @State private var error: String?
+    
+    private let healthAPI = HealthAPI()
+    private let sleepAPI = SleepAPI()
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // Header with icon
+            ZStack {
+                Text("Sleep Health")
+                    .font(.custom("AvenirNext-Bold", size: 18))
+                    .foregroundColor(.blue)
+                            
+                HStack {
+                    Spacer()
+                    Image(systemName: "bed.double.fill")
+                        .foregroundColor(.green)
+                        .font(.title3)
+                }
+            }
+            .padding(.horizontal)
+            
+            if isLoading {
+                HStack {
+                    Spacer()
+                    ProgressView()
+                    Spacer()
+                }
+                .padding(.vertical, 20)
+            } else if let error = error {
+                Text(error)
+                    .foregroundColor(.gray)
+                    .italic()
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, 10)
+            } else if let sleepData = sleepData, let schedule = sleepSchedule {
+                VStack(spacing: 12) {
+                    // Last night's sleep summary
+                    HStack {
+                        VStack(alignment: .leading) {
+                            Text("Last night")
+                                .font(.subheadline)
+                                .foregroundColor(.gray)
+                            
+                            Text("\(sleepData.hoursSlept) hours")
+                                .font(.system(size: 20, weight: .bold))
+                                .foregroundColor(sleepQualityColor(sleepData.hoursSlept, targetHours: calculateTargetSleepHours(wakeUpTime: schedule.wakeUpTime, sleepTime: schedule.sleepTime)))
+                        }
+                        
+                        Spacer()
+                        
+                        // Mood indicator
+                        VStack(alignment: .trailing) {
+                            Text("Mood")
+                                .font(.subheadline)
+                                .foregroundColor(.gray)
+                            
+                            Text(moodEmoji(sleepData.mood))
+                                .font(.system(size: 24))
+                        }
+                    }
+                    
+                    Divider()
+                    
+                    // Tonight's sleep schedule
+                    HStack {
+                        VStack(alignment: .leading) {
+                            Text("Tonight")
+                                .font(.subheadline)
+                                .foregroundColor(.gray)
+                            
+                            Text(formatTime(schedule.sleepTime))
+                                .font(.headline)
+                        }
+                        
+                        Spacer()
+                        
+                        VStack(alignment: .trailing) {
+                            Text("Wake up")
+                                .font(.subheadline)
+                                .foregroundColor(.gray)
+                            
+                            Text(formatTime(schedule.wakeUpTime))
+                                .font(.headline)
+                        }
+                    }
+                    
+                    // Bedtime reminder
+                    HStack {
+                        Image(systemName: "bell.fill")
+                            .foregroundColor(.orange)
+                        
+                        Text("Reminder at \(formatTime(calculateReminderTime(from: schedule.sleepTime)))")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .padding(.top, 4)
+            } else {
+                Text("No sleep data available")
+                    .foregroundColor(.gray)
+                    .italic()
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, 10)
+            }
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(12)
+        .shadow(color: Color.black.opacity(0.2), radius: 6, x: 0, y: 3)
+        .onAppear {
+            loadSleepData()
+        }
+    }
+    
+    private func loadSleepData() {
+        isLoading = true
+        error = nil
+        
+        Task {
+            do {
+                // Get today's date at midnight
+                let calendar = Calendar.current
+                let today = calendar.startOfDay(for: Date())
+                
+                // Get yesterday's date
+                guard let yesterday = calendar.date(byAdding: .day, value: -1, to: today) else {
+                    throw NSError(domain: "HealthWidget", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not calculate yesterday's date"])
+                }
+                
+                // Fetch entries for the last week
+                let entries = try await healthAPI.fetchEntriesForWeek(containing: yesterday)
+                
+                // Find yesterday's entry
+                let yesterdayEntry = entries.first { entry in
+                    calendar.isDate(entry.date, inSameDayAs: yesterday)
+                }
+                
+                // Fetch sleep schedule
+                let schedule = try await sleepAPI.fetchSleepSchedule()
+                
+                // Update UI on main thread
+                DispatchQueue.main.async {
+                    self.sleepData = yesterdayEntry.map { SleepEntry(hoursSlept: $0.hoursSlept, mood: $0.mood) }
+                    self.sleepSchedule = schedule
+                    self.isLoading = false
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self.error = "Could not load sleep data"
+                    self.isLoading = false
+                    print("Error loading sleep data: \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+    
+    // Helper functions
+    private func formatTime(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "h:mm a"
+        return formatter.string(from: date)
+    }
+    
+    private func calculateReminderTime(from sleepTime: Date) -> Date {
+        let calendar = Calendar.current
+        return calendar.date(byAdding: .hour, value: -1, to: sleepTime) ?? sleepTime
+    }
+    
+    private func moodEmoji(_ mood: String) -> String {
+        switch mood.lowercased() {
+        case "bad":
+            return "😞"
+        case "okay":
+            return "😐"
+        case "good":
+            return "😊"
+        default:
+            return "❓"
+        }
+    }
+    
+    private func sleepQualityColor(_ hours: Int, targetHours: Double) -> Color {
+        if Double(hours) >= targetHours {
+            return .green
+        } else if Double(hours) >= targetHours * 0.8 {
+            return .orange
+        } else {
+            return .red
+        }
+    }
+    
+    private func calculateTargetSleepHours(wakeUpTime: Date, sleepTime: Date) -> Double {
+        let calendar = Calendar.current
+        
+        // Convert to minutes for easier calculation
+        let sleepComponents = calendar.dateComponents([.hour, .minute], from: sleepTime)
+        let wakeComponents = calendar.dateComponents([.hour, .minute], from: wakeUpTime)
+        
+        let sleepMinutes = (sleepComponents.hour ?? 0) * 60 + (sleepComponents.minute ?? 0)
+        let wakeMinutes = (wakeComponents.hour ?? 0) * 60 + (wakeComponents.minute ?? 0)
+        
+        // If sleep time is after wake time, it means sleep spans across midnight
+        let totalMinutes = sleepMinutes > wakeMinutes
+            ? (24 * 60 - sleepMinutes) + wakeMinutes
+            : wakeMinutes - sleepMinutes
+            
+        // Convert back to hours (with fraction)
+        return Double(totalMinutes) / 60.0
+    }
+}
 
-
-
-
+// Simple data structure for sleep entry display
+struct SleepEntry {
+    let hoursSlept: Int
+    let mood: String
+}
 
 #Preview {
     ContentView()
