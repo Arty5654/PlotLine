@@ -133,7 +133,6 @@ struct ActiveGroceryListView: View {
     // Function to fire off the api to create a new list
     private func createNewGroceryList() {
         guard !newGroceryListName.isEmpty else {
-            print("Grocery list name cannot be empty.")
             return
         }
 
@@ -180,7 +179,6 @@ struct ActiveGroceryListView: View {
                     case .success(let restrictions):
                         dietaryRestrictions = restrictions // Assign result here
                     case .failure(let error):
-                        print("Failed to load dietary preferences: \(error.localizedDescription)")
                         
                         // If there is an error (e.g., no data), create a new object with defaults
                         dietaryRestrictions = DietaryRestrictions(
@@ -193,7 +191,6 @@ struct ActiveGroceryListView: View {
                             dairyFree: false,
                             nutFree: false
                         )
-                        print("Loaded default dietary restrictions.")
                     }
                 }
             } else {
@@ -212,12 +209,9 @@ struct ActiveGroceryListView: View {
     }
     
     private func getLastCreatedGroceryList(listId: String) -> GroceryList? {
-        print("List ID checking for in getLast: \(listId)")
-        
         // Find the first grocery list with a matching id
         let mostRecentList = groceryLists.first { $0.id == UUID(uuidString: listId)}
         
-        print("from get last: \(mostRecentList)")
         return mostRecentList
     }
 }

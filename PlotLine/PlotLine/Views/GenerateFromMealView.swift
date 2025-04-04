@@ -5,7 +5,6 @@
 //  Created by Yash Mehta on 4/3/25.
 //
 
-
 import SwiftUI
 
 struct GenerateFromMealView: View {
@@ -14,6 +13,8 @@ struct GenerateFromMealView: View {
     @State private var isGenerating: Bool = false
     @State private var errorMessage: String? = nil
     @State private var showError: Bool = false
+    @State private var dietaryMessage: String? = nil
+    @State private var showDietaryInfo: Bool = false
     
     var onGroceryListCreated: () -> Void
     
@@ -28,7 +29,7 @@ struct GenerateFromMealView: View {
                     .padding()
                     .textFieldStyle(RoundedBorderTextFieldStyle())
                 
-                Text("We'll create a grocery list with all the ingredients you need!")
+                Text("We'll create a grocery list with all the ingredients you need, adapted to your dietary preferences!")
                     .font(.subheadline)
                     .foregroundColor(.gray)
                     .multilineTextAlignment(.center)
@@ -69,6 +70,17 @@ struct GenerateFromMealView: View {
                     dismissButton: .default(Text("OK"))
                 )
             })
+            .alert(isPresented: $showDietaryInfo, content: {
+                Alert(
+                    title: Text("About your request"),
+                    message: Text(dietaryMessage ?? ""),
+                    dismissButton: .default(Text("OK")) {
+                        // On dismiss of this alert, we should also dismiss the sheet and refresh the lists
+                        onGroceryListCreated()
+                        presentationMode.wrappedValue.dismiss()
+                    }
+                )
+            })
         }
     }
 
@@ -80,13 +92,53 @@ struct GenerateFromMealView: View {
         Task {
             do {
                 // Call the API function to generate a grocery list from the meal name
-                let _ = try await GroceryListAPI.generateGroceryListFromMeal(mealName: mealName)
-
-                // On success, dismiss this view and refresh the grocery lists
+                let result = try await GroceryListAPI.generateGroceryListFromMeal(mealName: mealName)
+                
                 DispatchQueue.main.async {
                     isGenerating = false
-                    onGroceryListCreated()
-                    presentationMode.wrappedValue.dismiss()
+                    
+                    // Check if the result starts with "INCOMPATIBLE:" which indicates the meal
+                    // cannot be made with the user's dietary restrictions
+                    if let incompatiblePrefix = result.range(of: "INCOMPATIBLE:") {
+                        // Parse the JSON to extract the reason
+                        let json = String(result[incompatiblePrefix.upperBound...])
+                        
+                        print(json)
+                        
+                        if let data = json.data(using: .utf8),
+                           let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                           let reason = dict["reason"] as? String {
+                            
+                            dietaryMessage = "This meal cannot be made with your dietary restrictions: \n\n \(reason)"
+                            showDietaryInfo = true
+                        } else {
+                            dietaryMessage = "This meal is not compatible with your dietary restrictions."
+                            showDietaryInfo = true
+                        }
+                    }
+                    // Check if the result contains a modification message
+                    else if let modPrefix = result.range(of: "MODIFIED:") {
+                        let json = String(result[modPrefix.upperBound...])
+                        
+                        if let data = json.data(using: .utf8),
+                            let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                            let modifications = dict["modifications"] as? String,
+                            let listId = dict["listId"] as? String {
+                            
+                            dietaryMessage = "We've adjusted this recipe to match your dietary preferences: \n\n \(modifications)"
+                            showDietaryInfo = true
+                        } else {
+                            // If we couldn't parse the modification, still created the list
+                            onGroceryListCreated()
+                            presentationMode.wrappedValue.dismiss()
+                        }
+                    }
+                    // Standard success case
+                    else {
+                        // Just created the list successfully with no modifications
+                        onGroceryListCreated()
+                        presentationMode.wrappedValue.dismiss()
+                    }
                 }
             } catch {
                 // Handle any errors

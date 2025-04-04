@@ -39,12 +39,8 @@ class HealthAPI {
 
         do {
                 let (data, response) = try await URLSession.shared.data(for: request)
-            
-                print("Data received: \(String(data: data, encoding: .utf8) ?? "Unable to convert to string")")
                 
-                // ... HTTP response checking ...
-                
-                // Create a decoder with proper date handling
+                // Date decoder
                 let decoder = JSONDecoder()
                 let dateFormatter = DateFormatter()
                 dateFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSZZZZZ" // Format with timezone
@@ -54,7 +50,6 @@ class HealthAPI {
                 
                 return try decoder.decode([HealthEntry].self, from: data)
             } catch {
-                print("Decoding error: \(error)")
                 throw error
             }
     }

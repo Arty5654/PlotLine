@@ -35,17 +35,14 @@ struct HealthView: View {
     @State private var sleepSchedule: SleepSchedule?
     @State private var targetHours: Double = 9.0
     
-    // Sheet presentation
     @State private var showingSleepSchedule = false
     
-    // API state
     @State private var weekEntries: [HealthEntry] = []
     @State private var isLoading = false
     @State private var showingAlert = false
     @State private var alertTitle = ""
     @State private var alertMessage = ""
     
-    // API service
     private let healthAPI = HealthAPI()
     
     var body: some View {
@@ -86,7 +83,7 @@ struct HealthView: View {
             }
             .padding()
             .background(
-                Double(hoursSlept) >= targetHours ? Color.green.opacity(0.2) : Color.red.opacity(0.2)
+                sleepQualityColor(hoursSlept)
             )
             .cornerRadius(12)
             .padding(.horizontal)
@@ -165,6 +162,16 @@ struct HealthView: View {
         }
     }
     
+    // Helper function to show whether enough sleep was logged
+    private func sleepQualityColor(_ hours: Int) -> Color {
+        let target = calculateTargetSleepHours(
+            wakeUpTime: sleepSchedule?.wakeUpTime ?? Date(),
+            sleepTime: sleepSchedule?.sleepTime ?? Date()
+        )
+        
+        return hours >= Int(target) ? Color.green.opacity(0.2) : Color.red.opacity(0.2)
+    }
+    
     // MARK: - Notification Functions
     
     private func scheduleBedtimeReminder() {
@@ -173,36 +180,29 @@ struct HealthView: View {
         // Remove any existing notifications
         UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
         
-        // Create a date component for the sleep time
         let sleepTime = sleepSchedule.sleepTime
         let calendar = Calendar.current
         
-        // Create components for 1 hour before sleep time
         var reminderComponents = calendar.dateComponents([.hour, .minute], from: sleepTime)
-        
-        // Adjust to be 1 hour earlier
+
         if let hour = reminderComponents.hour {
             reminderComponents.hour = hour - 1
         }
         
-        // Create the notification content
         let content = UNMutableNotificationContent()
         content.title = "Time to Wind Down"
         content.body = "Your bedtime is in 1 hour. Start preparing for sleep!"
         content.sound = UNNotificationSound.default
         content.interruptionLevel = .timeSensitive
         
-        // Create a daily trigger at the calculated time
         let trigger = UNCalendarNotificationTrigger(dateMatching: reminderComponents, repeats: true)
         
-        // Create the request
         let request = UNNotificationRequest(
             identifier: "bedtimeReminder",
             content: content,
             trigger: trigger
         )
         
-        // Add the notification request
         UNUserNotificationCenter.current().add(request)
     }
     
@@ -225,7 +225,6 @@ struct HealthView: View {
         }
     }
     
-    // Add a function to load sleep schedule
     private func loadSleepSchedule() async {
          let sleepAPI = SleepAPI()
          do {
@@ -377,8 +376,7 @@ struct HealthView: View {
         }
     }
     
-    // MARK: - Helper Functions
-    
+    // MARK: - Message Helper Functions
     private func showError(_ title: String, _ message: String) {
         alertTitle = title
         alertMessage = message
@@ -394,12 +392,12 @@ struct HealthView: View {
 
 // MARK: - MoodButton Component
 struct MoodButton: View {
-    var value: String  // The string value to store (bad, okay, good)
+    var value: String
     @Binding var selectedMood: String
 
     var body: some View {
         Button(action: {
-            selectedMood = value  // Store the text value
+            selectedMood = value
         }) {
             Text(value)
                 .font(.body)
@@ -422,7 +420,6 @@ struct DateRowPicker: View {
     
     var body: some View {
         VStack(spacing: 0) {
-            // Days of week header
             let daysOfWeek = ["S", "M", "T", "W", "T", "F", "S"]
             HStack(spacing: 0) {
                 ForEach(0..<7) { index in
@@ -606,8 +603,8 @@ private func calculateTargetSleepHours(wakeUpTime: Date, sleepTime: Date) -> Dou
     let calendar = Calendar.current
     
     // Handle case when sleep time is on the next day
-    var sleepComponents = calendar.dateComponents([.hour, .minute], from: sleepTime)
-    var wakeComponents = calendar.dateComponents([.hour, .minute], from: wakeUpTime)
+    let sleepComponents = calendar.dateComponents([.hour, .minute], from: sleepTime)
+    let wakeComponents = calendar.dateComponents([.hour, .minute], from: wakeUpTime)
     
     // Convert to minutes for easier calculation
     let sleepMinutes = sleepComponents.hour! * 60 + sleepComponents.minute!

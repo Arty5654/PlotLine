@@ -3,7 +3,11 @@ import com.plotline.backend.service.OpenAIService;
 
 import com.plotline.backend.dto.GroceryItem;
 import com.plotline.backend.dto.GroceryList;
+import com.plotline.backend.service.DietaryRestrictionsService;
 import com.plotline.backend.service.GroceryListService;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.plotline.backend.dto.DietaryRestrictions;
 import com.plotline.backend.dto.GroceryCostEstimateRequest;
 
 import org.apache.http.HttpStatus;
@@ -12,6 +16,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.io.IOException;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -24,6 +29,9 @@ public class GroceryListController {
 
     @Autowired
     private OpenAIService openAIService;
+
+    @Autowired
+    private DietaryRestrictionsService dietaryRestrictionsService;
 
 
     // Create grocery list
@@ -197,24 +205,78 @@ public class GroceryListController {
             // Extract meal name and username from the request
             String mealName = request.get("mealName");
             String username = request.get("username");
-
+    
             // Validate input
             if (mealName == null || mealName.trim().isEmpty()) {
                 return ResponseEntity.badRequest().body("Meal name is required");
             }
-
+    
             if (username == null || username.trim().isEmpty()) {
                 return ResponseEntity.badRequest().body("Username is required");
             }
 
-            // Get raw response from OpenAI
-            String rawResponse = openAIService.generateGroceryListFromMeal("Meal: " + mealName);
+            // Parse the response to determine the outcome
+            ObjectMapper mapper = new ObjectMapper();
+            JsonNode rootNode;
+    
+            // Fetch dietary restrictions for the user
+            DietaryRestrictions dietaryRestrictions = null;
+            try {
+                dietaryRestrictions = dietaryRestrictionsService.getDietaryRestrictions(username);
+            } catch (Exception e) {
+                // If we can't get dietary restrictions, create default ones (all false)
+                dietaryRestrictions = new DietaryRestrictions();
+                dietaryRestrictions.setUsername(username);
+            }
 
-            // Use the service to generate the grocery list
+            // Get raw response from OpenAI, passing dietary restrictions
+            String rawResponse = openAIService.generateGroceryListFromMeal(
+                    "Meal: " + mealName, 
+                    dietaryRestrictions
+            );
+
+            try {
+                rootNode = mapper.readTree(rawResponse);
+            } catch (Exception e) {
+                return ResponseEntity.status(500).body("Invalid response from AI service: " + e.getMessage());
+            }
+
+            // Case 1: Meal is incompatible with dietary restrictions
+            if (rootNode.has("incompatible") && rootNode.get("incompatible").asBoolean()) {
+                // Return the incompatibility message to the frontend
+                String response = "INCOMPATIBLE:" + rawResponse;
+                return ResponseEntity.ok(response);
+            }
+
+            // Case 2: Meal requires modifications for dietary restrictions
+            if (rootNode.has("modifications")) {
+                String modifications = rootNode.get("modifications").asText();
+                JsonNode itemsNode = rootNode.get("items");
+
+                if (itemsNode == null || !itemsNode.isArray()) {
+                    return ResponseEntity.status(500).body("Invalid response format: missing items array");
+                }
+
+                // Generate the grocery list with the modified items
+                String listId = groceryListService.generateGroceryListFromMeal(
+                    mealName + " (Modified for dietary restrictions)",
+                    username,
+                    mapper.writeValueAsString(itemsNode)
+                );
+
+                // Return a special response indicating modifications were made
+                Map<String, String> modResponse = new HashMap<>();
+                modResponse.put("modifications", modifications);
+                modResponse.put("listId", listId);
+
+                String responseStr = "MODIFIED:" + mapper.writeValueAsString(modResponse);
+                return ResponseEntity.ok(responseStr);
+            }
+
+            // Case 3: Standard success case - meal works with dietary restrictions
             String listId = groceryListService.generateGroceryListFromMeal(mealName, username, rawResponse);
-
-            // Return the list ID
             return ResponseEntity.ok(listId);
+
         } catch (Exception e) {
             e.printStackTrace();
             return ResponseEntity.status(500).body("Error generating grocery list from meal: " + e.getMessage());

@@ -8,27 +8,23 @@ import com.openai.models.ChatModel;
 
 import com.openai.models.responses.Response;
 import com.openai.models.responses.ResponseCreateParams;
-import com.openai.models.responses.ResponseOutputItem;
-import com.openai.models.responses.ResponseOutputMessage;
 import com.openai.models.responses.ResponseOutputText;
-
+import com.plotline.backend.dto.DietaryRestrictions;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonMappingException;
-import com.fasterxml.jackson.databind.JsonNode;
 
 import io.github.cdimascio.dotenv.Dotenv;
 
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-
-import java.util.List;
 
 @Service
 public class OpenAIService {
 
   private final OpenAIClient openAIClient;
   private final ObjectMapper objectMapper = new ObjectMapper();
+
+  @Autowired
+    private DietaryRestrictionsService dietaryRestrictionsService;
 
   public OpenAIService() {
 
@@ -138,56 +134,121 @@ public class OpenAIService {
         e.printStackTrace();
         return "Service Error";
       }
-
   } 
 
-  public String generateGroceryListFromMeal(String mealName, String username) throws Exception {
-    // Create a properly formatted meal name for the OpenAI prompt
-    String prompt = "Meal: " + mealName;
-
-    // Get raw JSON response from OpenAI
-    String rawResponse = generateGroceryListFromMeal(prompt);
-
-    // Return the raw response - the service class will handle the parsing
-    return rawResponse;
-  }
-
-  public String generateGroceryListFromMeal(String userMessage) {
+  public String generateGroceryListFromMeal(String mealName, DietaryRestrictions dietaryRestrictions) {
     try {
-      String systemMessage = """
-        You are a smart recipe assistant.
-        When given a meal name, respond with a JSON array of grocery items required to make it. Do not include the instructions or meal name.
-        Each item should include name (string), quantity (int), and notes (string). Do not include any explanations.
-        Make sure to include the quantity of each item needed for a single serving.
-        The quantity is measured as number of items to grab from the store.
-        You can include specific measurements or general notes in the notes field.
-        For example, if the meal is "Pasta", you might include {"name": "pasta", "quantity": 1, "notes": "1 box of spaghetti"}.
-        If the meal is "Chicken Salad", you might include {"name": "chicken", "quantity": 1, "notes": "1 lb of chicken breast"}.
-        If the meal is not recognized, respond with an empty array: []
-        Do not include any extra characters, punctuation, or JSON formatting.
-        Respond with ONLY a single plain text JSON array with no extra characters, punctuation, or JSON formatting.
-        Do not wrap your answer in braces or quotes.
-        Example: [{"name": "eggs", "quantity": 6}, {"name": "milk", "quantity": 1}]
-        """;
+        // Build dietary restrictions string for the prompt
+        StringBuilder dietaryInfo = new StringBuilder();
+        boolean hasRestrictions = false;
 
-      ResponseCreateParams params = ResponseCreateParams.builder()
-          .input(userMessage)
-          .instructions(systemMessage)
-          .model(ChatModel.GPT_4O_MINI)
-          .build();
+        if (dietaryRestrictions != null) {
+            if (dietaryRestrictions.isVegan()) {
+                dietaryInfo.append("- Vegan: No animal products including meat, dairy, eggs, honey\n");
+                hasRestrictions = true;
+            } else if (dietaryRestrictions.isVegetarian()) {
+                dietaryInfo.append("- Vegetarian: No meat, fish, or poultry\n");
+                hasRestrictions = true;
+            }
 
-      Response response = openAIClient.responses().create(params);
-      ResponseOutputText rot = response.output().get(0).message().get().content().get(0).asOutputText();
+            if (dietaryRestrictions.isLactoseIntolerant() || dietaryRestrictions.isDairyFree()) {
+                dietaryInfo.append("- No dairy products\n");
+                hasRestrictions = true;
+            }
 
-      // Print the raw JSON response
-      String jsonResponse = rot.text();
-      System.out.println("Raw JSON response: " + jsonResponse);
+            if (dietaryRestrictions.isGlutenFree()) {
+                dietaryInfo.append("- Gluten-free: No wheat, barley, rye\n");
+                hasRestrictions = true;
+            }
 
-      return rot.text();
+            if (dietaryRestrictions.isKosher()) {
+                dietaryInfo.append("- Kosher: No pork, shellfish, meat and dairy together\n");
+                hasRestrictions = true;
+            }
+
+            if (dietaryRestrictions.isNutFree()) {
+                dietaryInfo.append("- No nuts\n");
+                hasRestrictions = true;
+            }
+        }
+
+        String dietaryPrefix = hasRestrictions ?
+            "User has the following dietary restrictions:\n" + dietaryInfo.toString() :
+            "User has no specific dietary restrictions.";
+
+        String systemMessage = """
+            You are a smart recipe assistant that helps users with dietary restrictions.
+
+            %s
+
+            When given a meal name, analyze if it can be made with these dietary restrictions.
+
+            If the meal cannot be made with these dietary restrictions, respond with a JSON object:
+            {"incompatible": true, "reason": "explanation of why the meal can't be made with these restrictions"}
+
+            If the meal requires substitutions to meet dietary restrictions, respond with a JSON object:
+            {"modifications": "explanation of the modifications made", "items": [array of grocery items]}
+
+            If the meal can be made as-is with these dietary restrictions, respond with a JSON array of grocery items.
+
+            Each grocery item should include:
+            - name (string): The name of the ingredient, in PROPER CASE
+            - quantity (int): Number of the item to buy at the store
+            - notes (string): Optional measurement info or special instructions
+
+            Example grocery item: {"name": "Chicken breast", "quantity": 1, "notes": "1 pound"}
+
+            All grocery items in a grocery list should be in a JSON array format, and separated by commas.
+
+            Example: [{"name": "Eggs", "quantity": 6}, {"name": "Milk", "quantity": 1}]
+
+            Respond with ONLY the JSON with no additional text, explanation, or formatting.
+            """.formatted(dietaryPrefix);
+
+        ResponseCreateParams params = ResponseCreateParams.builder()
+            .input(mealName)
+            .instructions(systemMessage)
+            .model(ChatModel.GPT_4O_MINI)
+            .build();
+
+        Response response = openAIClient.responses().create(params);
+
+        // Get response as text
+        ResponseOutputText rot = response.output().get(0).message().get().content().get(0).asOutputText();
+
+        // Print the raw JSON response
+        String jsonResponse = rot.text();
+
+        return jsonResponse;
 
     } catch (OpenAIException e) {
-      e.printStackTrace();
-      return "Service Error";
+        e.printStackTrace();
+        return "{\"incompatible\": true, \"reason\": \"Service Error: Unable to process the meal request\"}";
+    } catch (Exception e) {
+        e.printStackTrace();
+        return "{\"incompatible\": true, \"reason\": \"Service Error: " + e.getMessage() + "\"}";
+    }
+  }
+
+  // The original method that the controller calls
+  public String generateGroceryListFromMeal(String mealName, String username) throws Exception {
+    try {
+        // Get the dietary restrictions for this user
+        DietaryRestrictions dietaryRestrictions = null;
+        try {
+            // Assuming dietaryRestrictionsService is autowired
+            dietaryRestrictions = dietaryRestrictionsService.getDietaryRestrictions(username);
+        } catch (Exception e) {
+            // If we can't get dietary restrictions, create default ones (all false)
+            dietaryRestrictions = new DietaryRestrictions();
+            dietaryRestrictions.setUsername(username);
+        }
+
+        // Get raw JSON response from OpenAI with dietary restrictions
+        return generateGroceryListFromMeal(mealName, dietaryRestrictions);
+    } catch (Exception e) {
+        e.printStackTrace();
+        throw new Exception("Failed to generate grocery list: " + e.getMessage(), e);
     }
   }
 }
