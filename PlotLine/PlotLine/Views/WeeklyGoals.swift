@@ -67,19 +67,23 @@ struct WeeklyGoalsView: View {
                 
                 // Weekly View
                 if selectedView == .weekly {
-                    Toggle("Enable Notifications", isOn: $notificationsEnabled)
+                    VStack(alignment: .leading, spacing: 10) {
+                            Toggle("Enable Notifications", isOn: $notificationsEnabled)
 
-                    if notificationsEnabled {
-                        Picker("Notification Type", selection: $notificationType) {
-                            Text("Due Date").tag("dueDate")
-                            Text("Priority-based").tag("priority")
-                            Text("Custom Time").tag("custom")
-                        }
+                            if notificationsEnabled {
+                                Picker("Notification Type", selection: $notificationType) {
+                                    Text("Due Date").tag("dueDate")
+                                    Text("Priority-based").tag("priority")
+                                }
+                                .pickerStyle(SegmentedPickerStyle())
 
-                        if notificationType == "custom" {
-                            DatePicker("Select Time", selection: $notificationTime, displayedComponents: .hourAndMinute)
+                                if notificationType == "custom" {
+                                    DatePicker("Select Time", selection: $notificationTime, displayedComponents: .hourAndMinute)
+                                }
+                            }
                         }
-                    }
+                        .padding(.horizontal) 
+                        .padding(.top, 4)
 
                     
                     Picker("Priority Filter", selection: $selectedPriorityFilter) {
@@ -349,6 +353,17 @@ struct WeeklyGoalsView: View {
                             }
                         }
                     }
+                    Button(action: resetLongTermGoals) {
+                        Text("Reset Long-Term Goals")
+                            .font(.headline)
+                            .foregroundColor(.white)
+                            .padding()
+                            .frame(maxWidth: .infinity)
+                            .background(Color.red)
+                            .cornerRadius(10)
+                            .padding()
+                    }
+
                 } // end else
                     
             }.onAppear {
@@ -456,7 +471,7 @@ struct WeeklyGoalsView: View {
             isCompleted: false,
             priority: newTaskPriority,
             dueDate: newTaskDueDate,
-            notificationsEnabled: true, 
+            notificationsEnabled: notificationsEnabled,
             notificationType: notificationType,
             notificationTime: notificationTime
         )
@@ -774,6 +789,7 @@ struct WeeklyGoalsView: View {
     }
     
     func scheduleNotification(for task: TaskItem) {
+        print("🔍 notificationsEnabled for \(task.name): \(task.notificationsEnabled)")
         guard task.notificationsEnabled else {
             print("🔕 Notifications disabled for task: \(task.name)")
             return
@@ -786,37 +802,41 @@ struct WeeklyGoalsView: View {
 
         var triggerDate: Date?
 
-        let calendar = Calendar.current
         let now = Date()
+        let calendar = Calendar.current
 
-        if let dueDate = task.dueDate {
-            let isToday = calendar.isDate(dueDate, inSameDayAs: now)
-
-            if isToday {
-                // 🔧 Today’s task – fire in 5 seconds (for testing)
-                triggerDate = now.addingTimeInterval(5)
-            } else {
-                // Schedule for 9 AM on the due date
-                var dateComponents = calendar.dateComponents([.year, .month, .day], from: dueDate)
-                dateComponents.hour = 9
-                dateComponents.minute = 0
-                triggerDate = calendar.date(from: dateComponents)
+        switch task.notificationType {
+        case "dueDate":
+            if let dueDate = task.dueDate {
+                if calendar.isDate(dueDate, inSameDayAs: now) {
+                    triggerDate = now.addingTimeInterval(5) // test: due today = 5 seconds
+                } else {
+                    var dateComponents = calendar.dateComponents([.year, .month, .day], from: dueDate)
+                    dateComponents.hour = 9
+                    dateComponents.minute = 0
+                    triggerDate = calendar.date(from: dateComponents)
+                }
             }
 
-        } else if task.notificationType == "priority" {
-            // ⏰ Priority-based fallback
+        case "priority":
             switch task.priority {
             case .high:
-                triggerDate = now.addingTimeInterval(5) // 5 seconds
+                triggerDate = now.addingTimeInterval(5) // ⏱️ high = 5s
             case .medium:
-                triggerDate = now.addingTimeInterval(10) // 10
+                triggerDate = now.addingTimeInterval(10) // ⏱️ medium = 10s
             case .low:
-                triggerDate = now.addingTimeInterval(60 * 60 * 8) // 8 hours
+                triggerDate = now.addingTimeInterval(60 * 60) // ⏱️ low = 1 hour
             }
 
-        } else if task.notificationType == "custom", let customTime = task.notificationTime {
-            triggerDate = customTime
+        case "custom":
+            if let customTime = task.notificationTime {
+                triggerDate = customTime
+            }
+
+        default:
+            print("⚠️ Unknown notificationType: \(task.notificationType ?? "nil")")
         }
+
 
         guard let date = triggerDate else {
             print("⚠️ Could not determine notification time for task: \(task.name)")
@@ -856,6 +876,32 @@ struct WeeklyGoalsView: View {
             }
         }
     }
+    
+    private func resetLongTermGoals() {
+        guard let url = URL(string: "http://localhost:8080/api/goals/\(username)/long-term/reset") else {
+            print("❌ Invalid URL for resetting long-term goals")
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            if let error = error {
+                print("❌ Network error: \(error.localizedDescription)")
+                return
+            }
+
+            if let httpResponse = response as? HTTPURLResponse {
+                print("🔍 HTTP Status Code: \(httpResponse.statusCode)")
+            }
+
+            DispatchQueue.main.async {
+                self.longTermGoals.removeAll() // Clear the UI
+            }
+        }.resume()
+    }
+
 
     
 

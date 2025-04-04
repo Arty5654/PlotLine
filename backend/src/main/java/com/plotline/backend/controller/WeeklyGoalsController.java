@@ -112,4 +112,14 @@ public class WeeklyGoalsController {
     }
   }
 
+  @DeleteMapping("/{username}/long-term/reset")
+  public ResponseEntity<String> resetLongTermGoals(@PathVariable String username) throws IOException {
+    boolean success = s3Service.resetLongTermGoalsInS3(username);
+    if (success) {
+      return ResponseEntity.ok("All long-term goals have been reset!");
+    } else {
+      return ResponseEntity.status(500).body("Failed to reset long-term goals.");
+    }
+  }
+
 }

@@ -482,4 +482,31 @@ public class S3Service {
     }
   }
 
+  public boolean resetLongTermGoalsInS3(String username) {
+    try {
+      String key = "users/" + username + "/long-term-goals.json";
+      System.out.println("📡 Resetting long-term goals for: " + key);
+
+      Map<String, List<LongTermGoal>> emptyGoalData = Map.of("longTermGoals", new ArrayList<>());
+
+      ObjectMapper objectMapper = new ObjectMapper();
+      String emptyJson = objectMapper.writeValueAsString(emptyGoalData);
+
+      PutObjectRequest putObjectRequest = PutObjectRequest.builder()
+          .bucket(bucketName)
+          .key(key)
+          .build();
+
+      s3Client.putObject(putObjectRequest, RequestBody.fromString(emptyJson));
+      return true;
+
+    } catch (NoSuchKeyException e) {
+      System.out.println("⚠️ Long-term goals file not found, nothing to reset.");
+      return false;
+    } catch (Exception e) {
+      e.printStackTrace();
+      return false;
+    }
+  }
+
 }
