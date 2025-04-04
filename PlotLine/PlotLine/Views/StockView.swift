@@ -183,30 +183,39 @@ struct SavedPortfolio: Codable {
     let riskTolerance: String
 
     var parsedAssets: [InvestmentAsset] {
-        let pattern = #"\*\*([A-Z]+)\s*-\s*(\d+)%%\*\*.*?Allocation:\*\*\s*\$([\d.]+)"#
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.dotMatchesLineSeparators]) else {
-            return []
-        }
+        let patterns = [
+            #"\*\*([A-Z]+)\s*-\s*(\d+)%%\*\*.*?Allocation:\*\*\s*\$([\d.]+)"#, // Quiz format (double %%)
+            #"\*\*([A-Z]+)\*\*\s*-\s*(\d+)%\s*-\s*\$([\d.]+)"#               // Edited format
+        ]
 
-        let nsrange = NSRange(portfolio.startIndex..<portfolio.endIndex, in: portfolio)
-        var results: [InvestmentAsset] = []
+        for pattern in patterns {
+            guard let regex = try? NSRegularExpression(pattern: pattern, options: [.dotMatchesLineSeparators]) else { continue }
+            
+            var results: [InvestmentAsset] = []
+            let nsrange = NSRange(portfolio.startIndex..<portfolio.endIndex, in: portfolio)
 
-        regex.enumerateMatches(in: portfolio, options: [], range: nsrange) { match, _, _ in
-            if let match = match,
-               let nameRange = Range(match.range(at: 1), in: portfolio),
-               let percentRange = Range(match.range(at: 2), in: portfolio),
-               let amountRange = Range(match.range(at: 3), in: portfolio) {
+            regex.enumerateMatches(in: portfolio, options: [], range: nsrange) { match, _, _ in
+                if let match = match,
+                   let nameRange = Range(match.range(at: 1), in: portfolio),
+                   let percentRange = Range(match.range(at: 2), in: portfolio),
+                   let amountRange = Range(match.range(at: 3), in: portfolio) {
 
-                let name = String(portfolio[nameRange])
-                let percentage = Double(portfolio[percentRange]) ?? 0
-                let amount = Double(portfolio[amountRange]) ?? 0
+                    let name = String(portfolio[nameRange])
+                    let percentage = Double(portfolio[percentRange]) ?? 0
+                    let amount = Double(portfolio[amountRange]) ?? 0
 
-                results.append(InvestmentAsset(name: name, percentage: percentage, amount: amount))
+                    results.append(InvestmentAsset(name: name, percentage: percentage, amount: amount))
+                }
+            }
+
+            if !results.isEmpty {
+                return results // Use the first successful pattern
             }
         }
 
-        return results
+        return []
     }
+
 
 
     var investmentFrequency: String {
