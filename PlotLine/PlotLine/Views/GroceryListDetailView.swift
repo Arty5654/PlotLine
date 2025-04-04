@@ -133,6 +133,7 @@ struct GroceryListDetailView: View {
 
                             // Done shopping button
                             Button("Done Shopping") {
+                                checkallItems()
                                 estimateGroceryCostAndUpdateBudget()
                             }
                             .padding()
@@ -449,5 +450,53 @@ struct GroceryListDetailView: View {
             }.resume()
         }.resume()
     }
-
+    
+    func checkallItems() {
+        Task {
+            let uncheckedItems = items.filter { !$0.checked }
+            
+            if uncheckedItems.isEmpty {
+                print("All items are already checked off.")
+                return
+            }
+            
+            print("Starting to check off \(uncheckedItems.count) items...")
+            
+            for item in uncheckedItems {
+                do {
+                    let listIdString = groceryList.id.uuidString
+                    
+                    // Call API to toggle the checked status
+                    try await GroceryListAPI.toggleChecked(listId: listIdString, itemId: item.id.uuidString)
+                    
+                    // Update local state on the main thread
+                    await MainActor.run {
+                        if let index = items.firstIndex(where: { $0.id == item.id }) {
+                            // Create an updated version of the item
+                            let updatedItem = GroceryItem(
+                                listId: groceryList.id,
+                                id: item.id,
+                                name: item.name,
+                                quantity: item.quantity,
+                                checked: true,
+                                price: item.price,
+                                store: item.store,
+                                notes: item.notes
+                            )
+                            items[index] = updatedItem
+                        }
+                    }
+                    
+                    // Add a small delay between requests to avoid overwhelming the server
+                    try await Task.sleep(nanoseconds: 200_000_000) // 200ms delay
+                    
+                    print("Checked off item: \(item.name)")
+                } catch {
+                    print("Failed to check off item \(item.name): \(error)")
+                }
+            }
+            
+            print("Finished checking off items")
+        }
+    }
 }
