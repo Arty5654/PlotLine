@@ -68,23 +68,36 @@ public class PortfolioController {
 
             // Create prompt
             String prompt = String.format("""
-                Based on the following quiz:
-                - Goal: %s
-                - Risk Tolerance: %s
-                - Experience: %s
-                - Age: %s
-                - Suggested Monthly Investment: %s
+            Based on the following quiz:
+            - Goal: %s
+            - Risk Tolerance: %s
+            - Experience: %s
+            - Age: %s
+            - Suggested Monthly Investment: %s
 
-                Recommend a diversified investment portfolio with exact allocations (e.g., 40%% AAPL, 30%% VTI, 30%% BND).
-                Include how often and how much the user should invest, based on their investment capacity.
-                Explain briefly why each asset was chosen. Use beginner-friendly language.
-                """,
-                quizData.get("goals"),
-                quizData.get("riskTolerance"),
-                quizData.get("experience"),
-                quizData.get("age"),
-                amountBasis
+            Recommend a diversified investment portfolio. 
+
+            IMPORTANT FORMAT REQUIREMENT:  
+            Follow **this exact format** for each asset so the app can parse it:
+
+            **[TICKER] - [PERCENTAGE]%%%%**  
+            - **Allocation:** $XXX.XX  
+            - **Reason:** Explanation of why this asset was chosen.
+
+            For example:
+            **VTI - 40%%%%**  
+            - **Allocation:** $264.80  
+            - **Reason:** Broad U.S. stock market exposure.
+
+            Use 4-5 ETFs or stocks max. Do not include full fund names or vary the bullet format. Make it beginner-friendly.
+            """,
+            quizData.get("goals"),
+            quizData.get("riskTolerance"),
+            quizData.get("experience"),
+            quizData.get("age"),
+            amountBasis
             );
+
 
             String response = openAIService.generateResponsePortfolio(prompt);
 

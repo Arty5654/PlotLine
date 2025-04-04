@@ -183,11 +183,15 @@ struct SavedPortfolio: Codable {
     let riskTolerance: String
 
     var parsedAssets: [InvestmentAsset] {
-        let regex = try? NSRegularExpression(pattern: #"(?<=\*\*)([A-Z]+).+?(\d+)%.*?\$\s?(\d+(\.\d+)?)"#, options: [])
-        var results: [InvestmentAsset] = []
+        let pattern = #"\*\*([A-Z]+)\s*-\s*(\d+)%%\*\*.*?Allocation:\*\*\s*\$([\d.]+)"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.dotMatchesLineSeparators]) else {
+            return []
+        }
 
         let nsrange = NSRange(portfolio.startIndex..<portfolio.endIndex, in: portfolio)
-        regex?.enumerateMatches(in: portfolio, options: [], range: nsrange) { match, _, _ in
+        var results: [InvestmentAsset] = []
+
+        regex.enumerateMatches(in: portfolio, options: [], range: nsrange) { match, _, _ in
             if let match = match,
                let nameRange = Range(match.range(at: 1), in: portfolio),
                let percentRange = Range(match.range(at: 2), in: portfolio),
@@ -203,6 +207,7 @@ struct SavedPortfolio: Codable {
 
         return results
     }
+
 
     var investmentFrequency: String {
         let pattern = #"(?i)\b(Monthly|Weekly|Annually)\b"#
