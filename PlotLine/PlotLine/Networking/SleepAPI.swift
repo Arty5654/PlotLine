@@ -90,7 +90,6 @@ class SleepAPI {
             do {
                 return try decoder.decode(SleepSchedule.self, from: data)
             } catch {
-                print("Sleep schedule decoding error: \(error)")
                 return createDefaultSleepSchedule()
             }
         } catch {
@@ -99,7 +98,6 @@ class SleepAPI {
                 urlError.code == .fileDoesNotExist || urlError.code == .resourceUnavailable {
                 return createDefaultSleepSchedule()
             }
-            print("Sleep API error: \(error)")
             throw error
         }
     }

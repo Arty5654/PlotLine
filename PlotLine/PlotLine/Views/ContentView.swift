@@ -44,6 +44,7 @@ struct ContentView: View {
                         .buttonStyle(PlainButtonStyle())
                         .padding(.horizontal)
                         
+                        // Grocery Widget
                         NavigationLink(destination: TopGroceryListView()) {
                             GroceryListWidget()
                         }
@@ -57,9 +58,8 @@ struct ContentView: View {
                         }
                         .buttonStyle(PlainButtonStyle())
                         .padding(.horizontal)
-
-
                         
+                        // Health Widget
                         NavigationLink(destination: HealthView()) {
                             HealthWidget()
                         }
@@ -364,7 +364,6 @@ struct HealthWidget: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            // Header with icon
             ZStack {
                 Text("Health")
                     .font(.custom("AvenirNext-Bold", size: 18))
@@ -392,36 +391,44 @@ struct HealthWidget: View {
                     .italic()
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.vertical, 10)
-            } else if let sleepData = sleepData, let schedule = sleepSchedule {
+            } else if let schedule = sleepSchedule {
                 VStack(spacing: 12) {
                     // Last night's sleep summary
-                    HStack {
-                        VStack(alignment: .leading) {
-                            Text("Last night")
-                                .font(.subheadline)
-                                .foregroundColor(.gray)
+                    if let sleepData = sleepData {
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Text("Last night")
+                                    .font(.subheadline)
+                                    .foregroundColor(.gray)
+                                
+                                Text("\(sleepData.hoursSlept) hours")
+                                    .font(.system(size: 20, weight: .bold))
+                                    .foregroundColor(sleepQualityColor(sleepData.hoursSlept, targetHours: calculateTargetSleepHours(wakeUpTime: schedule.wakeUpTime, sleepTime: schedule.sleepTime)))
+                            }
                             
-                            Text("\(sleepData.hoursSlept) hours")
-                                .font(.system(size: 20, weight: .bold))
-                                .foregroundColor(sleepQualityColor(sleepData.hoursSlept, targetHours: calculateTargetSleepHours(wakeUpTime: schedule.wakeUpTime, sleepTime: schedule.sleepTime)))
+                            Spacer()
+                            
+                            // Mood indicator
+                            VStack(alignment: .trailing) {
+                                Text("Mood")
+                                    .font(.subheadline)
+                                    .foregroundColor(.gray)
+                                
+                                Text(moodEmoji(sleepData.mood))
+                                    .font(.system(size: 24))
+                            }
                         }
-                        
-                        Spacer()
-                        
-                        // Mood indicator
-                        VStack(alignment: .trailing) {
-                            Text("Mood")
+                    } else {
+                        HStack {
+                            Text("No sleep entry for yesterday")
                                 .font(.subheadline)
                                 .foregroundColor(.gray)
-                            
-                            Text(moodEmoji(sleepData.mood))
-                                .font(.system(size: 24))
+                                .italic()
                         }
                     }
                     
                     Divider()
                     
-                    // Tonight's sleep schedule
                     HStack {
                         VStack(alignment: .leading) {
                             Text("Tonight")
@@ -444,7 +451,6 @@ struct HealthWidget: View {
                         }
                     }
                     
-                    // Bedtime reminder
                     HStack {
                         Image(systemName: "bell.fill")
                             .foregroundColor(.orange)
@@ -478,37 +484,36 @@ struct HealthWidget: View {
         
         Task {
             do {
-                // Get today's date at midnight
                 let calendar = Calendar.current
                 let today = calendar.startOfDay(for: Date())
                 
-                // Get yesterday's date
                 guard let yesterday = calendar.date(byAdding: .day, value: -1, to: today) else {
                     throw NSError(domain: "HealthWidget", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not calculate yesterday's date"])
                 }
                 
-                // Fetch entries for the last week
+                let schedule = try await sleepAPI.fetchSleepSchedule()
+                
                 let entries = try await healthAPI.fetchEntriesForWeek(containing: yesterday)
                 
-                // Find yesterday's entry
                 let yesterdayEntry = entries.first { entry in
                     calendar.isDate(entry.date, inSameDayAs: yesterday)
                 }
-                
-                // Fetch sleep schedule
-                let schedule = try await sleepAPI.fetchSleepSchedule()
-                
-                // Update UI on main thread
+
                 DispatchQueue.main.async {
-                    self.sleepData = yesterdayEntry.map { SleepEntry(hoursSlept: $0.hoursSlept, mood: $0.mood) }
                     self.sleepSchedule = schedule
+                    
+                    if let entry = yesterdayEntry {
+                        self.sleepData = SleepEntry(hoursSlept: entry.hoursSlept, mood: entry.mood)
+                    } else {
+                        self.sleepData = nil
+                    }
+                    
                     self.isLoading = false
                 }
             } catch {
                 DispatchQueue.main.async {
                     self.error = "Could not load sleep data"
                     self.isLoading = false
-                    print("Error loading sleep data: \(error.localizedDescription)")
                 }
             }
         }
@@ -540,9 +545,9 @@ struct HealthWidget: View {
     }
     
     private func sleepQualityColor(_ hours: Int, targetHours: Double) -> Color {
-        if Double(hours) >= targetHours {
+        if hours >= 8 {
             return .green
-        } else if Double(hours) >= targetHours * 0.8 {
+        } else if hours >= 6 {
             return .orange
         } else {
             return .red
@@ -569,7 +574,7 @@ struct HealthWidget: View {
     }
 }
 
-// Simple data structure for sleep entry display
+
 struct SleepEntry {
     let hoursSlept: Int
     let mood: String
@@ -651,7 +656,6 @@ struct GroceryListWidget: View {
                     self.isLoading = false
                 }
             } catch {
-                print("Failed to load grocery lists: \(error)")
                 DispatchQueue.main.async {
                     self.isLoading = false
                 }

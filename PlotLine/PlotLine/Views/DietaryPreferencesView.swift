@@ -208,7 +208,6 @@ struct DietaryPreferencesView: View {
     // API call to update preferences
     func updatePreferencesInBackend() {
         guard let dietaryRestrictions = dietaryRestrictions else {
-            print("Dietary restrictions are nil, cannot update.")
             return
         }
         

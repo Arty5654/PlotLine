@@ -151,8 +151,6 @@ public class GroceryListService {
         // Construct the exact S3 key path
         String s3Path = getS3Path(username, listId);
 
-        System.out.println("about to fetch grocery list from S3: " + s3Path);
-
         // Get the grocery list from S3
         GetObjectRequest getObjectRequest = GetObjectRequest.builder()
                 .bucket(BUCKET_NAME)
@@ -166,12 +164,9 @@ public class GroceryListService {
         ObjectMapper mapper = new ObjectMapper();
         GroceryList groceryList = mapper.readValue(jsonContent, GroceryList.class);
 
-        System.out.println("Fetched grocery list: " + groceryList.getItems());
-
         // Return the items from the grocery list
         return groceryList.getItems();
     } catch (Exception e) {
-        System.out.println("Error while fetching items: " + e.getMessage());
         e.printStackTrace();
         return new ArrayList<>(); // Return empty list on error
     }
@@ -184,7 +179,6 @@ public class GroceryListService {
             GroceryList groceryList = getGroceryList(username, listId);
 
             if (groceryList == null) {
-                System.out.println("Grocery list not found.");
                 return false;
             }
 
@@ -223,7 +217,6 @@ public class GroceryListService {
             GroceryList groceryList = getGroceryList(username, listId);
 
             if (groceryList == null) {
-                System.out.println("Grocery list not found.");
                 return false;
             }
 
@@ -250,7 +243,6 @@ public class GroceryListService {
 
                 return true;
             } else {
-                System.out.println("Item to delete not found in the grocery list.");
                 return false;
             }
 
@@ -267,7 +259,6 @@ public class GroceryListService {
             GroceryList groceryList = getGroceryList(username, listId);
 
             if (groceryList == null) {
-                System.out.println("Grocery list not found.");
                 return false;
             }
 
@@ -294,7 +285,6 @@ public class GroceryListService {
 
                 return true;
             } else {
-                System.out.println("Item to toggle check not found in grocery list.");
                 return false;
             }
 
@@ -499,49 +489,114 @@ public class GroceryListService {
         }
     }
 
+    // public String generateGroceryListFromMeal(String mealName, String username, String rawOpenAIResponse) throws Exception {
+    //     // Parse the raw JSON response from OpenAI
+    //     ObjectMapper mapper = new ObjectMapper();
+    //     List<GroceryItem> items = new ArrayList<>();
+    //     JsonNode array = mapper.readTree(rawOpenAIResponse);
+
+    //     // Generate a UUID for the list
+    //     String listId = UUID.randomUUID().toString().toUpperCase();
+
+    //     // Create all items first
+    //     for (JsonNode node : array) {
+    //         GroceryItem item = new GroceryItem();
+    //         item.setListId(listId);
+    //         item.setId(UUID.randomUUID().toString().toUpperCase());
+    //         item.setName(node.get("name").asText());
+    //         item.setQuantity(node.get("quantity").asInt());
+    //         item.setChecked(false);
+    //         item.setPrice(0.0);
+    //         item.setStore("");
+
+    //         // Check if the node has notes and set them if available
+    //         if (node.has("notes")) {
+    //             item.setNotes(node.get("notes").asText());
+    //         } else {
+    //             item.setNotes("");
+    //         }
+
+    //         items.add(item);
+    //     }
+
+    //     // Create a new grocery list with all items included
+    //     GroceryList list = new GroceryList();
+    //     list.setId(listId);
+    //     list.setUsername(username);
+    //     list.setName("Ingredients for " + mealName);
+    //     list.setItems(items); // Set all items before saving
+    //     list.setAI(true);
+    //     list.setCreatedAt(String.valueOf(System.currentTimeMillis()));
+    //     list.setUpdatedAt(String.valueOf(System.currentTimeMillis()));
+
+    //     // Save the complete list with all items
+    //     String savedListId = createGroceryList(list, username);
+
+    //     return savedListId;
+    // }
+
     public String generateGroceryListFromMeal(String mealName, String username, String rawOpenAIResponse) throws Exception {
         // Parse the raw JSON response from OpenAI
         ObjectMapper mapper = new ObjectMapper();
         List<GroceryItem> items = new ArrayList<>();
-        JsonNode array = mapper.readTree(rawOpenAIResponse);
-
+        JsonNode itemsArray;
+        
+        try {
+            itemsArray = mapper.readTree(rawOpenAIResponse);
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Invalid response format from AI service: " + e.getMessage());
+        }
+        
         // Generate a UUID for the list
         String listId = UUID.randomUUID().toString().toUpperCase();
-
-        // Create all items first
-        for (JsonNode node : array) {
+        
+        // Create grocery items from the items array
+        for (JsonNode node : itemsArray) {
             GroceryItem item = new GroceryItem();
             item.setListId(listId);
             item.setId(UUID.randomUUID().toString().toUpperCase());
-            item.setName(node.get("name").asText());
-            item.setQuantity(node.get("quantity").asInt());
+            
+            String itemName = node.has("name") ? node.get("name").asText() : "Unknown Item";
+            int quantity = node.has("quantity") ? node.get("quantity").asInt(1) : 1;
+            
+            item.setName(itemName);
+            item.setQuantity(quantity);
             item.setChecked(false);
             item.setPrice(0.0);
             item.setStore("");
-
+    
             // Check if the node has notes and set them if available
             if (node.has("notes")) {
                 item.setNotes(node.get("notes").asText());
             } else {
                 item.setNotes("");
             }
-
+            
             items.add(item);
         }
-
+        
+    
         // Create a new grocery list with all items included
         GroceryList list = new GroceryList();
         list.setId(listId);
         list.setUsername(username);
         list.setName("Ingredients for " + mealName);
-        list.setItems(items); // Set all items before saving
+        list.setItems(items);  // Set all items before saving
         list.setAI(true);
-        list.setCreatedAt(String.valueOf(System.currentTimeMillis()));
-        list.setUpdatedAt(String.valueOf(System.currentTimeMillis()));
-
+        
+        // Set timestamps
+        String currentTimestamp = String.valueOf(System.currentTimeMillis());
+        list.setCreatedAt(currentTimestamp);
+        list.setUpdatedAt(currentTimestamp);
+    
         // Save the complete list with all items
-        String savedListId = createGroceryList(list, username);
-
+        String savedListId;
+        try {
+            savedListId = createGroceryList(list, username);
+        } catch (Exception e) {
+            throw e;
+        }
+    
         return savedListId;
     }
 }
