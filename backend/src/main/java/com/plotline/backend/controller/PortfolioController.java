@@ -41,6 +41,9 @@ public class PortfolioController {
         try {
             String username = quizData.get("username");
 
+            // Delete original portfilio if user takes the quiz again
+            portfolioService.deleteOriginalPortfolio(username);
+
             // Fetch income
             ResponseEntity<String> incomeResponse = incomeController.getIncomeData(username);
             String incomeData = incomeResponse.getBody();

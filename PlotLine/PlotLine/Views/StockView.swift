@@ -247,9 +247,6 @@ struct SavedPortfolio: Codable {
 
 }
 
-
-
-
 struct InvestmentAsset: Identifiable {
     var id = UUID()
     let name: String
@@ -259,18 +256,90 @@ struct InvestmentAsset: Identifiable {
 
 struct PortfolioExplanationView: View {
     let portfolioText: String
-
+    
     var body: some View {
         ScrollView {
-            Text(portfolioText)
-                .padding()
+            VStack(alignment: .leading, spacing: 20) {
+                ForEach(splitPortfolioText(), id: \.self) { section in
+                    // If we can extract asset details, use a custom layout
+                    if let asset = extractAssetInfo(from: section) {
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack(alignment: .firstTextBaseline) {
+                                Text("•")
+                                Text(asset.name)
+                                    .bold()
+                                Text("– \(Int(asset.percent))%")
+                            }
+                            .font(.headline)
+                            
+                            Text("Allocation: $\(String(format: "%.2f", asset.allocation))")
+                                .font(.subheadline)
+                                .foregroundColor(.gray)
+                            
+                            if let reason = extractReason(from: section) {
+                                if let attributed = try? AttributedString(markdown: "**Reason:** \(reason)") {
+                                    Text(attributed)
+                                } else {
+                                    Text("Reason: \(reason)")
+                                }
+                            }
+                        }
+                    } else {
+                        // Otherwise try to render the section as Markdown
+                        if let attributed = try? AttributedString(markdown: section) {
+                            Text(attributed)
+                        } else {
+                            Text(section)
+                        }
+                    }
+                }
+            }
+            .padding()
         }
-        .navigationTitle("Investment Rationale")
+        .navigationTitle("Why These Investments?")
+    }
+    
+    // Replace literal "\n" with actual newline characters and split on double newline.
+    private func splitPortfolioText() -> [String] {
+        let replaced = portfolioText.replacingOccurrences(of: "\\n", with: "\n")
+        return replaced.components(separatedBy: "\n\n")
+                       .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    }
+    
+    private func extractAssetInfo(from block: String) -> (name: String, percent: Double, allocation: Double)? {
+        // The regex looks for a pattern like:
+        // **<TICKER> - <PERCENT>%%**
+        // followed by something like "- **Allocation:** $<ALLOCATION>"
+        let pattern = #"\*\*([A-Z]+)\s*-\s*(\d+)%{2}\*\*\s*-?\s*\*\*Allocation:\*\*\s*\$(\d+(?:\.\d+)?)"#
+        
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.dotMatchesLineSeparators]) else {
+            return nil
+        }
+        
+        let nsRange = NSRange(block.startIndex..<block.endIndex, in: block)
+        if let match = regex.firstMatch(in: block, options: [], range: nsRange),
+           let nameRange = Range(match.range(at: 1), in: block),
+           let percentRange = Range(match.range(at: 2), in: block),
+           let allocationRange = Range(match.range(at: 3), in: block) {
+            let name = String(block[nameRange])
+            let percent = Double(block[percentRange]) ?? 0.0
+            let allocation = Double(block[allocationRange]) ?? 0.0
+            return (name: name, percent: percent, allocation: allocation)
+        }
+        return nil
+    }
+    
+    // Extracts the "Reason:" text if available.
+    private func extractReason(from block: String) -> String? {
+        // Look for a line that starts with "- **Reason:**"
+        if let range = block.range(of: "- **Reason:**") {
+            // Get substring after "- **Reason:**" and trim it
+            let reasonSubstring = block[range.upperBound...]
+            return reasonSubstring.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return nil
     }
 }
-
-
-
 
 
 #Preview {

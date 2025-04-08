@@ -72,7 +72,16 @@ public class PortfolioService {
             s3Service.deleteFile(getEditedKey(username));
             System.out.println("Deleted edited portfolio for: " + username);
         } catch (Exception e) {
-            System.out.println("⚠️ Failed to delete edited portfolio: " + e.getMessage());
+            System.out.println("Failed to delete edited portfolio: " + e.getMessage());
+        }
+    }
+
+    public void deleteOriginalPortfolio(String username) {
+        try {
+            s3Service.deleteFile(getOriginalKey(username));
+            System.out.println("Deleted original portfolio for: " + username);
+        } catch (Exception e) {
+            System.out.println("Failed to delete original portfolio: " + e.getMessage());
         }
     }    
 }    
