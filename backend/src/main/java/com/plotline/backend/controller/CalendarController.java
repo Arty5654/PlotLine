@@ -41,7 +41,8 @@ public class CalendarController {
                 request.getStartDate(),
                 request.getEndDate(),
                 request.getEventType(),
-                request.getRecurrence()
+                request.getRecurrence(),
+                request.getInvitedFriends()
             );
 
             EventDto createdEvent = calendarService.createEvent(newEvent, request.getUsername());
@@ -62,7 +63,8 @@ public class CalendarController {
                 request.getStartDate(),
                 request.getEndDate(),
                 request.getEventType(),
-                request.getRecurrence()
+                request.getRecurrence(),
+                request.getInvitedFriends()
             );
 
             EventDto savedEvent = calendarService.updateEvent(updatedEvent, request.getUsername());

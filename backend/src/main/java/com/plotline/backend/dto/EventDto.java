@@ -1,5 +1,7 @@
 package com.plotline.backend.dto;
 
+import java.util.List;
+
 public class EventDto {
     private String id;
     private String title;
@@ -8,11 +10,12 @@ public class EventDto {
     private String endDate;   // stored as string
     private String eventType;
     private String recurrence;
+    private List<String> invitedFriends;
 
     // No-arg constructor needed for Jackson
     public EventDto() {}
 
-    public EventDto(String id, String title, String description, String startDate, String endDate, String eventType, String recurrence) {
+    public EventDto(String id, String title, String description, String startDate, String endDate, String eventType, String recurrence, List<String> invitedFriends) {
         this.id = id;
         this.title = title;
         this.description = description;
@@ -20,6 +23,7 @@ public class EventDto {
         this.endDate = endDate;
         this.eventType = eventType;
         this.recurrence = recurrence;
+        this.invitedFriends = invitedFriends;
     }
 
     public String getId() {
@@ -76,6 +80,14 @@ public class EventDto {
 
     public void setRecurrence(String recurrence) {
         this.recurrence = recurrence;
+    }
+
+    public List<String> getInvitedFriends() {
+        return invitedFriends;
+    }
+
+    public void setInvitedFriends(List<String> invitedFriends) {
+        this.invitedFriends = invitedFriends;
     }
 }
 

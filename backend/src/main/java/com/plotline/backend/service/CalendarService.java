@@ -69,31 +69,103 @@ public class CalendarService {
             }
 
             existingEvents.add(newEvent);
-
             // write to s3
             saveEventsToS3(username, existingEvents);
+
+            // add to each friend's calendar
+            if (newEvent.getInvitedFriends() != null && !newEvent.getInvitedFriends().isEmpty()) {
+                for (String friend : newEvent.getInvitedFriends()) {
+                    List<EventDto> friendEvents = getEvents(friend);
+
+                    EventDto friendEvent = new EventDto(
+                        newEvent.getId(),
+                        newEvent.getTitle(),
+                        newEvent.getDescription(),
+                        newEvent.getStartDate(),
+                        newEvent.getEndDate(),
+                        newEvent.getEventType(),
+                        newEvent.getRecurrence(),
+                        List.of(username)  // event creator is the only invited friend for invited users
+                    );
+                    friendEvents.add(friendEvent);
+                    saveEventsToS3(friend, friendEvents);
+                }
+            }
+
             return newEvent;
         } finally {
             lock.unlock(); // Ensure lock is released
         }
-}
+    }
 
-
-    // update event linear traversal blah
     public EventDto updateEvent(EventDto updated, String username) throws Exception {
         List<EventDto> existingEvents = getEvents(username);
-
+        boolean found = false;
+    
         for (int i = 0; i < existingEvents.size(); i++) {
             EventDto e = existingEvents.get(i);
             if (e.getId().equals(updated.getId())) {
                 existingEvents.set(i, updated);
-                saveEventsToS3(username, existingEvents);
-                return updated;
+                found = true;
+                break;
             }
         }
-
-        throw new Exception("Event not found for ID: " + updated.getId());
+    
+        if (!found) {
+            throw new Exception("Event not found for ID: " + updated.getId());
+        }
+    
+        saveEventsToS3(username, existingEvents);
+    
+        // update or create the event copy for each invited friend
+        if (updated.getInvitedFriends() != null) {
+            for (String friend : updated.getInvitedFriends()) {
+                List<EventDto> friendEvents = getEvents(friend);
+                boolean eventExistsForFriend = false;
+    
+                for (int i = 0; i < friendEvents.size(); i++) {
+                    if (friendEvents.get(i).getId().equals(updated.getId())) {
+                        // Update existing friend event
+                        EventDto updatedFriendEvent = new EventDto(
+                            updated.getId(),
+                            updated.getTitle(),
+                            updated.getDescription(),
+                            updated.getStartDate(),
+                            updated.getEndDate(),
+                            updated.getEventType(),
+                            updated.getRecurrence(),
+                            List.of(username)
+                        );
+                        friendEvents.set(i, updatedFriendEvent);
+                        eventExistsForFriend = true;
+                        break;
+                    }
+                }
+    
+                if (!eventExistsForFriend) {
+                    // create new event for friend
+                    EventDto newFriendEvent = new EventDto(
+                        updated.getId(),
+                        updated.getTitle(),
+                        updated.getDescription(),
+                        updated.getStartDate(),
+                        updated.getEndDate(),
+                        updated.getEventType(),
+                        updated.getRecurrence(),
+                        List.of(username) // creator only
+                    );
+                    friendEvents.add(newFriendEvent);
+                }
+    
+                saveEventsToS3(friend, friendEvents);
+            }
+        }
+    
+        return updated;
     }
+    
+
+
 
     public void deleteEvent(String eventId, String username) throws Exception {
       List<EventDto> existing = getEvents(username);
@@ -108,7 +180,7 @@ public class CalendarService {
             String key = "users/" + username + "/calendar.json";
             String eventsJson = objectMapper.writeValueAsString(events);
     
-            //System.out.println("🔍 Preparing to save to S3: " + eventsJson);
+            //System.out.println("Preparing to save to S3: " + eventsJson);
     
             PutObjectRequest putRequest = PutObjectRequest.builder()
                     .bucket(bucketName)
