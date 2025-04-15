@@ -141,7 +141,7 @@ class CalendarViewModel: ObservableObject {
     
     // create new and store in backend
     @MainActor
-    func createEvent(title: String, description: String, startDate: Date, endDate: Date, eventType: String, recurrence: String) {
+    func createEvent(title: String, description: String, startDate: Date, endDate: Date, eventType: String, recurrence: String, invitedFriends: [String]) {
         Task {
             do {
                 let newEvent = Event(
@@ -151,7 +151,8 @@ class CalendarViewModel: ObservableObject {
                     startDate: startDate,
                     endDate: endDate,
                     eventType: eventType,
-                    recurrence: recurrence
+                    recurrence: recurrence,
+                    invitedFriends: invitedFriends
                 )
                 // db append
                 let saved = try await CalendarAPI.createEvent(newEvent, username: username)

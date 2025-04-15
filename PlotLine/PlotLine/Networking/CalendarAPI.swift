@@ -24,7 +24,8 @@ struct CalendarAPI {
             startDate: event.startDate,
             endDate: event.endDate,
             eventType: event.eventType,
-            recurrence: event.recurrence
+            recurrence: event.recurrence,
+            invitedFriends: event.invitedFriends
         )
         
         let encoder = JSONEncoder()
@@ -99,7 +100,8 @@ struct CalendarAPI {
             startDate: event.startDate,
             endDate: event.endDate,
             eventType: event.eventType,
-            recurrence: event.recurrence
+            recurrence: event.recurrence,
+            invitedFriends: event.invitedFriends
         )
         
         let encoder = JSONEncoder()

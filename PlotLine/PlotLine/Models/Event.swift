@@ -16,6 +16,7 @@ struct Event: Identifiable, Codable {
     var endDate: Date
     var eventType: String
     var recurrence: String
+    var invitedFriends: [String]
 }
 
 struct CreateEventRequest: Codable {
@@ -27,6 +28,7 @@ struct CreateEventRequest: Codable {
     let endDate: Date
     let eventType: String
     var recurrence: String
+    let invitedFriends: [String]
 }
 
 struct UpdateEventRequest: Codable {
@@ -38,6 +40,7 @@ struct UpdateEventRequest: Codable {
     let endDate: Date
     let eventType: String
     var recurrence: String
+    let invitedFriends: [String]
 }
 
 

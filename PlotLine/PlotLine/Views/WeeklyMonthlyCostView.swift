@@ -456,7 +456,8 @@ struct WeeklyMonthlyCostView: View {
                     startDate: sub.dueDate,
                     endDate: sub.dueDate,
                     eventType: "subscription-\(sub.name.lowercased())",
-                    recurrence: "monthly"
+                    recurrence: "monthly",
+                    invitedFriends: []
                 )
             }
         }

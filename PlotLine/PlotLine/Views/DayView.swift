@@ -10,6 +10,7 @@ import SwiftUI
 struct DayView: View {
     let day: Date
     @ObservedObject var viewModel: CalendarViewModel
+    @EnvironmentObject var friendVM: FriendsViewModel
 
     @State private var showingAddEventSheet = false
     @State private var selectedEvent: Event? = nil
@@ -48,20 +49,21 @@ struct DayView: View {
             }
         }
         .sheet(isPresented: $showingAddEventSheet) {
-            AddEventSheet(defaultDate: day) { title, description, start, end, recur in
+            AddEventSheet(defaultDate: day) { title, description, start, end, recur, friends in
                 viewModel.createEvent(
                     title: title,
                     description: description,
                     startDate: start,
                     endDate: end,
                     eventType: "user",
-                    recurrence: recur
+                    recurrence: recur,
+                    invitedFriends: friends
                 )
-            }
+            }.environmentObject(friendVM)
         }
 
         .sheet(item: $selectedEvent) { eventToEdit in
-            AddEventSheet(existingEvent: eventToEdit) { newTitle, newDesc, newStart, newEnd, newRecurrence in
+            AddEventSheet(existingEvent: eventToEdit) { newTitle, newDesc, newStart, newEnd, newRecurrence, newFriends in
                 
                 var updatedEvent = eventToEdit
                 updatedEvent.title = newTitle
@@ -69,9 +71,10 @@ struct DayView: View {
                 updatedEvent.startDate = newStart
                 updatedEvent.endDate = newEnd
                 updatedEvent.recurrence = newRecurrence
+                updatedEvent.invitedFriends = newFriends
                         
                 viewModel.updateEvent(event: updatedEvent)
-            }
+            }.environmentObject(friendVM)
         }
     }
 
@@ -159,6 +162,12 @@ private struct EventRow: View {
             
             if event.recurrence != "none" {
                 Text("Occurs \(event.recurrence)")
+                    .font(.subheadline)
+                    .foregroundColor(.blue)
+            }
+            
+            if !event.invitedFriends.isEmpty {
+                Text("Invited: \(event.invitedFriends.joined(separator: ", "))")
                     .font(.subheadline)
                     .foregroundColor(.blue)
             }

@@ -10,6 +10,7 @@ import SwiftUI
 struct CalendarView: View {
     
     @EnvironmentObject var viewModel: CalendarViewModel
+    @EnvironmentObject var friendVM: FriendsViewModel
     
     @State private var showingAddEventSheet = false
     // 7 columns for the 7 days of the week
@@ -62,10 +63,10 @@ struct CalendarView: View {
                     .padding()
                     
                     if viewModel.displayMode == .month {
-                        MonthContent(viewModel: viewModel, monthColumns: monthColumns)
+                        MonthContent(viewModel: viewModel, monthColumns: monthColumns).environmentObject(friendVM)
                     } else {
                         // Weekly view
-                        WeekContent(viewModel: viewModel)
+                        WeekContent(viewModel: viewModel).environmentObject(friendVM)
                     }
                     
                     Button(action: {
@@ -89,16 +90,17 @@ struct CalendarView: View {
                 }
             }
             .sheet(isPresented: $showingAddEventSheet) {
-                AddEventSheet(defaultDate: viewModel.selectedDay ?? viewModel.currentDate) { title, description, start, end, recurrence in
+                AddEventSheet(defaultDate: viewModel.selectedDay ?? viewModel.currentDate) { title, description, start, end, recurrence, friends in
                     viewModel.createEvent(
                         title: title,
                         description: description,
                         startDate: start,
                         endDate: end,
                         eventType: "user",
-                        recurrence: recurrence
+                        recurrence: recurrence,
+                        invitedFriends: friends
                     )
-                }
+                }.environmentObject(friendVM)
             }
         }
     }
@@ -139,6 +141,7 @@ struct CalendarView: View {
 
 struct MonthContent: View {
     @ObservedObject var viewModel: CalendarViewModel
+    @EnvironmentObject var friendVM: FriendsViewModel
     let monthColumns: [GridItem]
 
     var body: some View {
@@ -168,7 +171,7 @@ struct MonthContent: View {
                         Text("")
                     }
                     ForEach(daysInMonth, id: \.self) { day in
-                        NavigationLink(destination: DayView(day: day, viewModel: viewModel)) {
+                        NavigationLink(destination: DayView(day: day, viewModel: viewModel).environmentObject(friendVM)) {
                             Text(dayNumber(day))
                                 .foregroundColor(.primary)
                                 .frame(width: 30, height: 30)
@@ -176,7 +179,7 @@ struct MonthContent: View {
                                     colorForDay(day)
                                 )
                                 .clipShape(Circle())
-                        }
+                        }.environmentObject(friendVM)
                     }
                 }
                 .padding(.horizontal)
@@ -215,6 +218,7 @@ struct MonthContent: View {
 
 struct WeekContent: View {
     @ObservedObject var viewModel: CalendarViewModel
+    @EnvironmentObject var friendVM: FriendsViewModel
     
     var body: some View {
         let start = startOfWeek(for: viewModel.currentDate)

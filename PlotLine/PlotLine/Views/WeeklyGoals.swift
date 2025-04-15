@@ -519,7 +519,8 @@ struct WeeklyGoalsView: View {
                     startDate: newTaskDueDate,
                     endDate: newTaskDueDate,
                     eventType: "weekly-goal-\(newTask.lowercased())",
-                    recurrence: "none"
+                    recurrence: "none",
+                    invitedFriends: []
                 )
             }
             

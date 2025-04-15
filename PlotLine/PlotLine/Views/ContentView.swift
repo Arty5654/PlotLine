@@ -35,6 +35,7 @@ struct ContentView: View {
                         // Today's Events Widget
                         CalendarWidget()
                             .environmentObject(calendarVM)
+                            .environmentObject(friendsVM)
                             .padding(.horizontal)
                         
                         // Budget Preview Widget
@@ -88,6 +89,7 @@ struct ContentView: View {
         }
         .task {
             calendarVM.fetchEvents()
+            await friendsVM.loadFriends(for: self.username)
         }
     }
     
@@ -125,9 +127,13 @@ struct ContentView: View {
 struct CalendarWidget: View {
     
     @EnvironmentObject var viewModel: CalendarViewModel
+    @EnvironmentObject var friendVM: FriendsViewModel
 
     var body: some View {
-        NavigationLink(destination: CalendarView().environmentObject(viewModel)) {
+        NavigationLink(destination: CalendarView()
+                                    .environmentObject(viewModel)
+                                    .environmentObject(friendVM)) {
+                                        
             VStack(alignment: .leading, spacing: 8) {
                 ZStack {
                     Text("Today's Events")

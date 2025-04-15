@@ -194,7 +194,8 @@ struct IncomeRentView: View {
                     startDate: rentDueDate,
                     endDate: rentDueDate,
                     eventType: "rent",
-                    recurrence: "monthly"
+                    recurrence: "monthly",
+                    invitedFriends: []
                 )
                 
                 self.activeAlert = .success
