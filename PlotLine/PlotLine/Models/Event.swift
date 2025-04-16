@@ -19,6 +19,7 @@ struct Event: Identifiable, Codable {
     var invitedFriends: [String]
 }
 
+
 struct CreateEventRequest: Codable {
     let username: String
     let id: String

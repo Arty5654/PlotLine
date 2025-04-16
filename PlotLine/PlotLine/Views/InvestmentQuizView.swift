@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import Foundation
 
 struct InvestmentQuizView: View {
     @State private var goals = ""
@@ -23,6 +24,9 @@ struct InvestmentQuizView: View {
     private var username: String {
         return UserDefaults.standard.string(forKey: "loggedInUsername") ?? "UnknownUser"
     }
+    
+    // For Calander
+    @EnvironmentObject var calendarViewModel: CalendarViewModel
 
     var body: some View {
         VStack {
@@ -144,16 +148,18 @@ struct InvestmentQuizView: View {
         URLSession.shared.dataTask(with: request) { _, _, _ in
             print("Portfolio saved to backend.")
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                Task {
+                    calendarViewModel.addMonthlyInvestmentReminder(dayOfMonth: 1)
+                }
                 onFinish?()  // Notifies StockView to refresh and pops view
                 dismiss()    // Navigates back
             }
+
         }.resume()
     }
 
 
 }
-
-
 
 
 #Preview {

@@ -14,6 +14,9 @@ struct BudgetView: View {
     
     @EnvironmentObject var viewModel: CalendarViewModel
 
+    //@EnvironmentObject var calendarViewModel: CalendarViewModel
+    @EnvironmentObject var friendVM: FriendsViewModel
+
 
     var body: some View {
         NavigationStack {
@@ -37,6 +40,7 @@ struct BudgetView: View {
                         }
                     } else {
                         InvestmentHomeView()
+                        
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)

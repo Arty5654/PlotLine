@@ -8,12 +8,17 @@
 import SwiftUI
 
 struct InvestmentHomeView: View {
+    // For Calander and Reminders
+    @EnvironmentObject var calendarViewModel: CalendarViewModel
+    @EnvironmentObject var friendVM: FriendsViewModel
+    
     var body: some View {
         TabView {
             StockView()
                 .tabItem {
                     Label("Portfolio", systemImage: "chart.pie.fill")
                 }
+                
 
             WatchlistView()
                 .tabItem {

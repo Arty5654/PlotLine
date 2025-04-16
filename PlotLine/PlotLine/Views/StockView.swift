@@ -14,6 +14,10 @@ struct StockView: View {
     // For watchlists
     @State private var watchlist: [String] = []
     @State private var newSymbol: String = ""
+    
+    // For Calander and Reminders
+    @EnvironmentObject var calendarViewModel: CalendarViewModel
+    @EnvironmentObject var friendVM: FriendsViewModel
 
 
     private var username: String {
@@ -26,7 +30,10 @@ struct StockView: View {
                 
                 NavigationLink(destination: InvestmentQuizView(onFinish: {
                     fetchSavedPortfolio()
-                })) {
+                })
+                .environmentObject(calendarViewModel)
+                //.environmentObject(friendVM)
+                ) {
                     Label("Take Investing Quiz", systemImage: "questionmark.circle.fill")
                         .padding()
                         .frame(maxWidth: .infinity)
@@ -119,7 +126,7 @@ struct StockView: View {
         URLSession.shared.dataTask(with: url) { data, _, _ in
             if let data = data,
                let decoded = try? JSONDecoder().decode(SavedPortfolio.self, from: data) {
-                print("Decoded portfolio: \(decoded)")
+                //print("Decoded portfolio: \(decoded)")
                 DispatchQueue.main.async {
                     self.savedPortfolio = decoded
                 }
@@ -168,8 +175,7 @@ struct PieChartView: View {
                     .gesture(
                         TapGesture()
                             .onEnded { value in
-                                // Optional: add logic to detect tapped sector
-                                print("Pie chart tapped – add logic if needed.")
+                                //print("Pie chart tapped – add logic if needed.")
                             }
                     )
             }

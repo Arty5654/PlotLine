@@ -176,6 +176,11 @@ class CalendarViewModel: ObservableObject {
                     events[index] = updated
                 }
                 print("Updated event: \(updated.title)")
+                
+                // Update reminders if user switches the date to invest
+                if updated.eventType == "investment" {
+                    scheduleInvestmentNotification(for: updated.startDate)
+                }
             } catch {
                 print("Error updating event: \(error)")
             }
@@ -278,6 +283,72 @@ class CalendarViewModel: ObservableObject {
         }
         
         return result
+    }
+
+    func addMonthlyInvestmentReminder(dayOfMonth: Int = 1) {
+        let calendar = Calendar.current
+        let today = Date()
+
+        var components = calendar.dateComponents([.year, .month], from: today)
+        components.day = dayOfMonth
+
+        guard let investmentDate = calendar.date(from: components) else { return }
+
+        Task {
+            await createEvent(
+                title: "Invest in Portfolio",
+                description: "Time to invest in your stock portfolio!",
+                startDate: investmentDate,
+                endDate: investmentDate,
+                eventType: "investment",
+                recurrence: "monthly",
+                invitedFriends: []
+            )
+        }
+
+        scheduleInvestmentNotification(for: investmentDate)
+    }
+    
+    func scheduleInvestmentNotification(for date: Date) {
+        print("Inside notification for investing")
+        
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ["investment-reminder"])
+        
+        let content = UNMutableNotificationContent()
+        content.title = "Time to Invest!"
+        content.body = "Don't forget to contribute to your portfolio today!"
+        content.sound = .default
+
+        let now = Date()
+        let calendar = Calendar.current
+        let triggerDate = calendar.dateComponents([.year, .month, .day], from: date)
+
+        if calendar.isDate(date, inSameDayAs: now) {
+            // If it's today, fire in 5 seconds
+            let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 5, repeats: false)
+            let request = UNNotificationRequest(identifier: "investment-reminder", content: content, trigger: trigger)
+            
+            UNUserNotificationCenter.current().add(request) { error in
+                if let error = error {
+                    print("Notification error: \(error.localizedDescription)")
+                } else {
+                    print("Investment notification scheduled for today (5s delay)")
+                }
+            }
+
+        } else {
+            // Future calendar-based notification
+            let trigger = UNCalendarNotificationTrigger(dateMatching: triggerDate, repeats: false)
+            let request = UNNotificationRequest(identifier: "investment-reminder", content: content, trigger: trigger)
+            
+            UNUserNotificationCenter.current().add(request) { error in
+                if let error = error {
+                    print("Notification error: \(error.localizedDescription)")
+                } else {
+                    print("Investment notification scheduled for future date")
+                }
+            }
+        }
     }
 
 
