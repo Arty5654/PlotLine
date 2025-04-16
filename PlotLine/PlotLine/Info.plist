@@ -21,5 +21,9 @@
 	<string>$(NEWS_KEY)</string>
 	<key>StockKey</key>
 	<string>$(STOCK_KEY)</string>
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>This app needs your location to customize your budget recommendations.</string>
+    <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+    <string>This app needs your location to customize your budget recommendations.</string>
 </dict>
 </plist>

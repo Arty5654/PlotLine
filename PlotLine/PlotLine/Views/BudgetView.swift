@@ -91,6 +91,10 @@ struct BudgetSection: View {
 
                 // Budgeting Tools
                 Group {
+                    NavigationLink(destination: BudgetQuizView().environmentObject(calendarVM)) {
+                        BudgetButtonLabel(title: "Take the AI Powered Budget Quiz Again")
+                    }
+                    
                     NavigationLink(destination: IncomeRentView().environmentObject(calendarVM)) {
                         BudgetButtonLabel(title: "Input Recurring Income & Rent")
                     }

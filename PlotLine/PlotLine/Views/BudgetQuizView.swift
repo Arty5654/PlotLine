@@ -19,13 +19,16 @@ struct BudgetQuizView: View {
     @State private var city = ""
     @State private var state = ""
     @State private var useDeviceLocation = true
+    @State private var spendingStyle = "Medium"
 
     @State private var selectedCategories: Set<String> = Set(defaultCategories)
     @State private var customCategory = ""
 
-    @State private var quizCompleted = false
-    @State private var generatedBudget: [String: Double]? = nil
-    @State private var showBudgetInput = false
+    @State private var isLoading = false
+    @State private var showError = false
+
+    @Environment(\.dismiss) var dismiss
+    @StateObject private var locationManager = LocationManager()
 
     var username: String {
         UserDefaults.standard.string(forKey: "loggedInUsername") ?? "UnknownUser"
@@ -39,6 +42,18 @@ struct BudgetQuizView: View {
                         .keyboardType(.decimalPad)
                     TextField("Number of Dependents", text: $numberOfDependents)
                         .keyboardType(.numberPad)
+                    
+                    .pickerStyle(SegmentedPickerStyle())
+                    
+                }
+                
+                Section(header: Text("How aggressively do you want to save?")) {
+                    Picker("Spending Style", selection: $spendingStyle) {
+                        Text("Low").tag("Low")
+                        Text("Medium").tag("Medium")
+                        Text("High").tag("High")
+                    }
+                    .pickerStyle(SegmentedPickerStyle())
                 }
 
                 Section(header: Text("Location")) {
@@ -57,7 +72,6 @@ struct BudgetQuizView: View {
                         TextField("State", text: $state)
                     } else {
                         Text("Detected: \(city), \(state)")
-                            .font(.caption)
                     }
                 }
 
@@ -88,21 +102,26 @@ struct BudgetQuizView: View {
                 }
 
                 Section {
-                    Button("Generate Budget") {
-                        Task {
-                            await generateLLMBudget()
+                    if isLoading {
+                        ProgressView("Generating Budget...")
+                    } else {
+                        Button("Generate Budget") {
+                            Task {
+                                await generateLLMBudget()
+                            }
                         }
+                        .disabled(yearlyIncome.isEmpty || numberOfDependents.isEmpty || (city.isEmpty && !useDeviceLocation))
                     }
-                    .disabled(yearlyIncome.isEmpty || numberOfDependents.isEmpty || (city.isEmpty && !useDeviceLocation))
                 }
             }
             .navigationTitle("Budget Quiz")
-
-            // Navigate when ready
-            .navigationDestination(isPresented: $showBudgetInput) {
-                if let gen = generatedBudget {
-                    BudgetInputView(prefilledBudget: gen)
-                }
+            .alert("Something went wrong", isPresented: $showError) {
+                Button("OK", role: .cancel) { }
+            }
+        }
+        .onAppear {
+            if useDeviceLocation {
+                getLocation()
             }
         }
     }
@@ -110,16 +129,15 @@ struct BudgetQuizView: View {
     // MARK: - LLM Budget Gen
     func generateLLMBudget() async {
         guard let income = Double(yearlyIncome) else { return }
-
-        let finalCity = city
-        let finalState = state
+        isLoading = true
 
         let prompt: [String: Any] = [
             "username": username,
             "yearlyIncome": income,
             "dependents": numberOfDependents,
-            "city": finalCity,
-            "state": finalState,
+            "city": city,
+            "state": state,
+            "spendingStyle": spendingStyle,
             "categories": Array(selectedCategories)
         ]
 
@@ -133,38 +151,88 @@ struct BudgetQuizView: View {
         do {
             let (data, _) = try await URLSession.shared.data(for: request)
             if let decoded = try? JSONDecoder().decode([String: Double].self, from: data) {
+                // Save to backend
+                let payload: [String: Any] = [
+                    "username": username,
+                    "type": "monthly",
+                    "budget": decoded
+                ]
+                let body = try? JSONSerialization.data(withJSONObject: payload)
+
+                var saveReq = URLRequest(url: URL(string: "http://localhost:8080/api/budget")!)
+                saveReq.httpMethod = "POST"
+                saveReq.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                saveReq.httpBody = body
+
+                _ = try? await URLSession.shared.data(for: saveReq)
+
+                // Also save weekly
+                let weeklyBudget = decoded.mapValues { $0 / 4 }
+                let weeklyPayload: [String: Any] = [
+                    "username": username,
+                    "type": "weekly",
+                    "budget": weeklyBudget
+                ]
+                let weeklyBody = try? JSONSerialization.data(withJSONObject: weeklyPayload)
+
+                var weeklyReq = URLRequest(url: URL(string: "http://localhost:8080/api/budget")!)
+                weeklyReq.httpMethod = "POST"
+                weeklyReq.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                weeklyReq.httpBody = weeklyBody
+
+                _ = try? await URLSession.shared.data(for: weeklyReq)
+
+                // Set flag and dismiss
+                UserDefaults.standard.set(true, forKey: "budgetQuizCompleted")
+
                 DispatchQueue.main.async {
-                    self.generatedBudget = decoded
-                    self.showBudgetInput = true
+                    isLoading = false
+                    dismiss()
                 }
+            } else {
+                throw URLError(.cannotParseResponse)
             }
         } catch {
             print("Error generating budget: \(error)")
+            isLoading = false
+            showError = true
         }
-        // Make sure the quiz is completed first before other features appear
-        UserDefaults.standard.set(true, forKey: "budgetQuizCompleted")
     }
 
     // MARK: - Location
     func getLocation() {
-        LocationManager.shared.requestLocation { cityName, stateName in
+        locationManager.requestLocation { cityName, stateName in
             self.city = cityName
             self.state = stateName
         }
     }
 }
 
-class LocationManager: NSObject, CLLocationManagerDelegate {
-    static let shared = LocationManager()
+class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     private let manager = CLLocationManager()
     private var completion: ((String, String) -> Void)?
+
+    override init() {
+        super.init()
+        manager.delegate = self
+    }
 
     func requestLocation(completion: @escaping (String, String) -> Void) {
         self.completion = completion
         manager.delegate = self
+
+        let status = manager.authorizationStatus
+
+        if status == .denied || status == .restricted {
+            print("Location access denied")
+            self.completion?("Permission", "Denied")
+            return
+        }
+
         manager.requestWhenInUseAuthorization()
         manager.requestLocation()
     }
+
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let location = locations.first else { return }
@@ -172,7 +240,9 @@ class LocationManager: NSObject, CLLocationManagerDelegate {
             if let place = placemarks?.first {
                 let city = place.locality ?? ""
                 let state = place.administrativeArea ?? ""
-                self.completion?(city, state)
+                DispatchQueue.main.async {
+                    self.completion?(city, state)
+                }
             }
         }
     }
@@ -180,6 +250,8 @@ class LocationManager: NSObject, CLLocationManagerDelegate {
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         print("Location error:", error)
     }
+    
+    
 }
 
 
