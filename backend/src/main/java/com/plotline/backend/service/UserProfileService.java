@@ -1,13 +1,23 @@
 package com.plotline.backend.service;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
+import java.time.ZonedDateTime;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.plotline.backend.dto.S3UserRecord;
+import com.plotline.backend.dto.Trophy;
 import com.plotline.backend.dto.UserProfile;
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 
@@ -22,6 +32,89 @@ import software.amazon.awssdk.services.s3.model.ObjectCannedACL;
 
 @Service
 public class UserProfileService {
+
+  private static final List<Trophy> DEFAULT_TROPHIES = List.of(
+  //goals
+
+    // TODO
+    new Trophy("long_term_goals", "Goal Crusher", "Complete long-term goals!", 
+    0, 0, new int[]{10, 20, 50, 100}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)),
+
+    // TODO
+    new Trophy("weekly_goals", "Weekly Warrior", "Complete weekly goals!", 
+    0, 0, new int[]{25, 50, 100, 250}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)),
+
+  //calendar
+
+    // TODO
+    new Trophy("calendar_events_created", "Event Planner", "Create events on your calendar!", 
+    0, 0, new int[]{10, 25, 100, 250}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)),
+
+    // TODO
+    new Trophy("friends-invited", "Group Leader", "Add friends to calendar events!", 
+    0, 0, new int[]{10, 25, 100, 250}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)),
+
+  //budget and stocks
+
+    // TODO
+    new Trophy("weekly-budget-met", "Weekly Budgetor", "Under weekly budget limit!", 
+    0, 0, new int[]{4, 10, 26, 52}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)),
+
+    // TODO
+    new Trophy("monthly-budget-met", "Monthly Budgetor", "Under monthly budget limit!", 
+    0, 0, new int[]{1, 3, 6, 12}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)),
+
+    // TODO
+    new Trophy("investing-simple", "Stock Spender", "Invested into the stock market!", 
+    0, 0, new int[]{1, 5, 20, 50}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)),
+
+    // TODO
+    new Trophy("subcription-spender", "Subscription Maxxer", "Has a lot of subscriptions!", 
+    0, 0, new int[]{2, 5, 8, 10}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)),
+
+    // TODO
+    new Trophy("watchlist-adder", "Watchful Eye", "Added stocks to the Watchlist!", 
+    0, 0, new int[]{3, 10, 20, 50}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)),
+
+  //groceries
+    new Trophy("grocery-lists", "Grocery Guru", "Created grocery Lists!", 
+    0, 0, new int[]{3, 10, 20, 50}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)),
+
+    new Trophy("meal-prepper", "Meal Prepper", "Created Recipes based on the Meal!", 
+    0, 0, new int[]{3, 10, 20, 50}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)),
+
+  //sleep
+
+    // TODO
+    new Trophy("sleep-tracker", "Someone's Sleepy", "Logged sleep data!", 
+    0, 0, new int[]{3, 10, 30, 100}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)),
+
+    // TODO
+    new Trophy("sleep-goal", "Well Rested", "Slept for over 8 hours!", 
+    0, 0, new int[]{5, 15, 25, 100}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)),
+
+
+
+  //special trophies
+
+    // TODO
+    new Trophy("all-around", "All-Around Achiever", "Achieve at least one trophy from each PlotLine Category!", 
+    0, 0, new int[]{0, 0, 0, 1}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)),
+
+    // TODO
+    new Trophy("llm-investor", "Portfolio Pro", "Created a stock portfolio with the LLM!", 
+    0, 0, new int[]{0, 0, 0, 1}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)), 
+
+    // TODO
+    new Trophy("first_profile_picture", "Picture Perfect", "Uploaded a profile picture!", 
+    0, 0, new int[]{0, 0, 0, 1}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)),
+    
+    // TODO
+    new Trophy("llm-overall", "Large Language Master", "Utilized LLM-Generated content!", 
+    0, 0, new int[]{3, 10, 25, 50}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)),
+
+);
+
 
   private final S3Client s3Client;
   private final String bucketName = "plotline-database-bucket";
@@ -121,8 +214,102 @@ public class UserProfileService {
         return "https://" + bucketName + ".s3.amazonaws.com/" + fileName;
   }
 
+  // TROPHY FUNCTIONS
+
+  public List<Trophy> getTrophies(String username) throws IOException {
+    String key = "users/" + username + "/trophies.json";
+
+    try {
+      GetObjectRequest getRequest = GetObjectRequest.builder()
+      .bucket(bucketName)
+      .key(key)
+      .build();
+      ResponseBytes<GetObjectResponse> objectBytes = s3Client.getObjectAsBytes(getRequest);
+      String content = new String(objectBytes.asByteArray(), StandardCharsets.UTF_8);
+
+      // parse json into trophy
+      List<Trophy> trophies = objectMapper.readValue(content, new TypeReference<List<Trophy>>() {});
+      System.out.println("Trophies: " + trophies);
+
+      // if new trophies were added since this user created their default trophies, add here
+      if (trophies.size() < DEFAULT_TROPHIES.size()) {
+        Set<String> userTrophyIds = trophies.stream()
+          .map(Trophy::getId)
+          .collect(Collectors.toSet());
+
+        List<Trophy> updated = new ArrayList<>(trophies);
+        for (Trophy defaultTrophy : DEFAULT_TROPHIES) {
+          if (!userTrophyIds.contains(defaultTrophy.getId())) {
+            updated.add(new Trophy(
+              defaultTrophy.getId(),
+              defaultTrophy.getName(),
+              defaultTrophy.getDescription(),
+              0,
+              0,
+              defaultTrophy.getThresholds(),
+              ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)              
+            ));
+          }
+        }
+
+        if (updated.size() > trophies.size()) {
+          saveTrophies(username, updated);
+        }
+        trophies = updated;
+      }
+      return trophies;
+
+    } catch (software.amazon.awssdk.services.s3.model.NoSuchKeyException e) {
+      // If the trophies.json file does not exist, create default trophies     
+      if (e.awsErrorDetails().errorCode().equals("NoSuchKey")) {
+          System.out.println("No trophies found for user: " + username + ". Creating default trophies.");
+          return createDefaultTrophies(username);
+      } else {
+          throw e;
+      }
+    }
 
 
+  }
 
+  public void saveTrophies(String username, List<Trophy> trophies) throws IOException {
+
+    String key = "users/" + username + "/trophies.json";
+    PutObjectRequest putRequest = PutObjectRequest.builder()
+        .bucket(bucketName)
+        .key(key)
+        .contentType("application/json")
+        .build();
+    s3Client.putObject(putRequest, RequestBody.fromString(objectMapper.writeValueAsString(trophies)));
+
+    String json = objectMapper.writeValueAsString(trophies);
+    System.out.println("Trophies saved: " + json);
+  }
+
+  public List<Trophy> incrementTrophy(String username, String trophyId, int amount) throws IOException {
+    List<Trophy> trophies = getTrophies(username);
+    for (Trophy trophy : trophies) {
+        if (trophy.getId().equals(trophyId)) {
+            trophy.setProgress(trophy.getProgress() + amount);
+
+            // Upgrade logic
+            int newLevel = 0;
+            for (int i = 0; i < trophy.getThresholds().length; i++) {
+                if (trophy.getProgress() >= trophy.getThresholds()[i]) {
+                    newLevel = i + 1;
+                }
+            }
+            trophy.setLevel(newLevel);
+            break;
+        }
+    }
+    saveTrophies(username, trophies);
+    return trophies;
+}
+
+  public List<Trophy> createDefaultTrophies(String username) throws IOException {
+    saveTrophies(username, DEFAULT_TROPHIES);
+    return DEFAULT_TROPHIES;
+  }
   
 }

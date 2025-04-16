@@ -2,6 +2,7 @@ package com.plotline.backend.controller;
 
 
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -17,6 +18,7 @@ import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+import com.plotline.backend.dto.Trophy;
 import com.plotline.backend.dto.UserProfile;
 import com.plotline.backend.service.UserProfileService;
 
@@ -81,6 +83,30 @@ public class ProfileController {
         String s3Url = "https://plotline-database-bucket.s3.amazonaws.com/users/" + username + "/profile_pictures/" + username + ".jpg";
         return ResponseEntity.ok(Collections.singletonMap("profilePicUrl", s3Url));
     }
+
+    // TROPHY ENDPOINTS 
+
+    @GetMapping("/get-trophies")
+    public List<Trophy> getUserTrophies(@RequestParam String username) throws Exception {
+        return userProfileService.getTrophies(username);
+    }
+
+    @PostMapping("/increment-trophies")
+    public List<Trophy> incrementTrophy(
+        @RequestParam String username,
+        @RequestParam String trophyId,
+        @RequestParam int amount
+    ) throws Exception {
+        return userProfileService.incrementTrophy(username, trophyId, amount);
+    }
+
+    @PostMapping("/create-default-trophies")
+    public List<Trophy> createDefaultTrophies(
+        @RequestParam String username
+    ) throws Exception {
+        return userProfileService.createDefaultTrophies(username);
+    }
+
 
 
 }
