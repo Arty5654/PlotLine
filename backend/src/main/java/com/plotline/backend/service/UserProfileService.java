@@ -3,6 +3,7 @@ package com.plotline.backend.service;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -37,22 +38,20 @@ public class UserProfileService {
   //goals
 
     // TODO
-    new Trophy("long_term_goals", "Goal Crusher", "Complete long-term goals!", 
-    0, 0, new int[]{10, 20, 50, 100}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)),
+    new Trophy("long-term-goals", "Goal Crusher", "Complete long-term goals!", 
+    0, 0, new int[]{1, 5, 10, 30}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)),
 
-    // TODO
-    new Trophy("weekly_goals", "Weekly Warrior", "Complete weekly goals!", 
-    0, 0, new int[]{25, 50, 100, 250}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)),
+
+    new Trophy("weekly-goals-creator", "Weekly Warrior", "Create weekly goals!", 
+    0, 0, new int[]{10, 25, 75, 250}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)),
 
   //calendar
 
-    // TODO
-    new Trophy("calendar_events_created", "Event Planner", "Create events on your calendar!", 
-    0, 0, new int[]{10, 25, 100, 250}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)),
+    new Trophy("calendar-events-created", "Event Planner", "Create events on your calendar!", 
+    0, 0, new int[]{5, 15, 50, 100}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)),
 
-    // TODO
     new Trophy("friends-invited", "Group Leader", "Add friends to calendar events!", 
-    0, 0, new int[]{10, 25, 100, 250}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)),
+    0, 0, new int[]{5, 20, 50, 100}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)),
 
   //budget and stocks
 
@@ -67,6 +66,14 @@ public class UserProfileService {
     // TODO
     new Trophy("investing-simple", "Stock Spender", "Invested into the stock market!", 
     0, 0, new int[]{1, 5, 20, 50}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)),
+
+    // TODO
+    new Trophy("monthly-spending-tracker", "Spending Tracker", "Input Spending data!", 
+    0, 0, new int[]{10, 20, 50, 100}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)),
+
+    // TODO
+    new Trophy("receipt-photo", "Paper Photographer", "Upload Pictures of Receipts!", 
+    0, 0, new int[]{10, 20, 50, 100}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)),
 
     // TODO
     new Trophy("subcription-spender", "Subscription Maxxer", "Has a lot of subscriptions!", 
@@ -97,7 +104,6 @@ public class UserProfileService {
 
   //special trophies
 
-    // TODO
     new Trophy("all-around", "All-Around Achiever", "Achieve at least one trophy from each PlotLine Category!", 
     0, 0, new int[]{0, 0, 0, 1}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)),
 
@@ -105,15 +111,10 @@ public class UserProfileService {
     new Trophy("llm-investor", "Portfolio Pro", "Created a stock portfolio with the LLM!", 
     0, 0, new int[]{0, 0, 0, 1}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)), 
 
-    // TODO
-    new Trophy("first_profile_picture", "Picture Perfect", "Uploaded a profile picture!", 
+    new Trophy("first-profile-picture", "Picture Perfect", "Uploaded a profile picture!", 
     0, 0, new int[]{0, 0, 0, 1}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)),
-    
-    // TODO
-    new Trophy("llm-overall", "Large Language Master", "Utilized LLM-Generated content!", 
-    0, 0, new int[]{3, 10, 25, 50}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)),
 
-);
+  );
 
 
   private final S3Client s3Client;
@@ -210,6 +211,8 @@ public class UserProfileService {
         s3Client.putObject(putRequest, RequestBody.fromBytes(file.getBytes()));
 
         System.out.println("Profile picture uploaded successfully");
+        // first profile picture trophy awarded
+        incrementTrophy(username, "first-profile-picture", 1);
 
         return "https://" + bucketName + ".s3.amazonaws.com/" + fileName;
   }
@@ -283,7 +286,6 @@ public class UserProfileService {
     s3Client.putObject(putRequest, RequestBody.fromString(objectMapper.writeValueAsString(trophies)));
 
     String json = objectMapper.writeValueAsString(trophies);
-    System.out.println("Trophies saved: " + json);
   }
 
   public List<Trophy> incrementTrophy(String username, String trophyId, int amount) throws IOException {
@@ -297,19 +299,70 @@ public class UserProfileService {
             for (int i = 0; i < trophy.getThresholds().length; i++) {
                 if (trophy.getProgress() >= trophy.getThresholds()[i]) {
                     newLevel = i + 1;
+                    trophy.setEarnedDate(ZonedDateTime.now(ZoneOffset.UTC)
+                    .format(DateTimeFormatter.ISO_OFFSET_DATE_TIME));
                 }
             }
             trophy.setLevel(newLevel);
             break;
         }
+
+        // check for special trophy
+        if (trophy.getId().equals("all-around") && trophy.getLevel() == 0) {
+          if (checkAllAroundAchiever(trophies)) {
+            trophy.setLevel(4);
+            trophy.setProgress(1);
+            trophy.setEarnedDate(ZonedDateTime.now(ZoneOffset.UTC)
+            .format(DateTimeFormatter.ISO_OFFSET_DATE_TIME));
+          }
+        }
     }
     saveTrophies(username, trophies);
     return trophies;
-}
+  }
 
   public List<Trophy> createDefaultTrophies(String username) throws IOException {
     saveTrophies(username, DEFAULT_TROPHIES);
     return DEFAULT_TROPHIES;
   }
+
+
+  // for all around achiever (one from each plotline category)
+  private String getCategoryFromTrophyId(String trophyId) {
+    if (trophyId.startsWith("long-term-goals") || trophyId.startsWith("weekly-goals")) {
+        return "goals";
+    } else if (trophyId.startsWith("calendar") || trophyId.startsWith("friends")) {
+        return "calendar";
+    } else if (trophyId.startsWith("weekly-budget") || trophyId.startsWith("monthly-budget") ||
+               trophyId.startsWith("investing") || trophyId.startsWith("watchlist") ||
+               trophyId.startsWith("subcription")) {
+        return "budget";
+    } else if (trophyId.startsWith("grocery") || trophyId.startsWith("meal-prepper")) {
+        return "groceries";
+    } else if (trophyId.startsWith("sleep")) {
+        return "sleep";
+    }
+
+    return null; // if not part of a known category
+  }
+
+  public boolean checkAllAroundAchiever(List<Trophy> trophies) {
+    Set<String> earnedCategories = new HashSet<>();
+
+    for (Trophy trophy : trophies) {
+        if (trophy.getLevel() > 0) {
+            String category = getCategoryFromTrophyId(trophy.getId());
+            if (category != null) {
+                earnedCategories.add(category);
+            }
+        }
+    }
+    Set<String> requiredCategories = Set.of(
+        "goals", "calendar", "budget", "groceries", "sleep"
+    );
+    return earnedCategories.containsAll(requiredCategories);
+  }
+
+
   
 }
