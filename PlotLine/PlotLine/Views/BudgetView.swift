@@ -54,8 +54,11 @@ struct BudgetView: View {
 // MARK: - Budgeting Section
 struct BudgetSection: View {
     @State private var selectedChartView = "Weekly"
-    
     @EnvironmentObject var calendarVM: CalendarViewModel
+
+    private var quizCompleted: Bool {
+        UserDefaults.standard.bool(forKey: "budgetQuizCompleted")
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 15) {
@@ -63,39 +66,47 @@ struct BudgetSection: View {
                 .font(.largeTitle)
                 .bold()
 
-            // Spending Trends Chart
-            VStack {
-                Text("Spending Trends")
-                    .font(.headline)
-
-                Picker("Chart Type", selection: $selectedChartView) {
-                    Text("Weekly").tag("Weekly")
-                    Text("Monthly").tag("Monthly")
+            if !quizCompleted {
+                NavigationLink(destination: BudgetQuizView().environmentObject(calendarVM)) {
+                    BudgetButtonLabel(title: "Take the AI Powered Budget Quiz")
                 }
-                .pickerStyle(SegmentedPickerStyle())
+            } else {
+                // Spending Trends Chart
+                VStack {
+                    Text("Spending Trends")
+                        .font(.headline)
 
-                SpendingChartView(chartType: selectedChartView)
-            }
-            .padding()
-            .background(Color(.systemBackground))
-            .cornerRadius(10)
-            .shadow(radius: 3)
+                    Picker("Chart Type", selection: $selectedChartView) {
+                        Text("Weekly").tag("Weekly")
+                        Text("Monthly").tag("Monthly")
+                    }
+                    .pickerStyle(SegmentedPickerStyle())
 
-            // Navigation Links to IncomeRentView and Other Input Views
-            NavigationLink(destination: IncomeRentView().environmentObject(calendarVM)) {
-                BudgetButtonLabel(title: "Input Recurring Income & Rent")
-            }
+                    SpendingChartView(chartType: selectedChartView)
+                }
+                .padding()
+                .background(Color(.systemBackground))
+                .cornerRadius(10)
+                .shadow(radius: 3)
 
-            NavigationLink(destination: WeeklyMonthlyCostView().environmentObject(calendarVM)) {
-                BudgetButtonLabel(title: "Input Weekly/Monthly Costs")
-            }
+                // Budgeting Tools
+                Group {
+                    NavigationLink(destination: IncomeRentView().environmentObject(calendarVM)) {
+                        BudgetButtonLabel(title: "Input Recurring Income & Rent")
+                    }
 
-            NavigationLink(destination: BudgetInputView()) {
-                BudgetButtonLabel(title: "Create Weekly/Monthly Budget")
-            }
+                    NavigationLink(destination: WeeklyMonthlyCostView().environmentObject(calendarVM)) {
+                        BudgetButtonLabel(title: "Input Weekly/Monthly Costs")
+                    }
 
-            NavigationLink(destination: SpendingPeriodView()) {
-                BudgetButtonLabel(title: "Input Spending for a Time Period")
+                    NavigationLink(destination: BudgetInputView()) {
+                        BudgetButtonLabel(title: "Create Weekly/Monthly Budget")
+                    }
+
+                    NavigationLink(destination: SpendingPeriodView()) {
+                        BudgetButtonLabel(title: "Input Spending for a Time Period")
+                    }
+                }
             }
         }
         .padding()
@@ -103,6 +114,7 @@ struct BudgetSection: View {
         .cornerRadius(15)
     }
 }
+
 
 // MARK: - Spending Chart View
 struct SpendingChartView: View {

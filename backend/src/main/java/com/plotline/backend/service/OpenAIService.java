@@ -125,7 +125,7 @@ public class OpenAIService {
           ResponseOutputText rot = response.output().get(0).message().get().content().get(0).asOutputText();
           String output = rot.text();
   
-          System.out.println("OpenAI response: " + output);
+          //System.out.println("OpenAI response: " + output);
           return output;
   
       } catch (OpenAIException e) {
@@ -134,7 +134,30 @@ public class OpenAIService {
         e.printStackTrace();
         return "Service Error";
       }
-  } 
+  }
+
+  public String generateBudget(String userMessage) {
+    try {
+      String systemMessage = "You are a financial assistant.";
+      ResponseCreateParams params = ResponseCreateParams.builder()
+      .input(userMessage)
+      .instructions(systemMessage)
+      .model(ChatModel.GPT_4O_MINI)
+      .build();
+
+      Response response = openAIClient.responses().create(params);
+      ResponseOutputText rot = response.output().get(0).message().get().content().get(0).asOutputText();
+      String output = rot.text();
+
+      System.out.println("OpenAI response: " + output);
+      return output;
+
+    } catch (OpenAIException e) {
+        e.printStackTrace();
+        return "Service Error";
+    }
+
+  }
 
   public String generateGroceryListFromMeal(String mealName, DietaryRestrictions dietaryRestrictions) {
     try {

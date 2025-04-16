@@ -24,6 +24,9 @@ struct BudgetInputView: View {
     // MARK: - Constants / Defaults
     private let username: String = UserDefaults.standard.string(forKey: "loggedInUsername") ?? "UnknownUser"
     
+    // For the Budget Quiz
+    var prefilledBudget: [String: Double]? = nil
+    
     /// Default categories to show if none stored or none on backend
     private static let defaultBudgetCategories: [BudgetItem] = [
         BudgetItem(category: "Rent", amount: ""),
@@ -160,8 +163,12 @@ struct BudgetInputView: View {
         
         // Fetch data on first appear
         .onAppear {
-            fetchIncomeData()
-            fetchBudgetData()
+            if let prefilled = prefilledBudget {
+                self.budgetItems = prefilled.map { BudgetItem(category: $0.key, amount: String($0.value)) }
+            } else {
+                fetchIncomeData()
+                fetchBudgetData()
+            }
         }
     }
 }
@@ -291,13 +298,13 @@ extension BudgetInputView {
         ]
         
         guard let jsonData = try? JSONSerialization.data(withJSONObject: payload) else {
-            print("❌ Could not serialize budget payload to JSON.")
+            print("Could not serialize budget payload to JSON.")
             return
         }
         
         let urlString = "http://localhost:8080/api/budget"
         guard let url = URL(string: urlString) else {
-            print("❌ Invalid URL for saving budget data:", urlString)
+            print("Invalid URL for saving budget data:", urlString)
             return
         }
         
@@ -306,14 +313,14 @@ extension BudgetInputView {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = jsonData
         
-        print("📡 Saving \(selectedType) budget data to backend...")
+        print("Saving \(selectedType) budget data to backend...")
         
         URLSession.shared.dataTask(with: request) { data, response, error in
             if let error = error {
-                print("❌ Error saving budget data:", error.localizedDescription)
+                print("Error saving budget data:", error.localizedDescription)
                 return
             }
-            print("✅ Budget data successfully saved!")
+            print("Budget data successfully saved!")
             
             // Show "saved" alert on main thread
             DispatchQueue.main.async {
