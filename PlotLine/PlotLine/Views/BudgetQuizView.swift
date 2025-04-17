@@ -107,7 +107,7 @@ struct BudgetQuizView: View {
                     } else {
                         Button("Generate Budget") {
                             Task {
-                                await generateLLMBudget()
+                                await generateBudgetFromLLM()
                             }
                         }
                         .disabled(yearlyIncome.isEmpty || numberOfDependents.isEmpty || (city.isEmpty && !useDeviceLocation))
@@ -127,23 +127,20 @@ struct BudgetQuizView: View {
     }
 
     // MARK: - LLM Budget Gen
-    func generateLLMBudget() async {
-        guard let income = Double(yearlyIncome) else { return }
-        isLoading = true
-
-        let prompt: [String: Any] = [
+    func generateBudgetFromLLM() async {
+        let url = URL(string: "http://localhost:8080/api/llm/budget")!
+        let payload: [String: Any] = [
             "username": username,
-            "yearlyIncome": income,
+            "yearlyIncome": yearlyIncome,
             "dependents": numberOfDependents,
             "city": city,
             "state": state,
-            "spendingStyle": spendingStyle,
-            "categories": Array(selectedCategories)
+            "spendingStyle": spendingStyle
         ]
 
-        guard let jsonData = try? JSONSerialization.data(withJSONObject: prompt) else { return }
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: payload) else { return }
 
-        var request = URLRequest(url: URL(string: "http://localhost:8080/api/llm/budget")!)
+        var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = jsonData
@@ -151,52 +148,60 @@ struct BudgetQuizView: View {
         do {
             let (data, _) = try await URLSession.shared.data(for: request)
             if let decoded = try? JSONDecoder().decode([String: Double].self, from: data) {
-                // Save to backend
-                let payload: [String: Any] = [
-                    "username": username,
-                    "type": "monthly",
-                    "budget": decoded
-                ]
-                let body = try? JSONSerialization.data(withJSONObject: payload)
-
-                var saveReq = URLRequest(url: URL(string: "http://localhost:8080/api/budget")!)
-                saveReq.httpMethod = "POST"
-                saveReq.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                saveReq.httpBody = body
-
-                _ = try? await URLSession.shared.data(for: saveReq)
-
-                // Also save weekly
-                let weeklyBudget = decoded.mapValues { $0 / 4 }
-                let weeklyPayload: [String: Any] = [
-                    "username": username,
-                    "type": "weekly",
-                    "budget": weeklyBudget
-                ]
-                let weeklyBody = try? JSONSerialization.data(withJSONObject: weeklyPayload)
-
-                var weeklyReq = URLRequest(url: URL(string: "http://localhost:8080/api/budget")!)
-                weeklyReq.httpMethod = "POST"
-                weeklyReq.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                weeklyReq.httpBody = weeklyBody
-
-                _ = try? await URLSession.shared.data(for: weeklyReq)
-
-                // Set flag and dismiss
-                UserDefaults.standard.set(true, forKey: "budgetQuizCompleted")
-
-                DispatchQueue.main.async {
-                    isLoading = false
-                    dismiss()
-                }
+                await saveBudgetToBackend(decoded)
             } else {
-                throw URLError(.cannotParseResponse)
+                throw URLError(.badServerResponse)
             }
         } catch {
             print("Error generating budget: \(error)")
-            isLoading = false
-            showError = true
+            DispatchQueue.main.async {
+                showError = true
+                isLoading = false
+            }
         }
+    }
+
+    func saveBudgetToBackend(_ budget: [String: Double]) async {
+        do {
+            // Save monthly budget
+            try await postBudget(username: username, type: "monthly", budget: budget)
+
+            // Save weekly budget (monthly / 4)
+            let weekly = budget.mapValues { $0 / 4.0 }
+            try await postBudget(username: username, type: "weekly", budget: weekly)
+
+            // Save completion flag
+            UserDefaults.standard.set(true, forKey: "budgetQuizCompleted")
+
+            DispatchQueue.main.async {
+                isLoading = false
+                dismiss()
+            }
+        } catch {
+            print("Error saving budget: \(error)")
+            DispatchQueue.main.async {
+                showError = true
+                isLoading = false
+            }
+        }
+    }
+
+    private func postBudget(username: String, type: String, budget: [String: Double]) async throws {
+        let url = URL(string: "http://localhost:8080/api/budget")!
+        let payload: [String: Any] = [
+            "username": username,
+            "type": type,
+            "budget": budget
+        ]
+
+        let jsonData = try JSONSerialization.data(withJSONObject: payload)
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = jsonData
+
+        _ = try await URLSession.shared.data(for: request)
     }
 
     // MARK: - Location
