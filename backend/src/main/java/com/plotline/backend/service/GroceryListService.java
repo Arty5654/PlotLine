@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.plotline.backend.dto.GroceryItem;
 import com.plotline.backend.dto.GroceryList;
+import com.twilio.rest.chat.v1.service.User;
+
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
@@ -29,8 +31,11 @@ public class GroceryListService {
     private final S3Client s3Client;
     private final String BUCKET_NAME = "plotline-database-bucket";
 
-    public GroceryListService(S3Client s3Client) {
+    private final UserProfileService userProfileService;
+
+    public GroceryListService(S3Client s3Client, UserProfileService userProfileService) {
         this.s3Client = s3Client;
+        this.userProfileService = userProfileService;
     }
 
     // Helper function to construct the S3 path for the grocery list items
@@ -110,6 +115,9 @@ public class GroceryListService {
                 .key(s3Key)
                 .build();
         s3Client.putObject(putObjectRequest, RequestBody.fromBytes(jsonString.getBytes()));
+
+        // Update the user's trophy progress for creating a grocery list
+        userProfileService.incrementTrophy(username, "grocery-lists", 1);
 
         return groceryListID;  // Return the key of the uploaded object (i.e., the S3 file path)
     }
@@ -596,6 +604,9 @@ public class GroceryListService {
         } catch (Exception e) {
             throw e;
         }
+
+        // trophy for creating meals from ai
+        userProfileService.incrementTrophy(username, "meal-prepper", 1);
     
         return savedListId;
     }

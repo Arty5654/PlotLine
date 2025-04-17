@@ -26,10 +26,12 @@ public class CalendarService {
     private final ObjectMapper objectMapper;
     private final String bucketName = "plotline-database-bucket";
     private final ReentrantLock lock = new ReentrantLock();
+    private final UserProfileService userProfileService;
 
-    public CalendarService(S3Client s3Client) {
+    public CalendarService(S3Client s3Client, UserProfileService userProfileService) {
         this.s3Client = s3Client;
         this.objectMapper = new ObjectMapper();
+        this.userProfileService = userProfileService;
     }
 
     // get all events for the user
@@ -69,6 +71,10 @@ public class CalendarService {
             }
 
             existingEvents.add(newEvent);
+            
+            // Event planner (creating calendar events) Trophy
+            userProfileService.incrementTrophy(username, "calendar-events-created", 1);
+
             // write to s3
             saveEventsToS3(username, existingEvents);
 
@@ -88,8 +94,11 @@ public class CalendarService {
                         List.of(username)  // event creator is the only invited friend for invited users
                     );
                     friendEvents.add(friendEvent);
-                    saveEventsToS3(friend, friendEvents);
+                    saveEventsToS3(friend, friendEvents);                  
                 }
+                
+                // Trophy for inviting friends to calendar events
+                userProfileService.incrementTrophy(username, "invite-friends", newEvent.getInvitedFriends().size());
             }
 
             return newEvent;

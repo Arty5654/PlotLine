@@ -6,6 +6,7 @@ import com.plotline.backend.dto.LongTermGoal;
 import com.plotline.backend.dto.LongTermStep;
 import com.plotline.backend.dto.TaskItem;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.core.ResponseBytes;
 import software.amazon.awssdk.core.sync.RequestBody;
@@ -36,12 +37,15 @@ public class S3Service {
   private final S3Client s3Client;
   private final String bucketName = "plotline-database-bucket";
 
-  public S3Service() {
+  private final UserProfileService userProfileService;
+    
+  public S3Service(UserProfileService userProfileService) {
     Dotenv dotenv = Dotenv.load(); // Load .env file
     String accessKey = dotenv.get("AWS_ACCESS_KEY_ID");
     String secretKey = dotenv.get("AWS_SECRET_ACCESS_KEY");
     String region = dotenv.get("AWS_REGION");
     String jwtKey = dotenv.get("JWT_SECRET_KEY");
+    this.userProfileService = userProfileService;
 
     this.s3Client = S3Client.builder()
         .region(Region.of(region))
@@ -147,6 +151,9 @@ public class S3Service {
           .build();
 
       s3Client.putObject(putObjectRequest, RequestBody.fromString(updatedJson));
+
+      // weekly goal creator trophy - increment by 1
+      userProfileService.incrementTrophy(username, "weekly-goals-creator", 1);
 
       return true; // Success
 
