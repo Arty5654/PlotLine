@@ -25,8 +25,10 @@ public class HealthService {
     private final S3Client s3Client;
     private final String BUCKET_NAME = "plotline-database-bucket";
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final UserProfileService userProfileService;
 
-    public HealthService(S3Client s3Client) {
+    public HealthService(S3Client s3Client, UserProfileService userProfileService) {
+        this.userProfileService = userProfileService;
         this.s3Client = s3Client;
     }
 
@@ -85,6 +87,10 @@ public class HealthService {
                 // If no ID, generate one
                 if (entry.getId() == null) {
                     entry.setId(UUID.randomUUID().toString());
+                }
+
+                if (entry.getHoursSlept() >= 8) {
+                    userProfileService.incrementTrophy(entry.getUsername(), "sleep-goal", 1);
                 }
             }
 
@@ -150,6 +156,13 @@ public class HealthService {
         
         // Add the new entry
         weekEntries.add(healthEntry);
+
+        //trophy for logging health entry
+        userProfileService.incrementTrophy(healthEntry.getUsername(), "sleep-tracker", 1);
+
+        if (healthEntry.getHoursSlept() >= 8) {
+            userProfileService.incrementTrophy(healthEntry.getUsername(), "sleep-goal", 1);
+        }
 
         // Save the updated list
         saveHealthEntries(healthEntry.getUsername(), sundayDateString, weekEntries);

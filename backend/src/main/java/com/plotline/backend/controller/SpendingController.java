@@ -3,6 +3,8 @@ package com.plotline.backend.controller;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.plotline.backend.dto.SpendingRequest;
 import com.plotline.backend.service.S3Service;
+import com.plotline.backend.service.UserProfileService;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -13,6 +15,8 @@ import org.slf4j.LoggerFactory;
 
 
 import java.io.ByteArrayInputStream;
+import java.io.IOError;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 
 @RestController
@@ -23,6 +27,9 @@ public class SpendingController {
 
     @Autowired
     private S3Service s3Service;
+
+    @Autowired
+    private UserProfileService userProfileService;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final String S3_BUCKET_PATH = "users/%s/spending/%s.json"; // Path pattern
@@ -51,6 +58,22 @@ public class SpendingController {
           String key = String.format("users/%s/spending/%s_to_%s.json", request.getUsername(), request.getStartDate(), request.getEndDate());
 
           logger.info("📝 Saving spending for {} to {}", request.getStartDate(), request.getEndDate());
+
+          // update Spending Tracker trophy
+          userProfileService.incrementTrophy(request.getUsername(), "monthly-spending-tracker", 1);
+
+          // if the spending is investments, update the investing trophy as well
+          request.getSpending().forEach((mapKey, value) -> {
+            String lowerKey = mapKey.toLowerCase();
+            if (lowerKey.startsWith("stock") || lowerKey.startsWith("invest")) {
+                try {
+                    userProfileService.incrementTrophy(request.getUsername(), "investing-simple", 1);
+                } catch (IOException e) {
+                    logger.error("Error incrementing trophy for user {}: {}", request.getUsername(), e.getMessage());
+                }
+            }
+        });
+
           // Upload to S3
           s3Service.uploadFile(key, inputStream, jsonData.length());
 

@@ -63,11 +63,9 @@ public class UserProfileService {
     new Trophy("monthly-budget-met", "Monthly Budgetor", "Under monthly budget limit!", 
     0, 0, new int[]{1, 3, 6, 12}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)),
 
-    // TODO
     new Trophy("investing-simple", "Stock Spender", "Invested into the stock market!", 
     0, 0, new int[]{1, 5, 20, 50}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)),
 
-    // TODO
     new Trophy("monthly-spending-tracker", "Spending Tracker", "Input Spending data!", 
     0, 0, new int[]{10, 20, 50, 100}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)),
 
@@ -75,11 +73,9 @@ public class UserProfileService {
     new Trophy("receipt-photo", "Paper Photographer", "Upload Pictures of Receipts!", 
     0, 0, new int[]{10, 20, 50, 100}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)),
 
-    // TODO
     new Trophy("subcription-spender", "Subscription Maxxer", "Has a lot of subscriptions!", 
-    0, 0, new int[]{2, 5, 8, 10}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)),
+    0, 0, new int[]{5, 7, 10, 12}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)),
 
-    // TODO
     new Trophy("watchlist-adder", "Watchful Eye", "Added stocks to the Watchlist!", 
     0, 0, new int[]{3, 10, 20, 50}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)),
 
@@ -91,16 +87,11 @@ public class UserProfileService {
     0, 0, new int[]{3, 10, 20, 50}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)),
 
   //sleep
-
-    // TODO
     new Trophy("sleep-tracker", "Someone's Sleepy", "Logged sleep data!", 
     0, 0, new int[]{3, 10, 30, 100}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)),
 
-    // TODO
     new Trophy("sleep-goal", "Well Rested", "Slept for over 8 hours!", 
     0, 0, new int[]{5, 15, 25, 100}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)),
-
-
 
   //special trophies
 
@@ -112,7 +103,7 @@ public class UserProfileService {
     0, 0, new int[]{0, 0, 0, 1}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)), 
 
     new Trophy("first-profile-picture", "Picture Perfect", "Uploaded a profile picture!", 
-    0, 0, new int[]{0, 0, 0, 1}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)),
+    0, 0, new int[]{0, 0, 0, 1}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME))
 
   );
 
@@ -363,6 +354,27 @@ public class UserProfileService {
     return earnedCategories.containsAll(requiredCategories);
   }
 
+  public void setTrophyProgress(String username, String trophyId, int newProgress) throws IOException {
+    List<Trophy> trophies = getTrophies(username);
+    for (Trophy trophy : trophies) {
+        if (trophy.getId().equals(trophyId)) {
+            trophy.setProgress(newProgress);
+            int newLevel = 0;
+            for (int i = 0; i < trophy.getThresholds().length; i++) {
+                if (newProgress >= trophy.getThresholds()[i]) {
+                    newLevel = i + 1;
+                }
+            }
+            trophy.setLevel(newLevel);
+            if (newLevel > 0 && trophy.getEarnedDate() == null) {
+                trophy.setEarnedDate(ZonedDateTime.now(ZoneOffset.UTC)
+                                      .format(DateTimeFormatter.ISO_OFFSET_DATE_TIME));
+            }
+            break;
+        }
+    }
+    saveTrophies(username, trophies);
+}
 
   
 }

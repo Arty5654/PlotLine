@@ -3,6 +3,8 @@ package com.plotline.backend.controller;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.plotline.backend.dto.SubscriptionRequest;
 import com.plotline.backend.service.S3Service;
+import com.plotline.backend.service.UserProfileService;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -22,6 +24,9 @@ public class SubscriptionController {
     @Autowired
     private S3Service s3Service;
 
+    @Autowired
+    private UserProfileService userProfileService;
+
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final String S3_BUCKET_PATH = "users/%s/subscriptions.json"; // Storage path
 
@@ -36,6 +41,13 @@ public class SubscriptionController {
 
             // Generate S3 key
             String key = String.format(S3_BUCKET_PATH, request.getUsername());
+
+            if (request.getSubscriptions() != null) {
+                int count = request.getSubscriptions().size();
+                userProfileService.setTrophyProgress(request.getUsername(), "subscription-spender", 0);
+                userProfileService.incrementTrophy(request.getUsername(), "subscription-spender", count);
+            }            
+
 
             // Upload to S3
             s3Service.uploadFile(key, inputStream, jsonData.length());
