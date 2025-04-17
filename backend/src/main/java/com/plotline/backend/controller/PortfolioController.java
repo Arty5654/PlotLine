@@ -3,6 +3,7 @@ import com.plotline.backend.service.OpenAIService;
 import com.plotline.backend.service.PortfolioService;
 import com.plotline.backend.dto.SavedPortfolio;
 import com.plotline.backend.service.S3Service;
+import com.plotline.backend.service.UserProfileService;
 
 import org.apache.http.HttpStatus;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -35,6 +36,9 @@ public class PortfolioController {
 
     @Autowired
     private S3Service s3Service;
+
+    @Autowired
+    private UserProfileService userProfileService;
 
     @PostMapping("/portfolio")
     public ResponseEntity<String> generatePortfolio(@RequestBody Map<String, String> quizData) {
@@ -113,6 +117,9 @@ public class PortfolioController {
             
             // Clean up old edited portfolio
             portfolioService.deleteEditedPortfolio(username);
+
+            // save trophy progress for making portfolio
+            userProfileService.incrementTrophy(username, "llm-investor", 1);
 
             return ResponseEntity.ok(response);
 
