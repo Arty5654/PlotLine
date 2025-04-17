@@ -37,6 +37,7 @@ struct BudgetInputView: View {
         BudgetItem(category: "Utilities", amount: ""),
         BudgetItem(category: "Savings", amount: ""),
         BudgetItem(category: "Investments", amount: ""),
+        BudgetItem(category: "Transportation", amount: ""),
         BudgetItem(category: "Miscellaneous", amount: "")
     ]
     

@@ -63,12 +63,12 @@ public class BudgetQuizController {
                     break;
                 case "medium":
                     rules = """
-                        - Allocate around 30%% of monthly income to rent.
-                        - Save and invest 20-25%% combined.
-                        - Groceries around 12-15%%.
+                        - Allocate up to 30%% of monthly income to rent.
+                        - Save and invest up to 20-25%% combined.
+                        - Groceries up to 12-15%%.
                         - Entertainment and eating out can be up to 10%% each.
-                        - Transportation (gas, rideshare, car payments) can be around 8%%.
-                        - Insurance (health, auto, etc.) 10-12%%.
+                        - Transportation (gas, rideshare, car payments) can be up to 8%%.
+                        - Insurance (health, auto, etc.) up to 10-12%%.
                         - Subscriptions should stay under 4%%.
                         - Miscellaneous spending should be under 5%%.
                         """;
@@ -89,27 +89,52 @@ public class BudgetQuizController {
                     rules = "";
             }
 
+            double monthlyIncome = yearlyIncome / 12;
+            double budgetCap;
+
+            switch (spendingStyle.toLowerCase()) {
+                case "low":
+                    budgetCap = monthlyIncome * 0.75;
+                    break;
+                case "medium":
+                    budgetCap = monthlyIncome * 0.88;
+                    break;
+                case "high":
+                    budgetCap = monthlyIncome * 0.97;
+                    break;
+                default:
+                    budgetCap = monthlyIncome * 0.85;
+            }
+
+
             
             String prompt = String.format("""
-                You are a financial assistant helping generate a realistic monthly budget.
-                
-                Generate a JSON object for a monthly budget for someone living in %s, %s,
-                earning $%.2f yearly, supporting %d dependents, with a %s spending style.
+            You are a financial assistant helping generate a realistic monthly budget.
+
+            Generate a JSON object for a monthly budget for someone living in %s, %s,
+            earning $%.2f yearly, supporting %d dependents, with a %s spending style.
+
+            Use ONLY these categories: %s.
+
+            Use the following budgeting rules as **general guidance** — they are recommendations, not strict constraints. Use your judgment to adjust based on cost of living, dependents, and the user's chosen categories.
             
-                Use ONLY these categories: %s.
-            
-                Apply the following budgeting guidance:
-                %s
-            
-                Output format: 
-                {
-                    "Category1": amount,
-                    "Category2": amount,
-                    ...
-                }
-            
-                Make sure the total does not exceed monthly income (yearlyIncome / 12). Round to whole dollars.
-                """, city, state, yearlyIncome, dependents, spendingStyle, categoriesList, rules);
+            You **must allocate money to all user-provided categories**, even if they are not mentioned in the rules (e.g., hobbies like "Tennis"). Make sure each category has a reasonable allocation unless it clearly shouldn't apply.
+
+            Budgeting Guidelines:
+            %s
+
+            Output format:
+            {
+                "Category1": amount,
+                "Category2": amount,
+                ...
+            }
+
+            Try to keep the total budget around $%.2f (%.0f%% of monthly income), but this is a recommendation — the **only hard rule is that the total must not exceed the user's monthly income** ($%.2f). Round each category to whole dollars.
+
+            Ensure that savings and investments are separated, and combined they should follow the range based on spending style.
+            """, city, state, yearlyIncome, dependents, spendingStyle, categoriesList, rules, budgetCap, (budgetCap / monthlyIncome) * 100, monthlyIncome);
+
             
 
             // Get LLM output

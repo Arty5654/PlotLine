@@ -11,7 +11,7 @@ import CoreLocation
 struct BudgetQuizView: View {
     static let defaultCategories = [
         "Rent", "Groceries", "Subscriptions", "Eating Out",
-        "Entertainment", "Utilities", "Savings", "Investments", "Miscellaneous"
+        "Entertainment", "Utilities", "Savings", "Investments", "Transportation", "Miscellaneous"
     ]
     @State private var allCategories: [String] = defaultCategories
     
