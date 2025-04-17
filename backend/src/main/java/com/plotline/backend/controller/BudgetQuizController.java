@@ -47,12 +47,70 @@ public class BudgetQuizController {
             //   categories = Arrays.asList("Rent", "Groceries", "Subscriptions", "Savings", "Investments", "Entertainment", "Eating Out", "Utilities", "Other");
             // }
 
+            String rules;
+            switch (spendingStyle.toLowerCase()) {
+                case "low":
+                    rules = """
+                        - Limit rent to 25%% of monthly income.
+                        - Save and invest at least 30%% of monthly income.
+                        - Groceries should stay around 10%%.
+                        - Keep entertainment and eating out under 5%% each.
+                        - Transportation (including gas, public transit, etc.) should be under 5%%.
+                        - Insurance (health, auto, etc.) around 8-10%%.
+                        - Subscriptions should not exceed 2%%.
+                        - Miscellaneous should be capped at 3%%.
+                        """;
+                    break;
+                case "medium":
+                    rules = """
+                        - Allocate around 30%% of monthly income to rent.
+                        - Save and invest 20-25%% combined.
+                        - Groceries around 12-15%%.
+                        - Entertainment and eating out can be up to 10%% each.
+                        - Transportation (gas, rideshare, car payments) can be around 8%%.
+                        - Insurance (health, auto, etc.) 10-12%%.
+                        - Subscriptions should stay under 4%%.
+                        - Miscellaneous spending should be under 5%%.
+                        """;
+                    break;
+                case "high":
+                    rules = """
+                        - Allow up to 35%% of monthly income for rent.
+                        - Save and invest 10-15%% combined.
+                        - Groceries can be up to 15%%.
+                        - Entertainment and eating out may go up to 15%% each.
+                        - Transportation (car ownership, fuel, etc.) up to 10%%.
+                        - Insurance costs may be up to 15%%.
+                        - Subscriptions can be up to 5%%.
+                        - Miscellaneous spending up to 8%%.
+                        """;
+                    break;
+                default:
+                    rules = "";
+            }
+
+            
             String prompt = String.format("""
+                You are a financial assistant helping generate a realistic monthly budget.
+                
                 Generate a JSON object for a monthly budget for someone living in %s, %s,
                 earning $%.2f yearly, supporting %d dependents, with a %s spending style.
-                Use the following categories: %s.
-                Output format: {"Rent": 1200, "Groceries": 400, ...}
-            """, city, state, yearlyIncome, dependents, spendingStyle, categoriesList);
+            
+                Use ONLY these categories: %s.
+            
+                Apply the following budgeting guidance:
+                %s
+            
+                Output format: 
+                {
+                    "Category1": amount,
+                    "Category2": amount,
+                    ...
+                }
+            
+                Make sure the total does not exceed monthly income (yearlyIncome / 12). Round to whole dollars.
+                """, city, state, yearlyIncome, dependents, spendingStyle, categoriesList, rules);
+            
 
             // Get LLM output
             String rawResponse = openAIService.generateBudget(prompt);
