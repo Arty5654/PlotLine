@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.*;
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -37,15 +38,21 @@ public class BudgetQuizController {
             String state = (String) quizData.get("state");
             int dependents = Integer.parseInt(quizData.get("dependents").toString());
             String spendingStyle = (String) quizData.get("spendingStyle");
+            List<String> categories = (List<String>) quizData.get("categories");
 
-            // Construct prompt
+            String categoriesList = String.join(", ", categories);
+
+            // Dont think I need this, but just in case
+            // if (categories == null || categories.isEmpty()) {
+            //   categories = Arrays.asList("Rent", "Groceries", "Subscriptions", "Savings", "Investments", "Entertainment", "Eating Out", "Utilities", "Other");
+            // }
+
             String prompt = String.format("""
                 Generate a JSON object for a monthly budget for someone living in %s, %s,
                 earning $%.2f yearly, supporting %d dependents, with a %s spending style.
-                Categories must include Rent, Groceries, Subscriptions, Savings, Investments,
-                and optionally Entertainment, Eating Out, Utilities, Other.
+                Use the following categories: %s.
                 Output format: {"Rent": 1200, "Groceries": 400, ...}
-            """, city, state, yearlyIncome, dependents, spendingStyle);
+            """, city, state, yearlyIncome, dependents, spendingStyle, categoriesList);
 
             // Get LLM output
             String rawResponse = openAIService.generateBudget(prompt);

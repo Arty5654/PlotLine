@@ -13,6 +13,7 @@ struct BudgetQuizView: View {
         "Rent", "Groceries", "Subscriptions", "Eating Out",
         "Entertainment", "Utilities", "Savings", "Investments", "Miscellaneous"
     ]
+    @State private var allCategories: [String] = defaultCategories
     
     @State private var yearlyIncome = ""
     @State private var numberOfDependents = ""
@@ -40,8 +41,14 @@ struct BudgetQuizView: View {
                 Section(header: Text("Income & Household")) {
                     TextField("Yearly Income ($)", text: $yearlyIncome)
                         .keyboardType(.decimalPad)
+                        .onChange(of: yearlyIncome) { newValue in
+                            yearlyIncome = newValue.filter { "0123456789.".contains($0) }
+                        }
                     TextField("Number of Dependents", text: $numberOfDependents)
                         .keyboardType(.numberPad)
+                        .onChange(of: numberOfDependents) { newValue in
+                            numberOfDependents = newValue.filter { "0123456789".contains($0) }
+                        }
                     
                     .pickerStyle(SegmentedPickerStyle())
                     
@@ -76,7 +83,7 @@ struct BudgetQuizView: View {
                 }
 
                 Section(header: Text("Select Budget Categories")) {
-                    ForEach(Self.defaultCategories, id: \.self) { category in
+                    ForEach(allCategories.sorted(), id: \.self) { category in
                         Toggle(category, isOn: Binding(
                             get: { selectedCategories.contains(category) },
                             set: { isSelected in
@@ -92,8 +99,9 @@ struct BudgetQuizView: View {
                     HStack {
                         TextField("Custom Category", text: $customCategory)
                         Button("Add") {
-                            let trimmed = customCategory.trimmingCharacters(in: .whitespaces)
-                            if !trimmed.isEmpty {
+                            let trimmed = customCategory.trimmingCharacters(in: .whitespacesAndNewlines)
+                            if !trimmed.isEmpty && !allCategories.contains(trimmed) {
+                                allCategories.append(trimmed)
                                 selectedCategories.insert(trimmed)
                                 customCategory = ""
                             }
@@ -135,8 +143,13 @@ struct BudgetQuizView: View {
             "dependents": numberOfDependents,
             "city": city,
             "state": state,
-            "spendingStyle": spendingStyle
+            "spendingStyle": spendingStyle,
+            "categories": Array(selectedCategories.sorted())
         ]
+        
+        //print("Categories: \(Array(selectedCategories.sorted()))")
+        
+        print("Sending categories to backend:", Array(selectedCategories))
 
         guard let jsonData = try? JSONSerialization.data(withJSONObject: payload) else { return }
 

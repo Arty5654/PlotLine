@@ -37,7 +37,7 @@ struct BudgetInputView: View {
         BudgetItem(category: "Utilities", amount: ""),
         BudgetItem(category: "Savings", amount: ""),
         BudgetItem(category: "Investments", amount: ""),
-        BudgetItem(category: "Other", amount: "")
+        BudgetItem(category: "Miscellaneous", amount: "")
     ]
     
     // ("Weekly"/"Monthly") to backend param ("weekly"/"monthly")
