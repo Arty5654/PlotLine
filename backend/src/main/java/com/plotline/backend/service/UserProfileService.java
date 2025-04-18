@@ -34,76 +34,78 @@ import software.amazon.awssdk.services.s3.model.ObjectCannedACL;
 @Service
 public class UserProfileService {
 
+  static DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssXXX");
+
   private static final List<Trophy> DEFAULT_TROPHIES = List.of(
   //goals
 
     // TODO
     new Trophy("long-term-goals", "Goal Crusher", "Complete long-term goals!", 
-    0, 0, new int[]{1, 5, 10, 30}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)),
+    0, 0, new int[]{1, 5, 10, 30}, ZonedDateTime.now(ZoneOffset.UTC).format(formatter)),
 
 
     new Trophy("weekly-goals-creator", "Weekly Warrior", "Create weekly goals!", 
-    0, 0, new int[]{10, 25, 75, 250}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)),
+    0, 0, new int[]{10, 25, 75, 250}, ZonedDateTime.now(ZoneOffset.UTC).format(formatter)),
 
   //calendar
 
     new Trophy("calendar-events-created", "Event Planner", "Create events on your calendar!", 
-    0, 0, new int[]{5, 15, 50, 100}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)),
+    0, 0, new int[]{5, 15, 50, 100}, ZonedDateTime.now(ZoneOffset.UTC).format(formatter)),
 
     new Trophy("friends-invited", "Group Leader", "Add friends to calendar events!", 
-    0, 0, new int[]{5, 20, 50, 100}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)),
+    0, 0, new int[]{5, 20, 50, 100}, ZonedDateTime.now(ZoneOffset.UTC).format(formatter)),
 
   //budget and stocks
 
     // TODO
     new Trophy("weekly-budget-met", "Weekly Budgetor", "Under weekly budget limit!", 
-    0, 0, new int[]{4, 10, 26, 52}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)),
+    0, 0, new int[]{4, 10, 26, 52}, ZonedDateTime.now(ZoneOffset.UTC).format(formatter)),
 
     // TODO
     new Trophy("monthly-budget-met", "Monthly Budgetor", "Under monthly budget limit!", 
-    0, 0, new int[]{1, 3, 6, 12}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)),
+    0, 0, new int[]{1, 3, 6, 12}, ZonedDateTime.now(ZoneOffset.UTC).format(formatter)),
 
     new Trophy("investing-simple", "Stock Spender", "Invested into the stock market!", 
-    0, 0, new int[]{1, 5, 20, 50}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)),
+    0, 0, new int[]{1, 5, 20, 50}, ZonedDateTime.now(ZoneOffset.UTC).format(formatter)),
 
     new Trophy("monthly-spending-tracker", "Spending Tracker", "Input Spending data!", 
-    0, 0, new int[]{10, 20, 50, 100}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)),
+    0, 0, new int[]{10, 20, 50, 100}, ZonedDateTime.now(ZoneOffset.UTC).format(formatter)),
 
     // TODO
     new Trophy("receipt-photo", "Paper Photographer", "Upload Pictures of Receipts!", 
-    0, 0, new int[]{10, 20, 50, 100}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)),
+    0, 0, new int[]{10, 20, 50, 100}, ZonedDateTime.now(ZoneOffset.UTC).format(formatter)),
 
     new Trophy("subcription-spender", "Subscription Maxxer", "Has a lot of subscriptions!", 
-    0, 0, new int[]{5, 7, 10, 12}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)),
+    0, 0, new int[]{5, 7, 10, 12}, ZonedDateTime.now(ZoneOffset.UTC).format(formatter)),
 
     new Trophy("watchlist-adder", "Watchful Eye", "Added stocks to the Watchlist!", 
-    0, 0, new int[]{3, 10, 20, 50}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)),
+    0, 0, new int[]{3, 10, 20, 50}, ZonedDateTime.now(ZoneOffset.UTC).format(formatter)),
 
   //groceries
     new Trophy("grocery-lists", "Grocery Guru", "Created grocery Lists!", 
-    0, 0, new int[]{3, 10, 20, 50}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)),
+    0, 0, new int[]{3, 10, 20, 50}, ZonedDateTime.now(ZoneOffset.UTC).format(formatter)),
 
     new Trophy("meal-prepper", "Meal Prepper", "Created Recipes based on the Meal!", 
-    0, 0, new int[]{3, 10, 20, 50}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)),
+    0, 0, new int[]{3, 10, 20, 50}, ZonedDateTime.now(ZoneOffset.UTC).format(formatter)),
 
   //sleep
     new Trophy("sleep-tracker", "Someone's Sleepy", "Logged sleep data!", 
-    0, 0, new int[]{3, 10, 30, 100}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)),
+    0, 0, new int[]{3, 10, 30, 100}, ZonedDateTime.now(ZoneOffset.UTC).format(formatter)),
 
     new Trophy("sleep-goal", "Well Rested", "Slept for over 8 hours!", 
-    0, 0, new int[]{5, 15, 25, 100}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)),
+    0, 0, new int[]{5, 15, 25, 100}, ZonedDateTime.now(ZoneOffset.UTC).format(formatter)),
 
   //special trophies
 
     new Trophy("all-around", "All-Around Achiever", "Achieve at least one trophy from each PlotLine Category!", 
-    0, 0, new int[]{0, 0, 0, 1}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)),
+    0, 0, new int[]{0, 0, 0, 1}, ZonedDateTime.now(ZoneOffset.UTC).format(formatter)),
 
     // TODO
     new Trophy("llm-investor", "Portfolio Pro", "Created a stock portfolio with the LLM!", 
-    0, 0, new int[]{0, 0, 0, 1}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)), 
+    0, 0, new int[]{0, 0, 0, 1}, ZonedDateTime.now(ZoneOffset.UTC).format(formatter)), 
 
     new Trophy("first-profile-picture", "Picture Perfect", "Uploaded a profile picture!", 
-    0, 0, new int[]{0, 0, 0, 1}, ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME))
+    0, 0, new int[]{0, 0, 0, 1}, ZonedDateTime.now(ZoneOffset.UTC).format(formatter))
 
   );
 
@@ -241,7 +243,7 @@ public class UserProfileService {
               0,
               0,
               defaultTrophy.getThresholds(),
-              ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)              
+              ZonedDateTime.now(ZoneOffset.UTC).format(formatter)             
             ));
           }
         }
@@ -290,8 +292,7 @@ public class UserProfileService {
             for (int i = 0; i < trophy.getThresholds().length; i++) {
                 if (trophy.getProgress() >= trophy.getThresholds()[i]) {
                     newLevel = i + 1;
-                    trophy.setEarnedDate(ZonedDateTime.now(ZoneOffset.UTC)
-                    .format(DateTimeFormatter.ISO_OFFSET_DATE_TIME));
+                    trophy.setEarnedDate(ZonedDateTime.now(ZoneOffset.UTC).format(formatter));
                 }
             }
             trophy.setLevel(newLevel);
@@ -303,8 +304,7 @@ public class UserProfileService {
           if (checkAllAroundAchiever(trophies)) {
             trophy.setLevel(4);
             trophy.setProgress(1);
-            trophy.setEarnedDate(ZonedDateTime.now(ZoneOffset.UTC)
-            .format(DateTimeFormatter.ISO_OFFSET_DATE_TIME));
+            trophy.setEarnedDate(ZonedDateTime.now(ZoneOffset.UTC).format(formatter));
           }
         }
     }
@@ -367,8 +367,7 @@ public class UserProfileService {
             }
             trophy.setLevel(newLevel);
             if (newLevel > 0 && trophy.getEarnedDate() == null) {
-                trophy.setEarnedDate(ZonedDateTime.now(ZoneOffset.UTC)
-                                      .format(DateTimeFormatter.ISO_OFFSET_DATE_TIME));
+                trophy.setEarnedDate(ZonedDateTime.now(ZoneOffset.UTC).format(formatter));
             }
             break;
         }

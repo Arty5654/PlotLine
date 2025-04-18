@@ -1,23 +1,28 @@
 package com.plotline.backend.service;
 
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.bcrypt.BCrypt;
 import org.springframework.stereotype.Service;
 
 import com.auth0.jwt.JWT;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.plotline.backend.dto.S3UserRecord;
 import com.twilio.twiml.voice.Sms;
 
 import software.amazon.awssdk.core.ResponseBytes;
+import software.amazon.awssdk.core.ResponseInputStream;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
-
+import software.amazon.awssdk.services.s3.model.S3Exception;
 import io.github.cdimascio.dotenv.Dotenv;
 
 
@@ -98,6 +103,8 @@ public class AuthService {
                                         build();
 
             s3Client.putObject(putRequest, RequestBody.fromString(userJson));
+
+            updateAllUsersList(username);
 
             return true;
 
@@ -220,6 +227,77 @@ public class AuthService {
     // key for each bucket: username.json
     private String userAccKey(String username) {     
         return "users/" + username + "/account.json";
+    }
+
+    private void updateAllUsersList(String username) throws Exception {
+        final String allUsersKey = "all-users.json";
+        List<String> allUsers;
+
+        // try to read the existing list
+        try {
+            GetObjectRequest getListReq = GetObjectRequest.builder()
+                .bucket(bucketName)
+                .key(allUsersKey)
+                .build();
+
+            ResponseInputStream<GetObjectResponse> resp =
+                s3Client.getObject(getListReq);
+
+            allUsers = objectMapper.readValue(
+                resp,
+                new TypeReference<List<String>>() {}
+            );
+
+        } catch (S3Exception e) {
+            // if it doesn't exist yet (404), start fresh
+            if (e.statusCode() == 404) {
+                allUsers = new ArrayList<>(Arrays.asList());
+            } else {
+                throw e;
+            }
+        }
+
+        // append (with dedupe)
+        if (!allUsers.contains(username)) {
+            allUsers.add(username);
+        }
+
+        // write it back
+        String allUsersJson = objectMapper.writeValueAsString(allUsers);
+        PutObjectRequest putListReq = PutObjectRequest.builder()
+            .bucket(bucketName)
+            .key(allUsersKey)
+            .contentType("application/json")
+            .build();
+
+        s3Client.putObject(
+            putListReq,
+            RequestBody.fromString(allUsersJson)
+        );
+    }
+
+    public List<String> getAllUsernames() throws Exception {
+        try {
+            GetObjectRequest getReq = GetObjectRequest.builder()
+                .bucket(bucketName)
+                .key("all-users.json")
+                .build();
+
+            ResponseInputStream<GetObjectResponse> resp =
+                s3Client.getObject(getReq);
+
+            return objectMapper.readValue(
+                resp,
+                new TypeReference<List<String>>() {}
+            );
+
+        } catch (S3Exception e) {
+            if (e.statusCode() == 404) {
+                // no list yet => return empty
+                return List.of();
+            }
+            throw e;
+        }
     }
   
 }

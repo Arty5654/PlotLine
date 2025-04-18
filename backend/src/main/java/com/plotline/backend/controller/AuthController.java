@@ -13,6 +13,7 @@ import com.plotline.backend.service.AuthService;
 import io.github.cdimascio.dotenv.Dotenv;
 
 import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -218,6 +219,19 @@ public class AuthController {
             return ResponseEntity.ok(true);
         } else {
             return ResponseEntity.ok(false);
+        }
+    }
+
+    @GetMapping("/get-users")
+    public ResponseEntity<List<String>> fetchAllUsers() {
+        try {
+            List<String> users = authService.getAllUsernames();
+            return ResponseEntity.ok(users);
+        } catch (Exception e) {
+            // log if desired
+            return ResponseEntity
+                .status(500)
+                .body(List.of());
         }
     }
 
