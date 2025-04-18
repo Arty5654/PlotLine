@@ -25,6 +25,8 @@ class AuthViewModel: ObservableObject {
     
     @Published var phoneNumber: String = ""
     @Published var isCodeSent: Bool = false
+    
+    @Published var trophies: [Trophy] = []
 
     init() {
         if let token = KeychainManager.loadToken() {
@@ -330,6 +332,15 @@ class AuthViewModel: ObservableObject {
         return NSPredicate(format: "SELF MATCHES %@", regex).evaluate(with: username)
     }
     
+    //fetch trophies
+    func loadTrophies(for username: String) async {
+        do {
+            let trophies = try await ProfileAPI.fetchTrophies(username: username)
+            self.trophies = trophies
+        } catch {
+            print("Failed to fetch trophies: \(error)")
+        }
+    }
 
 }
 

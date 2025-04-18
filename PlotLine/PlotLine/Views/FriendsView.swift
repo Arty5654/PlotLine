@@ -1,45 +1,58 @@
+//
+//  FriendsView.swift
+//  PlotLine
+//
+//  Created by Alex Younkers on 4/18/25.
+//
+
 import SwiftUI
+
 
 struct FriendsView: View {
     @EnvironmentObject var viewModel: FriendsViewModel
-    
+
     @State private var showSearchSheet = false
-    @State private var currentUsername: String = UserDefaults.standard.string(forKey: "loggedInUsername") ?? "defaultUser"
-    
-    // We'll use these two states to show the profile sheet
-    @State private var showProfileSheet = false
+    @State private var currentUsername: String = UserDefaults
+        .standard.string(forKey: "loggedInUsername") ?? "defaultUser"
     @State private var selectedUsername: String? = nil
-    
+
     var body: some View {
         NavigationView {
             ScrollView {
                 VStack(spacing: 24) {
-                    
-                    // When user taps a friend, set selectedUsername and showProfileSheet
+                    // Tapping a friend sets `selectedUsername` and opens the profile sheet
                     FriendsListSection(friends: viewModel.friends) { friend in
                         selectedUsername = friend
-                        showProfileSheet = true
                     }
-                    
+
                     Spacer()
-                    
+
                     PendingRequestsSection(
                         pendingRequests: viewModel.pendingRequests,
                         currentUsername: currentUsername,
                         onSelect: { username in
                             selectedUsername = username
-                            showProfileSheet = true
                         },
-                        onAccept: { senderUsername in
-                            await viewModel.acceptFriendRequest(sender: senderUsername, receiver: currentUsername)
-                            await reloadData()
+                        onAccept: { sender in
+                            Task {
+                                await viewModel.acceptFriendRequest(
+                                    sender: sender,
+                                    receiver: currentUsername
+                                )
+                                await reloadData()
+                            }
                         },
-                        onDecline: { senderUsername in
-                            await viewModel.declineFriendRequest(sender: senderUsername, receiver: currentUsername)
-                            await reloadData()
+                        onDecline: { sender in
+                            Task {
+                                await viewModel.declineFriendRequest(
+                                    sender: sender,
+                                    receiver: currentUsername
+                                )
+                                await reloadData()
+                            }
                         }
                     )
-                    
+
                     Spacer().frame(height: 30)
                 }
                 .padding(.top, 20)
@@ -55,32 +68,46 @@ struct FriendsView: View {
                     Button {
                         showSearchSheet.toggle()
                     } label: {
-                        Text("Add More")
-                        Image(systemName: "plus")
+                        HStack {
+                            Text("Add More")
+                            Image(systemName: "plus")
+                        }
                     }
                 }
             }
         }
+        // MARK: — Add‑Friend Search Sheet
         .sheet(isPresented: $showSearchSheet) {
             FriendSearchView(currentUsername: currentUsername)
                 .environmentObject(viewModel)
         }
+        // MARK: — Profile Sheet driven by selectedUsername
         .sheet(item: $selectedUsername) { friend in
-            FriendProfileView(friendUsername: friend)
+            FriendProfileView(username: friend)
         }
         .task {
             await reloadData()
         }
-        .alert(viewModel.errorMessage ?? "", isPresented: Binding<Bool>(
+        .alert(isPresented: Binding<Bool>(
             get: { viewModel.errorMessage != nil },
             set: { _ in viewModel.errorMessage = nil }
         )) {
-            Button("OK", role: .cancel) { }
+            Alert(
+                title: Text(viewModel.errorMessage ?? ""),
+                dismissButton: .cancel()
+            )
         }
     }
-    
+
     func reloadData() async {
         await viewModel.loadFriends(for: currentUsername)
         await viewModel.loadPendingRequests(for: currentUsername)
+    }
+}
+
+struct FriendsView_Previews: PreviewProvider {
+    static var previews: some View {
+        FriendsView()
+            .environmentObject(FriendsViewModel())
     }
 }

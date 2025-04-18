@@ -142,6 +142,26 @@ struct ProfileAPI {
         return formatter.date(from: dateString) ?? Date()
     }
     
+    
+    //fetch trophies and decode
+    static func fetchTrophies(username: String) async throws -> [Trophy] {
+        guard let url = URL(string: "\(baseURL)/profile/get-trophies?username=\(username)") else {
+            throw URLError(.badURL)
+        }
+
+        let (data, response) = try await URLSession.shared.data(from: url)
+
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            throw URLError(.badServerResponse)
+        }
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+
+        return try decoder.decode([Trophy].self, from: data)
+    }
+
+    
 }
 
 

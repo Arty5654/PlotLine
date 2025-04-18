@@ -26,6 +26,9 @@ struct ProfileView: View {
     @State private var isUploading = false
     @State private var showSuccessModal = false
     
+    @State private var showingTrophyHall = false
+
+    
     @EnvironmentObject var session: AuthViewModel
     @Environment(\.presentationMode) var presentationMode
     
@@ -230,17 +233,11 @@ struct ProfileView: View {
                 }
             }
             .navigationBarItems(
-                leading: Button(action: {
-                    // for friends function in later sprint
-                }) {
-                    Image(systemName: "person.2.fill")
-                    .foregroundColor(.blue)
-                },
                 trailing: Button(action: {
-                    // for trophy function in later sprint
+                    showingTrophyHall = true
                 }) {
                     Image(systemName: "trophy.fill")
-                    .foregroundColor(.yellow)
+                        .foregroundColor(.yellow)
                 }
             )
             
@@ -254,13 +251,16 @@ struct ProfileView: View {
         .fullScreenCover(isPresented: .constant(!session.isLoggedIn)) {
             AuthView()  // Redirects to AuthView when logged out
         }
-        .onChange(of: session.isLoggedIn) { isLoggedIn in
-            if !isLoggedIn {
-                presentationMode.wrappedValue.dismiss() // Dismiss ProfileView
+        .onChange(of: session.isLoggedIn, initial: false) { oldValue, newValue in
+            if !newValue {
+                presentationMode.wrappedValue.dismiss()
             }
         }
         .sheet(isPresented: $showingChangePasswordSheet) {
                     ChangePasswordModalView(isPresented: $showingChangePasswordSheet)
+        }
+        .sheet(isPresented: $showingTrophyHall) {
+            TrophyHallView(username: username)
         }
         .overlay(
             // overlay for after changes are saved

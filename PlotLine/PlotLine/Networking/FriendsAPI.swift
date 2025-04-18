@@ -109,5 +109,30 @@ struct FriendsAPI {
         return exists
     }
     
+    static func getAllUsers() async throws -> [String] {
+
+        guard let url = URL(string: "\(baseURL)/auth/get-users") else {
+            throw URLError(.badURL)
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        if let http = response as? HTTPURLResponse,
+            !(200...299).contains(http.statusCode) {
+            throw URLError(.badServerResponse)
+        }
+
+        if let jsonArray = try JSONSerialization
+            .jsonObject(with: data) as? [String] {
+            return jsonArray
+        }
+
+        // empty fallback
+        return []
+    }
+    
     
 }

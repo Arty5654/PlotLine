@@ -1,3 +1,9 @@
+// FriendsViewModel.swift
+// PlotLine
+//
+// Created by Alex Younkers on 4/18/25.
+//
+
 import SwiftUI
 
 @MainActor
@@ -9,44 +15,43 @@ class FriendsViewModel: ObservableObject {
     @Published var requestMessage: String?
     
     @Published var foundUser: String? = nil
+    @Published var searchExecuted: Bool = false
     
-
+    @Published var allUsers: [String] = []
+    
     func loadFriends(for username: String) async {
         do {
             let friendList = try await FriendsAPI.fetchFriendList(username: username)
-            self.friends = friendList.friends
+            friends = friendList.friends
         } catch {
-            self.errorMessage = error.localizedDescription
+            errorMessage = error.localizedDescription
         }
     }
     
-    // Load pending friend requests for the current user
     func loadPendingRequests(for username: String) async {
         do {
             let requestList = try await FriendsAPI.fetchFriendRequests(username: username)
-            self.pendingRequests = requestList.pendingRequests
+            pendingRequests = requestList.pendingRequests
         } catch {
-            self.errorMessage = error.localizedDescription
+            errorMessage = error.localizedDescription
         }
     }
     
-    // Send a new friend request (status "PENDING")
     func sendFriendRequest(sender: String, receiver: String) async -> String {
-        var resp = "Succesfully sent friend request!"
+        var resp = "Successfully sent friend request!"
         do {
             resp = try await FriendsAPI.createOrUpdateFriendRequest(
                 senderUsername: sender,
                 receiverUsername: receiver,
                 status: "PENDING"
             )
-            return resp
         } catch {
-            self.errorMessage = error.localizedDescription
-        }        
+            errorMessage = error.localizedDescription
+        }
         return resp
     }
     
-    // Accept a friend request (status "ACCEPTED")
+    // accept a friend request
     func acceptFriendRequest(sender: String, receiver: String) async {
         do {
             try await FriendsAPI.createOrUpdateFriendRequest(
@@ -55,11 +60,11 @@ class FriendsViewModel: ObservableObject {
                 status: "ACCEPTED"
             )
         } catch {
-            self.errorMessage = error.localizedDescription
+            errorMessage = error.localizedDescription
         }
     }
     
-    // Decline a friend request (status "DECLINED")
+    // decline a friend request
     func declineFriendRequest(sender: String, receiver: String) async {
         do {
             try await FriendsAPI.createOrUpdateFriendRequest(
@@ -68,12 +73,15 @@ class FriendsViewModel: ObservableObject {
                 status: "DECLINED"
             )
         } catch {
-            self.errorMessage = error.localizedDescription
+            errorMessage = error.localizedDescription
         }
     }
     
-    // search for a user by username
     func findUser(username: String) async {
+        // reset before each new search
+        searchExecuted = false
+        foundUser = nil
+        
         do {
             let exists = try await FriendsAPI.userExists(username: username)
             if exists {
@@ -84,6 +92,17 @@ class FriendsViewModel: ObservableObject {
         } catch {
             foundUser = nil
             errorMessage = error.localizedDescription
+        }
+        
+        searchExecuted = true
+    }
+    
+    func fetchAllUsernames() async {
+        do {
+            let users = try await FriendsAPI.getAllUsers()
+            allUsers = users
+        } catch {
+            print("❌ Failed to load all users:", error)
         }
     }
 }
