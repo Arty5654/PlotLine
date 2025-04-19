@@ -27,6 +27,8 @@ class AuthViewModel: ObservableObject {
     @Published var isCodeSent: Bool = false
     
     @Published var trophies: [Trophy] = []
+    
+    @Published var signOutPending: Bool = false
 
     init() {
         if let token = KeychainManager.loadToken() {

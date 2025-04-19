@@ -83,6 +83,16 @@ struct ContentView: View {
             .sheet(isPresented: $isProfilePresented) {
                 ProfileView().environmentObject(session)
             }
+            .onChange(of: isProfilePresented) { oldValue, newValue in
+                if oldValue && !newValue {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        if session.signOutPending {
+                            session.signOut()
+                            session.signOutPending = false
+                        }
+                    }
+                }
+            }
             .sheet(isPresented: $isFriendsPresented) {
                 FriendsView().environmentObject(friendsVM)
             }

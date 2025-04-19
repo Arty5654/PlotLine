@@ -1,9 +1,3 @@
-// FriendSearchView.swift
-// PlotLine
-//
-// Created by Alex Younkers on 4/18/25.
-//
-
 import SwiftUI
 
 struct FriendSearchView: View {
@@ -13,88 +7,52 @@ struct FriendSearchView: View {
 
     @State private var searchText = ""
     @State private var suggestions: [String] = []
-    @State private var showProfileSheet = false
-    @State private var showSuccessAlert = false
-    @State private var successMessage = ""
 
     var body: some View {
         NavigationView {
-            VStack(spacing: 20) {
+            VStack(spacing: 16) {
+
                 Text("Search by Username")
                     .font(.custom("AvenirNext-Bold", size: 16))
                     .foregroundColor(.blue)
 
-                // MARK: — Input + Search button
-                HStack {
+                VStack(spacing: 4) {
                     TextField("Username", text: $searchText)
-                        .textFieldStyle(RoundedBorderTextFieldStyle())
-                        .onChange(of: searchText) { newValue in
-                            updateSuggestions(for: newValue)
+                        .padding(12)
+                        .background(Color(.systemGray6))
+                        .cornerRadius(10)
+                        .onChange(of: searchText) {
+                            updateSuggestions(for: searchText)
                         }
+                        .padding(.horizontal)
 
-                    Button("Search") {
-                        Task {
-                            await viewModel.findUser(username: searchText)
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                }
-                .padding(.horizontal)
+                    if !suggestions.isEmpty {
+                        ScrollView {
+                            VStack(spacing: 12) {
+                                ForEach(suggestions, id: \.self) { username in
+                                    NavigationLink(destination: FriendProfileView(username: username)) {
+                                        HStack(spacing: 12) {
+                                            FriendProfilePicture(username: username)
+                                                .frame(width: 36, height: 36)
 
-                // MARK: — Live dropdown of substring matches
-                if !suggestions.isEmpty {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 8) {
-                            ForEach(suggestions, id: \.self) { user in
-                                Text(user)
-                                    .padding(.horizontal)
-                                    .padding(.vertical, 6)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .background(Color(.systemBackground))
-                                    .onTapGesture {
-                                        searchText = user
-                                        suggestions = []
+                                            Text(username)
+                                                .font(.body)
+                                                .foregroundColor(.primary)
+
+                                            Spacer()
+                                        }
+                                        .padding()
+                                        .background(Color(.systemGray6))
+                                        .cornerRadius(12)
+                                        .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 2)
                                     }
+                                }
                             }
+                            .padding(.horizontal)
                         }
+                        .frame(maxHeight: 200)
+                        .padding(.top, 4)
                     }
-                    .frame(maxHeight: 150)
-                    .background(Color(.systemGroupedBackground))
-                    .cornerRadius(8)
-                    .shadow(color: Color.black.opacity(0.1), radius: 4, x: 0, y: 2)
-                    .padding(.horizontal)
-                }
-
-                Spacer()
-
-                // MARK: — Show results after search
-                if let found = viewModel.foundUser {
-                    Button("View Profile") {
-                        showProfileSheet = true
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .padding(.horizontal)
-                    .sheet(isPresented: $showProfileSheet) {
-                        FriendProfileView(username: found)
-                    }
-
-                    Button("Send Friend Request") {
-                        Task {
-                            successMessage = await viewModel
-                                .sendFriendRequest(
-                                    sender: currentUsername,
-                                    receiver: found
-                                )
-                            showSuccessAlert = true
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .padding(.horizontal)
-
-                } else if viewModel.searchExecuted {
-                    Text("No user found.")
-                        .italic()
-                        .foregroundColor(.gray)
                 }
 
                 Spacer()
@@ -106,16 +64,6 @@ struct FriendSearchView: View {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Cancel") { dismiss() }
                 }
-            }
-            .alert("Friend Requested",
-                   isPresented: $showSuccessAlert) {
-                Button("OK", role: .cancel) {
-                    viewModel.foundUser = nil
-                    viewModel.searchExecuted = false
-                    dismiss()
-                }
-            } message: {
-                Text(successMessage)
             }
             .onAppear {
                 Task { await viewModel.fetchAllUsernames() }
@@ -130,7 +78,54 @@ struct FriendSearchView: View {
             return
         }
         suggestions = viewModel.allUsers.filter {
-            $0.lowercased().contains(query.lowercased())
+            $0.lowercased().contains(query.lowercased()) &&
+            $0.lowercased() != currentUsername.lowercased()
+        }
+    }
+}
+
+
+// MARK: — Mini Circle Profile View
+struct FriendProfilePicture: View {
+    let username: String
+
+    @State private var profilePicURL: URL?
+
+    var body: some View {
+        Group {
+            if let url = profilePicURL {
+                AsyncImage(url: url) { phase in
+                    if let image = phase.image {
+                        image.resizable().scaledToFill()
+                    } else if phase.error != nil {
+                        Circle().fill(Color.red.opacity(0.3))
+                    } else {
+                        ProgressView()
+                    }
+                }
+            } else {
+                Circle()
+                    .fill(Color.gray.opacity(0.3))
+            }
+        }
+        .clipShape(Circle())
+        .onAppear {
+            fetchProfilePic(for: username)
+        }
+    }
+
+    private func fetchProfilePic(for username: String) {
+        Task {
+            do {
+                let profilePicStr = try await ProfileAPI.getProfilePic(username: username)
+                await MainActor.run {
+                    if let url = URL(string: profilePicStr ?? "") {
+                        self.profilePicURL = url
+                    }
+                }
+            } catch {
+                print("Error fetching friend profile pic: \(error)")
+            }
         }
     }
 }

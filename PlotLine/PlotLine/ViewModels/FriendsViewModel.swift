@@ -11,6 +11,7 @@ class FriendsViewModel: ObservableObject {
     
     @Published var friends: [String] = []
     @Published var pendingRequests: [String] = []
+    
     @Published var errorMessage: String?
     @Published var requestMessage: String?
     
@@ -52,9 +53,9 @@ class FriendsViewModel: ObservableObject {
     }
     
     // accept a friend request
-    func acceptFriendRequest(sender: String, receiver: String) async {
+    func acceptFriendRequest(sender: String, receiver: String) async{
         do {
-            try await FriendsAPI.createOrUpdateFriendRequest(
+            var resp = try await FriendsAPI.createOrUpdateFriendRequest(
                 senderUsername: sender,
                 receiverUsername: receiver,
                 status: "ACCEPTED"
@@ -62,6 +63,7 @@ class FriendsViewModel: ObservableObject {
         } catch {
             errorMessage = error.localizedDescription
         }
+        
     }
     
     // decline a friend request

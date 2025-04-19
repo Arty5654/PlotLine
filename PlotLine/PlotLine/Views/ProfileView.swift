@@ -2,9 +2,8 @@ import SwiftUI
 import PhotosUI
 
 struct ProfileView: View {
-    
     @State private var username: String = UserDefaults.standard.string(forKey: "loggedInUsername") ?? "Guest"
-    
+
     // profile fields
     @State private var displayName: String = ""
     @State private var isEditingDisplayName = false
@@ -14,33 +13,29 @@ struct ProfileView: View {
     
     @State private var homeCity: String = ""
     @State private var isEditingHomeCity = false
-    
+
     // image fields and overlay
     @State private var profileImageURL: URL?
     @State private var selectedImage: UIImage?
     
     @State private var showingImagePicker = false
     @State private var showingChangePasswordSheet = false
-    
+
     // for save changes animations
     @State private var isUploading = false
     @State private var showSuccessModal = false
+    @State private var animateSuccess = false
     
     @State private var showingTrophyHall = false
 
-    
     @EnvironmentObject var session: AuthViewModel
-    @Environment(\.presentationMode) var presentationMode
-    
+    @Environment(\.dismiss) var dismiss // to close the sheet on signout
+
     var body: some View {
-        
         NavigationStack {
-            
             ScrollView {
-                
                 VStack(spacing: 20) {
-                    
-                    // profile picture (click to change)
+
                     Button(action: {
                         showingImagePicker = true
                     }) {
@@ -168,7 +163,7 @@ struct ProfileView: View {
                                     .datePickerStyle(CompactDatePickerStyle())
                                     .labelsHidden()
                             } else {
-                                Text(birthdayFormatted)
+                                Text(birthdayFormatted())
                                     .font(.body)
                                     .foregroundColor(.primary)
                                     .padding(.vertical, 8)
@@ -185,44 +180,59 @@ struct ProfileView: View {
                         .background(Color(.systemGray6))
                         .cornerRadius(10)
                     }
-                    
-                    
-                    Button("Save Changes") {
-                        saveProfileChanges()
-                    }
-                    .padding()
-                    .background(Color.green)
-                    .foregroundColor(.white)
-                    .cornerRadius(10)
-                    
-                    Spacer()
-                    
-                    Button("Change Password") {
-                        showingChangePasswordSheet = true
-                    }
-                    .padding()
-                    .background(Color.red)
-                    .foregroundColor(.white)
-                    .cornerRadius(10)
-                    
-                    Spacer()
-                    
+
                     Button(action: {
-                        session.signOut()
+                        saveProfileChanges()
+                    }) {
+                        HStack {
+                            if isUploading {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                            } else {
+                                Text("Save Changes")
+                                    .fontWeight(.semibold)
+                            }
+                        }
+                        .padding()
+                        .frame(maxWidth: .infinity)
+                        .background(Color.green)
+                        .foregroundColor(.white)
+                        .cornerRadius(12)
+                        .scaleEffect(showSuccessModal ? 1.1 : 1.0)
+                        .animation(.spring(response: 0.3, dampingFraction: 0.6), value: showSuccessModal)
+                    }
+                    .padding(.top)
+
+                    Button(action: {
+                        showingChangePasswordSheet = true
+                    }) {
+                        HStack {
+                            Image(systemName: "lock.rotation")
+                            Text("Change Password")
+                        }
+                        .padding()
+                        .frame(maxWidth: .infinity)
+                        .background(Color.red.opacity(0.9))
+                        .foregroundColor(.white)
+                        .cornerRadius(12)
+                    }
+                    .padding(.horizontal)
+
+                    Button(action: {
+                        session.signOutPending = true
+                        dismiss()
                     }) {
                         Label("Sign Out", systemImage: "arrow.backward.circle.fill")
                             .font(.headline)
                             .padding()
                             .frame(maxWidth: .infinity)
-                            .background(Color(.red))
-                            .cornerRadius(10)
+                            .background(Color.red)
+                            .cornerRadius(12)
                             .foregroundColor(.white)
                     }
                     .padding([.horizontal, .bottom])
                 }
                 .padding()
-                .frame(maxWidth: .infinity)
-                
             }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -240,7 +250,6 @@ struct ProfileView: View {
                         .foregroundColor(.yellow)
                 }
             )
-            
         }
         .onAppear {
             fetchProfileData()
@@ -249,48 +258,92 @@ struct ProfileView: View {
             ImagePicker(image: $selectedImage)
         }
         .fullScreenCover(isPresented: .constant(!session.isLoggedIn)) {
-            AuthView()  // Redirects to AuthView when logged out
-        }
-        .onChange(of: session.isLoggedIn, initial: false) { oldValue, newValue in
-            if !newValue {
-                presentationMode.wrappedValue.dismiss()
-            }
+            AuthView()
         }
         .sheet(isPresented: $showingChangePasswordSheet) {
-                    ChangePasswordModalView(isPresented: $showingChangePasswordSheet)
+            ChangePasswordModalView(isPresented: $showingChangePasswordSheet)
         }
         .sheet(isPresented: $showingTrophyHall) {
             TrophyHallView(username: username)
         }
         .overlay(
-            // overlay for after changes are saved
             Group {
-            if showSuccessModal {
-                VStack {
-                    Image(systemName: "checkmark.circle.fill")
-                        .resizable()
-                        .frame(width: 80, height: 80)
-                        .foregroundColor(.green)
-                        .transition(.scale)
-                    
-                    Text("Saved!")
-                        .font(.headline)
-                        .foregroundColor(.green)
+                if showSuccessModal {
+                    VStack {
+                        Image(systemName: "checkmark.circle.fill")
+                            .resizable()
+                            .frame(width: 80, height: 80)
+                            .foregroundColor(.green)
+
+                        Text("Saved!")
+                            .font(.headline)
+                            .foregroundColor(.green)
                     }
                     .padding()
                     .background(Color.white)
                     .cornerRadius(10)
                     .shadow(radius: 10)
                     .frame(width: 150, height: 150)
+                    .scaleEffect(animateSuccess ? 1.1 : 0.8)
                     .opacity(showSuccessModal ? 1.0 : 0.0)
-                    .animation(.easeInOut(duration: 0.3), value: showSuccessModal)
+                    .animation(.spring(response: 0.3, dampingFraction: 0.6), value: animateSuccess)
+                    .onAppear {
+                        animateSuccess = true
+                    }
                 }
-        })
-
-        
+            }
+        )
     }
 
-    // grab data from backend on appear
+    private func saveProfileChanges() {
+        isUploading = true
+        Task {
+            do {
+                try await ProfileAPI.saveProfile(username: self.username,
+                                                 name: self.displayName,
+                                                 birthday: formatDate(self.birthday),
+                                                 city: self.homeCity)
+
+                if let selectedImage {
+                    let result = try await ProfileAPI.uploadProfilePicture(image: selectedImage, username: self.username)
+                    print("Profile picture uploaded: \(result)")
+
+                    let newProfilePicURL = try await ProfileAPI.getProfilePic(username: self.username)
+                    DispatchQueue.main.async {
+                        if let urlString = newProfilePicURL, let url = URL(string: urlString) {
+                            self.profileImageURL = url
+                        }
+                    }
+                }
+
+                DispatchQueue.main.async {
+                    showSuccessModal = true
+                    isUploading = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                        showSuccessModal = false
+                        animateSuccess = false
+                    }
+                }
+                print("Changes saved")
+            } catch {
+                isUploading = false
+                print("error saving changes")
+            }
+        }
+    }
+
+    private func birthdayFormatted(date: Date = Date()) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        return formatter.string(from: date)
+    }
+
+    private func formatDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: date)
+    }
+
     private func fetchProfileData() {
         Task {
             do {
@@ -308,69 +361,13 @@ struct ProfileView: View {
                 print("Error fetching profile: \(error)")
             }
         }
-        
     }
-    
+
     private func parseDate(_ dateString: String) -> Date {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter.date(from: dateString) ?? Date()
     }
-    
-    private func saveProfileChanges() {
-        
-        
-        Task {
-            do {
-                try await ProfileAPI.saveProfile(username: self.username,
-                                                 name: self.displayName,
-                                                 birthday: formatDate(self.birthday),
-                                                 city: self.homeCity)
-                
-                if let selectedImage {
-                    let result = try await ProfileAPI.uploadProfilePicture(image: selectedImage, username: self.username)
-                    print("Profile picture uploaded: \(result)")
-                                
-                    // Fetch updated profile pic URL
-                    let newProfilePicURL = try await ProfileAPI.getProfilePic(username: self.username)
-                    DispatchQueue.main.async {
-                        if let urlString = newProfilePicURL, let url = URL(string: urlString) {
-                            self.profileImageURL = url
-                        }
-                    }
-                }
-                
-                // show saved modal
-                DispatchQueue.main.async {
-                    showSuccessModal = true
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                        showSuccessModal = false
-                    }
-                }
-                
-                print("Changes saved")
-            } catch {
-                print("error saving changes")
-            }
-        }
-        
-        
-    }
-    
-    // date formatter
-    private var birthdayFormatted: String {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        return formatter.string(from: birthday)
-    }
-    
-    private func formatDate(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter.string(from: date)
-    }
-
-    
 }
 
 // using swiftUI version of PHPicker

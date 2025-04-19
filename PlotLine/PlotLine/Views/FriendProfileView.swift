@@ -1,14 +1,25 @@
 import SwiftUI
 
+enum FriendStatus {
+    case notFriends
+    case pendingRequest
+    case incomingRequest
+    case friends
+}
+
 struct FriendProfileView: View {
     
-    let username: String
+    let username: String // friend uname
 
     @State private var displayName: String = ""
     @State private var city: String = ""
     @State private var profileImageURL: URL?
     @State private var friendTrophies: [Trophy] = []
     @State private var selectedTrophy: Trophy? = nil
+    
+    @EnvironmentObject var viewModel: FriendsViewModel
+    @State private var friendStatus: FriendStatus? = nil
+    @State private var currentUsername: String = UserDefaults.standard.string(forKey: "loggedInUsername") ?? "Guest" // searcher uname
 
     let columns = [GridItem(.flexible()), GridItem(.flexible())]
 
@@ -55,6 +66,48 @@ struct FriendProfileView: View {
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: .infinity)
                         .padding(.horizontal)
+                        
+                        // Friend request button
+                        if let status = friendStatus {
+                            switch status {
+                            case .notFriends:
+                                Button("Add Friend") {
+                                    Task {
+                                        _ = await viewModel.sendFriendRequest(sender: currentUsername, receiver: username)
+                                        await fetchFriendStatus()
+                                        
+                                        print("Sent request")
+                                    }
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .tint(.blue)
+
+                            case .incomingRequest:
+                                Button("Accept Request") {
+                                    Task {
+                                        _ = await viewModel.acceptFriendRequest(sender: username, receiver: currentUsername)
+                                        
+                                        await viewModel.loadFriends(for: currentUsername)
+                                        await viewModel.loadPendingRequests(for: currentUsername)
+                                        
+                                        await fetchFriendStatus()
+                                    }
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .tint(.green)
+
+                            case .pendingRequest:
+                                Text("Request Pending")
+                                    .foregroundColor(.gray)
+                                    .italic()
+
+                            case .friends:
+                                Text("You are friends")
+                                    .foregroundColor(.green)
+                                    .fontWeight(.bold)
+                            }
+                        }
+
 
                         // Trophy Section
                         RoundedRectangle(cornerRadius: 12)
@@ -107,8 +160,11 @@ struct FriendProfileView: View {
                     .padding()
                     .navigationBarTitle("\(username)'s Profile", displayMode: .inline)
                     .onAppear {
-                        fetchFriendProfile()
-                        fetchFriendTrophies()
+                        Task {
+                            fetchFriendProfile()
+                            fetchFriendTrophies()
+                            await fetchFriendStatus()
+                        }
                     }
                 }
             }
@@ -190,6 +246,34 @@ struct FriendProfileView: View {
         default: return .primary
         }
     }
+    
+    private func fetchFriendStatus() async {
+        Task {
+            do {
+                let friends = try await FriendsAPI.fetchFriendList(username: currentUsername).friends
+                let incoming = try await FriendsAPI.fetchFriendRequests(username: currentUsername).pendingRequests
+                let outgoing = try await FriendsAPI.fetchFriendRequests(username: username).pendingRequests
+                
+                print(incoming)
+                print(outgoing)
+
+                await MainActor.run {
+                    if friends.contains(username) {
+                        friendStatus = .friends
+                    } else if incoming.contains(username) {
+                        friendStatus = .incomingRequest
+                    } else if outgoing.contains(currentUsername) {
+                        friendStatus = .pendingRequest
+                    } else {
+                        friendStatus = .notFriends
+                    }
+                }
+            } catch {
+                print("Error fetching friend status: \(error)")
+            }
+        }
+    }
+
 }
 
 struct FriendProfileView_Previews: PreviewProvider {
