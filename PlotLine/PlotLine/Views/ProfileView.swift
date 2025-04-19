@@ -115,6 +115,7 @@ struct ProfileView: View {
                         .cornerRadius(10)
                     }
                     .padding(.horizontal, 30)
+                    .frame(maxWidth: 300)
                     
                     
                     // city field
@@ -149,12 +150,13 @@ struct ProfileView: View {
                         .cornerRadius(10)
                     }
                     .padding(.horizontal, 30)
+                    .frame(maxWidth: 300)
                     
                     
                     // birthday field
                     VStack(alignment: .leading, spacing: 5) {
                         Text("Birthday")
-                            .font(.headline)
+                            .font(.custom("AvenirNext-Bold", size: 15))
                             .foregroundColor(.gray)
                         
                         HStack {
@@ -162,6 +164,8 @@ struct ProfileView: View {
                                 DatePicker("", selection: $birthday, displayedComponents: .date)
                                     .datePickerStyle(CompactDatePickerStyle())
                                     .labelsHidden()
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.vertical, 8)
                             } else {
                                 Text(birthdayFormatted())
                                     .font(.body)
@@ -180,7 +184,12 @@ struct ProfileView: View {
                         .background(Color(.systemGray6))
                         .cornerRadius(10)
                     }
+                    .padding(.horizontal, 30)
+                    .frame(maxWidth: 300)
+                    
+                    Spacer()
 
+                    // SAVE CHANGES
                     Button(action: {
                         saveProfileChanges()
                     }) {
@@ -193,44 +202,45 @@ struct ProfileView: View {
                                     .fontWeight(.semibold)
                             }
                         }
-                        .padding()
-                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .frame(maxWidth: 300)
                         .background(Color.green)
                         .foregroundColor(.white)
-                        .cornerRadius(12)
+                        .clipShape(Capsule())
                         .scaleEffect(showSuccessModal ? 1.1 : 1.0)
                         .animation(.spring(response: 0.3, dampingFraction: 0.6), value: showSuccessModal)
                     }
-                    .padding(.top)
 
+                    // CHANGE PASSWORD
                     Button(action: {
                         showingChangePasswordSheet = true
                     }) {
                         HStack {
-                            Image(systemName: "lock.rotation")
+                            Image(systemName: "lock.fill")
                             Text("Change Password")
                         }
-                        .padding()
-                        .frame(maxWidth: .infinity)
-                        .background(Color.red.opacity(0.9))
-                        .foregroundColor(.white)
-                        .cornerRadius(12)
+                        .padding(.vertical, 12)
+                        .frame(maxWidth: 300)
+                        .background(Color.gray.opacity(0.2))
+                        .foregroundColor(.primary)
+                        .clipShape(Capsule())
                     }
-                    .padding(.horizontal)
 
+                    // SIGN OUT
                     Button(action: {
                         session.signOutPending = true
                         dismiss()
                     }) {
-                        Label("Sign Out", systemImage: "arrow.backward.circle.fill")
-                            .font(.headline)
-                            .padding()
-                            .frame(maxWidth: .infinity)
-                            .background(Color.red)
-                            .cornerRadius(12)
-                            .foregroundColor(.white)
+                        HStack {
+                            Image(systemName: "arrow.backward.circle.fill")
+                            Text("Sign Out")
+                        }
+                        .padding(.vertical, 12)
+                        .frame(maxWidth: 300)
+                        .overlay(Capsule().stroke(Color.red, lineWidth: 2))
+                        .foregroundColor(.red)
+                        .clipShape(Capsule())
                     }
-                    .padding([.horizontal, .bottom])
                 }
                 .padding()
             }

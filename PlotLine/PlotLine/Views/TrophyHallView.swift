@@ -105,7 +105,10 @@ struct TrophyHallView: View {
     }
     
     func trophyImageName(for trophy: Trophy) -> String {
+        
         if trophy.id == "llm-investor" { return "llmTrophy" }
+        if trophy.id == "first-profile-picture" { return "profilePicTrophy" }
+        
         switch trophy.level {
             case 1: return "bronzeTrophy"
             case 2: return "silverTrophy"

@@ -321,6 +321,7 @@ class AuthViewModel: ObservableObject {
         self.isLoggedIn = false
         self.authToken = nil
         KeychainManager.removeToken()
+        UserDefaults.standard.removeObject(forKey: "loggedInUsername")
         
         self.isCodeSent = false
         self.isSignin = true

@@ -14,7 +14,9 @@ struct ContentView: View {
     @EnvironmentObject var calendarVM: CalendarViewModel
     @EnvironmentObject var friendsVM: FriendsViewModel
     
-    let username = UserDefaults.standard.string(forKey: "loggedInUsername") ?? "Guest"
+    var username: String {
+        UserDefaults.standard.string(forKey: "loggedInUsername") ?? "Guest"
+    }
     @State private var isProfilePresented = false
     @State private var isFriendsPresented = false
 

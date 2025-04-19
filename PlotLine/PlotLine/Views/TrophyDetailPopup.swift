@@ -61,6 +61,8 @@ struct TrophyDetailPopup: View {
     }
 
     func levelName(for level: Int) -> String {
+        
+        
         switch level {
         case 1: return "Bronze"
         case 2: return "Silver"

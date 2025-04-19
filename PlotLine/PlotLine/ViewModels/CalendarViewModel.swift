@@ -10,7 +10,9 @@ import Combine
 
 class CalendarViewModel: ObservableObject {
     
-    @Published var username: String = UserDefaults.standard.string(forKey: "loggedInUsername") ?? "Guest"
+    var username: String {
+        UserDefaults.standard.string(forKey: "loggedInUsername") ?? "Guest"
+    }
     
     @Published var currentDate: Date = Date()  // current date
     @Published var displayMode: DisplayMode = .month
