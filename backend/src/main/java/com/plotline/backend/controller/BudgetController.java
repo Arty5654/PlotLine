@@ -1,5 +1,6 @@
 package com.plotline.backend.controller;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.plotline.backend.dto.BudgetRequest;
 import com.plotline.backend.service.S3Service;
@@ -10,6 +11,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/budget")
@@ -19,7 +21,8 @@ public class BudgetController {
     private S3Service s3Service;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
-    private final String S3_BUCKET_PATH = "users/%s/%s-budget.json"; // Path pattern
+    private final String S3_BUCKET_PATH = "users/%s/%s-budget.json";
+    private final String S3_BUCKET_PATH2 = "users/%s/%s-budget-edited.json";
 
     // Save Budget
     @PostMapping
@@ -32,7 +35,7 @@ public class BudgetController {
             ByteArrayInputStream inputStream = new ByteArrayInputStream(jsonData.getBytes(StandardCharsets.UTF_8));
 
             // Generate S3 key
-            String key = String.format(S3_BUCKET_PATH, request.getUsername(), request.getType());
+            String key = String.format(S3_BUCKET_PATH2, request.getUsername(), request.getType());
 
             // Upload to S3
             s3Service.uploadFile(key, inputStream, jsonData.length());
@@ -47,15 +50,24 @@ public class BudgetController {
     @GetMapping("/{username}/{type}")
     public ResponseEntity<Object> getBudget(@PathVariable String username, @PathVariable String type) {
         try {
-            String key = String.format(S3_BUCKET_PATH, username, type);
-            byte[] data = s3Service.downloadFile(key);
+            String editedKey = String.format("users/%s/%s-budget-edited.json", username, type);
+            byte[] data = s3Service.downloadFile(editedKey);
             String json = new String(data, StandardCharsets.UTF_8);
-
             return ResponseEntity.ok(objectMapper.readValue(json, BudgetRequest.class));
         } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Budget not found for user: " + username);
+            try {
+                // Fall back to original if edited version doesn't exist
+                String originalKey = String.format("users/%s/%s-budget.json", username, type);
+                byte[] originalData = s3Service.downloadFile(originalKey);
+                Map<String, Double> originalBudget = objectMapper.readValue(originalData, new TypeReference<>() {});
+                BudgetRequest wrapped = new BudgetRequest(username, type, originalBudget);
+                return ResponseEntity.ok(wrapped);
+            } catch (Exception ex) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body("No budget found for user: " + username);
+            }
         }
     }
+
 
     // Delete Budget
     @DeleteMapping("/{username}/{type}")

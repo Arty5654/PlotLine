@@ -16,6 +16,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/llm/budget")
@@ -39,6 +40,12 @@ public class BudgetQuizController {
             int dependents = Integer.parseInt(quizData.get("dependents").toString());
             String spendingStyle = (String) quizData.get("spendingStyle");
             List<String> categories = (List<String>) quizData.get("categories");
+            Map<String, Double> knownCosts = (Map<String, Double>) quizData.getOrDefault("knownCosts", Map.of());
+
+            String knownAllocations = knownCosts.entrySet().stream()
+                    .map(e -> String.format("- Allocate $%.2f to %s.", ((Number) e.getValue()).doubleValue(), e.getKey()))
+                    .collect(Collectors.joining("\n"));
+
 
             String categoriesList = String.join(", ", categories);
 
@@ -116,6 +123,9 @@ public class BudgetQuizController {
 
             Use ONLY these categories: %s.
 
+            The user already knows these costs and has requested to fix them:
+            %s
+
             Use the following budgeting rules as **general guidance** — they are recommendations, not strict constraints. Use your judgment to adjust based on cost of living, dependents, and the user's chosen categories.
             
             You **must allocate money to all user-provided categories**, even if they are not mentioned in the rules (e.g., hobbies like "Tennis"). Make sure each category has a reasonable allocation unless it clearly shouldn't apply.
@@ -133,7 +143,7 @@ public class BudgetQuizController {
             Try to keep the total budget around $%.2f (%.0f%% of monthly income), but this is a recommendation — the **only hard rule is that the total must not exceed the user's monthly income** ($%.2f). Round each category to whole dollars.
 
             Ensure that savings and investments are separated, and combined they should follow the range based on spending style.
-            """, city, state, yearlyIncome, dependents, spendingStyle, categoriesList, rules, budgetCap, (budgetCap / monthlyIncome) * 100, monthlyIncome);
+            """, city, state, yearlyIncome, dependents, spendingStyle, categoriesList, knownAllocations, rules, budgetCap, (budgetCap / monthlyIncome) * 100, monthlyIncome);
 
             
 
@@ -153,9 +163,9 @@ public class BudgetQuizController {
 
             // Save all 4 versions to S3
             saveToS3(username, "monthly-budget.json", monthly);
-            saveToS3(username, "monthly-budget-edited.json", monthly);
+            //saveToS3(username, "monthly-budget-edited.json", monthly);
             saveToS3(username, "weekly-budget.json", weekly);
-            saveToS3(username, "weekly-budget-edited.json", weekly);
+            //saveToS3(username, "weekly-budget-edited.json", weekly);
 
             return ResponseEntity.ok(monthly);
         } catch (Exception e) {
@@ -212,17 +222,14 @@ public class BudgetQuizController {
   // Revert edited budget to original
   @PostMapping("/revert/{username}/{type}")
   public ResponseEntity<String> revertToOriginal(@PathVariable String username, @PathVariable String type) {
-      try {
-          String originalKey = String.format("users/%s/%s-budget.json", username, type);
-          String editedKey = String.format("users/%s/%s-budget-edited.json", username, type);
+    try {
+        String editedKey = String.format("users/%s/%s-budget-edited.json", username, type);
+        s3Service.deleteFile(editedKey);
+        return ResponseEntity.ok("Reverted to original budget.");
+    } catch (Exception e) {
+        return ResponseEntity.status(500).body("Failed to revert: " + e.getMessage());
+    }
+}
 
-          byte[] data = s3Service.downloadFile(originalKey);
-          s3Service.uploadFile(editedKey, new ByteArrayInputStream(data), data.length);
-
-          return ResponseEntity.ok("Reverted to original budget.");
-      } catch (Exception e) {
-          return ResponseEntity.status(500).body("Failed to revert: " + e.getMessage());
-      }
-  }
 
 }

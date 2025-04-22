@@ -30,6 +30,13 @@ struct BudgetQuizView: View {
 
     @Environment(\.dismiss) var dismiss
     @StateObject private var locationManager = LocationManager()
+    
+    // For known costs
+    @State private var knownCosts: [String: String] = [:]
+    
+    // Loading screen
+    @State private var showLoadingSheet = false
+    
 
     var username: String {
         UserDefaults.standard.string(forKey: "loggedInUsername") ?? "UnknownUser"
@@ -81,6 +88,16 @@ struct BudgetQuizView: View {
                         Text("Detected: \(city), \(state)")
                     }
                 }
+                
+                Section(header: Text("Known Monthly Costs (Optional)")) {
+                    ForEach(Array(selectedCategories).sorted(), id: \.self) { category in
+                        TextField("\(category) ($)", text: Binding(
+                            get: { knownCosts[category] ?? "" },
+                            set: { knownCosts[category] = $0.filter { "0123456789.".contains($0) } }
+                        ))
+                        .keyboardType(.decimalPad)
+                    }
+                }
 
                 Section(header: Text("Select Budget Categories")) {
                     ForEach(allCategories.sorted(), id: \.self) { category in
@@ -107,6 +124,18 @@ struct BudgetQuizView: View {
                             }
                         }
                     }
+                }
+                // Loading Screen
+                .sheet(isPresented: $showLoadingSheet) {
+                    VStack(spacing: 16) {
+                        ProgressView("Generating Budget...")
+                            .progressViewStyle(CircularProgressViewStyle())
+                            .padding()
+                        Text("This may take a few seconds.")
+                            .font(.subheadline)
+                            .foregroundColor(.gray)
+                    }
+                    .presentationDetents([.fraction(0.25)])
                 }
 
                 Section {
@@ -144,7 +173,8 @@ struct BudgetQuizView: View {
             "city": city,
             "state": state,
             "spendingStyle": spendingStyle,
-            "categories": Array(selectedCategories.sorted())
+            "categories": Array(selectedCategories.sorted()),
+            "knownCosts": knownCosts.compactMapValues { Double($0) }
         ]
         
         //print("Categories: \(Array(selectedCategories.sorted()))")
@@ -157,6 +187,11 @@ struct BudgetQuizView: View {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = jsonData
+        
+        DispatchQueue.main.async {
+            isLoading = true
+            showLoadingSheet = true
+        }
 
         do {
             let (data, _) = try await URLSession.shared.data(for: request)
@@ -170,6 +205,7 @@ struct BudgetQuizView: View {
             DispatchQueue.main.async {
                 showError = true
                 isLoading = false
+                showLoadingSheet = false
             }
         }
     }

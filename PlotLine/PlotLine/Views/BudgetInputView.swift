@@ -125,6 +125,16 @@ struct BudgetInputView: View {
                         .background(Color.red)
                         .cornerRadius(10)
                 }
+                Button(action: revertToOriginalBudget) {
+                    Text("Revert to LLM Budget")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.orange)
+                        .cornerRadius(10)
+                }
+                .padding(.horizontal)
             }
             .padding()
         }
@@ -360,21 +370,21 @@ extension BudgetInputView {
     private func clearAllBudget() {
         let urlString = "http://localhost:8080/api/budget/\(username)/\(backendType)"
         guard let url = URL(string: urlString) else {
-            print("❌ Invalid URL for clearing budget data:", urlString)
+            print("Invalid URL for clearing budget data:", urlString)
             return
         }
         
         var request = URLRequest(url: url)
         request.httpMethod = "DELETE"
         
-        print("❌ Clearing \(selectedType) budget data on backend...")
+        print("Clearing \(selectedType) budget data on backend...")
         
         URLSession.shared.dataTask(with: request) { data, response, error in
             if let error = error {
-                print("❌ Error clearing budget data on backend:", error.localizedDescription)
+                print("Error clearing budget data on backend:", error.localizedDescription)
                 return
             }
-            print("✅ Successfully cleared \(self.selectedType) budget data on backend.")
+            print("Successfully cleared \(self.selectedType) budget data on backend.")
             
             // Revert UI to default categories
             DispatchQueue.main.async {
@@ -384,6 +394,36 @@ extension BudgetInputView {
             }
         }.resume()
     }
+    
+    private func revertToOriginalBudget() {
+        let urlString = "http://localhost:8080/api/llm/budget/revert/\(username)/\(backendType)"
+        guard let url = URL(string: urlString) else {
+            print("Invalid URL for reverting budget:", urlString)
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+
+        print("Reverting \(selectedType) budget to LLM-generated original...")
+
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            if let error = error {
+                print("Error reverting budget:", error.localizedDescription)
+                return
+            }
+
+            print("Budget successfully reverted to LLM version.")
+
+            // Re-fetch budget
+            DispatchQueue.main.async {
+                self.fetchBudgetData()
+            }
+        }.resume()
+    }
+
+    
+    
     
 }
 
