@@ -7,7 +7,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.2.2</version> <!-- ✅ Ensures all Spring Boot dependencies use compatible versions -->
+        <version>3.2.2</version> 
         <relativePath/>
     </parent>
 
@@ -22,6 +22,16 @@
     <properties>
         <java.version>21</java.version>
     </properties>
+
+    <!-- <repositories>
+        <repository>
+            <id>openai</id>
+            <url>https://maven.pkg.github.com/openai/openai-java</url>
+            <releases><enabled>true</enabled></releases>
+            <snapshots><enabled>true</enabled></snapshots>
+        </repository>
+    </repositories> -->
+
 
     <dependencies>
         <!-- Spring Boot Web with Version -->
@@ -137,7 +147,20 @@
             <artifactId>openai-java</artifactId>
             <version>0.37.0</version>
         </dependency>
-      
+
+        <dependency>
+            <groupId>net.sourceforge.tess4j</groupId>
+            <artifactId>tess4j</artifactId>
+            <version>5.4.0</version>
+        </dependency>
+
+
+        <!-- <dependency>
+            <groupId>com.openai</groupId>
+            <artifactId>openai</artifactId>
+            <version>1.0.0-beta.10</version>
+        </dependency> -->
+
     </dependencies>
 
     <build>

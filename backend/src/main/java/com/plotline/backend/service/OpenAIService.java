@@ -17,6 +17,13 @@ import io.github.cdimascio.dotenv.Dotenv;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+// For images
+//import com.openai.models.shared.Content;
+// import com.openai.models.shared.ImageUrl;
+import java.util.List;
+//import java.util.Map;
+import java.util.Map;
+
 @Service
 public class OpenAIService {
 
@@ -77,6 +84,30 @@ public class OpenAIService {
     }
 
   }
+
+  // public String analyzeReceiptFromImage(String base64Image, String prompt) {
+  //   try {
+  //       ResponseCreateParams params = ResponseCreateParams.builder()
+  //           .model(ChatModel.GPT_4O)
+  //           .input(List.of(
+  //             Content.imageUrl(url -> url.url("data:image/jpeg;base64," + base64Image)),
+  //             Content.text(prompt)
+  //           ))
+  //           .instructions("Extract items and prices from the receipt and categorize them.")
+  //           .build();
+
+  //       Response response = openAIClient.responses().create(params);
+  //       ResponseOutputText rot = response.output().get(0).message().get().content().get(0).asOutputText();
+  //       return rot.text();
+
+  //   } catch (OpenAIException e) {
+  //       e.printStackTrace();
+  //       return "Service Error: " + e.getMessage();
+  //   }
+  // }
+
+
+
 
   // Response for Estimating Groccery Costs
   public String generateResponseGC(String userMessage) {

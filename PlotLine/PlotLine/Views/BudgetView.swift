@@ -95,6 +95,10 @@ struct BudgetSection: View {
                         BudgetButtonLabel(title: "Take the AI Powered Budget Quiz Again")
                     }
                     
+                    NavigationLink(destination: ReceiptUploadView().environmentObject(calendarVM)) {
+                        BudgetButtonLabel(title: "Upload a Receipt to Track Spending")
+                    }
+                    
                     NavigationLink(destination: IncomeRentView().environmentObject(calendarVM)) {
                         BudgetButtonLabel(title: "Input Recurring Income & Rent")
                     }
