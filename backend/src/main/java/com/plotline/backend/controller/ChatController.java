@@ -69,14 +69,18 @@ public class ChatController {
 
     // adds reply to post
     @PostMapping(path = "/{owner}/{messageId}/replies",
-                 consumes = MediaType.APPLICATION_JSON_VALUE)
-    public ChatMessage addReply(@PathVariable String owner,
-                                @PathVariable String messageId,
-                                @RequestBody Map<String,String> body,
-                                Principal principal) throws IOException {
-        String text = body.get("text");
-        String userId = principal.getName();
-        return chatService.addReply(owner, messageId, userId, text);
+    consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ChatMessage addReply(
+      @PathVariable String owner,
+      @PathVariable String messageId,
+      @RequestBody Map<String,String> body) throws IOException {
+      
+        String userId = body.get("userId");
+        String text   = body.get("text");
+        if (userId == null || text == null) { 
+          throw new IllegalArgumentException("Missing userId or text");
+        }
+      return chatService.addReply(owner, messageId, userId, text);
     }
 
     // removes reply from post

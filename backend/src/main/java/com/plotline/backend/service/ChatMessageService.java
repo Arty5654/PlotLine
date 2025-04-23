@@ -38,15 +38,12 @@ public class ChatMessageService {
     private final S3Client      s3Client;
     private final ObjectMapper  objectMapper;
     private final String        bucketName = "plotline-database-bucket";
-    private final UserProfileService userProfileService;
 
     private final ReentrantLock reactionLock = new ReentrantLock();
 
-    public ChatMessageService(S3Client s3Client,
-                              UserProfileService userProfileService) {
-        this.s3Client           = s3Client;
-        this.objectMapper       = new ObjectMapper();
-        this.userProfileService = userProfileService;
+    public ChatMessageService(S3Client s3Client) {
+        this.s3Client = s3Client;
+        this.objectMapper = new ObjectMapper();
     }
 
     public ChatMessage postMessage(String username,
@@ -176,7 +173,7 @@ public class ChatMessageService {
                                 String messageId,
                                 String userId,
                                 String replyId) throws IOException {
-                                  
+
     ChatMessage msg = fetchRaw(owner, messageId);
     msg.removeReply(userId, replyId);
     return saveRaw(owner, msg);

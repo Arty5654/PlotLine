@@ -6,9 +6,9 @@ import java.util.Map;
   
 public class ChatMessage {
     private String id;
-    private String creator;       // userId who triggered it
+    private String creator; 
     private String timestamp;
-    private String content;       // e.g. “Alice just hit her 10th goal!”
+    private String content;
     private Map<String, Integer> reactions = new HashMap<>();
     private Map<String, List<String>> replies  = new HashMap<>();
 
