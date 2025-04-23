@@ -14,6 +14,7 @@ struct RootView: View {
     @EnvironmentObject var session: AuthViewModel
     @EnvironmentObject var calendarVM: CalendarViewModel
     @EnvironmentObject var friendsVM : FriendsViewModel
+    @EnvironmentObject var chatVM : ChatViewModel
     
     var body: some View {
         if session.isLoggedIn && session.needVerification != true {
@@ -21,6 +22,8 @@ struct RootView: View {
                 .environmentObject(session)
                 .environmentObject(calendarVM)
                 .environmentObject(friendsVM)
+                .environmentObject(chatVM)
+            
         } else if (session.needVerification == true) {
             PhoneVerificationView()
                 .environmentObject(session)
