@@ -166,8 +166,8 @@ private struct EventRow: View {
                     .foregroundColor(.blue)
             }
             
-            if !event.invitedFriends.isEmpty {
-                Text("Invited: \(event.invitedFriends.joined(separator: ", "))")
+            if !filteredInvitedFriends.isEmpty {
+                Text("Invited: \(filteredInvitedFriends.joined(separator: ", "))")
                     .font(.subheadline)
                     .foregroundColor(.blue)
             }
@@ -179,6 +179,10 @@ private struct EventRow: View {
         let formatter = DateFormatter()
         formatter.dateFormat = "MMM dd, yyyy"
         return formatter.string(from: date)
+    }
+    
+    private var filteredInvitedFriends: [String] {
+        event.invitedFriends.filter { !$0.contains("-creator-user-") }
     }
 }
 

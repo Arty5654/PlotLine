@@ -2,15 +2,17 @@ import SwiftUI
 
 struct ReplySheet: View {
     @EnvironmentObject private var vm: ChatViewModel
+    @EnvironmentObject private var friendsVM: FriendsViewModel
     @Environment(\.dismiss) private var dismiss
 
     let message: ChatMessage
     @State private var text = ""
+    @State private var selectedUser: String? = nil
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             VStack(alignment: .leading, spacing: 16) {
-
+                
                 // Original message
                 VStack(alignment: .leading, spacing: 4) {
                     Text(message.creator)
@@ -35,7 +37,13 @@ struct ReplySheet: View {
                                 if let replies = message.replies[user] {
                                     ForEach(replies, id: \.self) { reply in
                                         HStack(alignment: .top, spacing: 8) {
-                                            Text(user).bold()
+                                            Button(action: {
+                                                selectedUser = user
+                                            }) {
+                                                Text(user)
+                                                    .bold()
+                                                    .foregroundColor(.blue)
+                                            }
                                             Text(reply)
                                         }
                                     }
@@ -62,7 +70,13 @@ struct ReplySheet: View {
                 }
             }
             .padding()
-            .navigationBarTitle("Replies", displayMode: .inline)
+            .navigationTitle("Replies")
+            .navigationBarTitleDisplayMode(.inline)
+            .navigationDestination(item: $selectedUser) { user in
+                FriendProfileView(username: user)
+                    .environmentObject(friendsVM)
+            }
         }
     }
 }
+

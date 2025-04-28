@@ -2,10 +2,12 @@ import SwiftUI
 
 struct ChatView: View {
     @EnvironmentObject var vm: ChatViewModel
+    @EnvironmentObject var friendsVM: FriendsViewModel
     @State private var reactingTo: ChatMessage?
     @State private var replyingTo: ChatMessage?
 
-    private let allEmojis = ["👍","❤️","😂","🎉","😮","😢"]
+    private let allEmojis = ["👍","❤️","😂","🎉","😮","😢","😡","🔥","👏","🙏","🤔","😍","😭","😎","🙌","💯","🤯","👎","🥳","🤗",
+                             "😤","😳","😆","🤩","😬","😇","💔","👀","🍀","🫶","🧡","💥","😴","🫠","😐","😜","🎯","🫢"]
 
     var body: some View {
         VStack {
@@ -20,10 +22,10 @@ struct ChatView: View {
                     .environmentObject(vm)
                     .listRowSeparator(.hidden)
                     .listRowInsets(EdgeInsets())
-                    .padding(.vertical, 4)                // small gap between cards
+                    .padding(.vertical, 4)
                 }
             }
-            .listStyle(.plain)                          // plain style
+            .listStyle(.plain)
 
             HStack {
                 TextField("Type a message…", text: $vm.draft)
@@ -47,6 +49,7 @@ struct ChatView: View {
         .sheet(item: $replyingTo) { msg in
             ReplySheet(message: msg)
                 .environmentObject(vm)
+                .environmentObject(friendsVM)
         }
     }
 }

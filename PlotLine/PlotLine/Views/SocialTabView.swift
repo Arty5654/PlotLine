@@ -25,6 +25,7 @@ struct SocialTabView: View {
                     .environmentObject(chatVM)
                     .navigationTitle("Chat")
                     .navigationBarTitleDisplayMode(.inline)
+                    .environmentObject(friendsVM)
             }
             .tabItem { Image(systemName: "bubble.left.and.bubble.right.fill") }
             .tag(Tab.chat)

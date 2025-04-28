@@ -9,14 +9,17 @@ struct FriendSearchView: View {
     @State private var suggestions: [String] = []
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             VStack(spacing: 16) {
 
+                // Brought up
                 Text("Search by Username")
                     .font(.custom("AvenirNext-Bold", size: 16))
                     .foregroundColor(.blue)
+                    .padding(.top, 8)
 
-                VStack(spacing: 4) {
+                // Search bar + Suggestions
+                VStack(spacing: 8) {
                     TextField("Username", text: $searchText)
                         .padding(12)
                         .background(Color(.systemGray6))
@@ -26,39 +29,37 @@ struct FriendSearchView: View {
                         }
                         .padding(.horizontal)
 
-                    if !suggestions.isEmpty {
-                        ScrollView {
-                            VStack(spacing: 12) {
-                                ForEach(suggestions, id: \.self) { username in
-                                    NavigationLink(destination: FriendProfileView(username: username)) {
-                                        HStack(spacing: 12) {
-                                            FriendProfilePicture(username: username)
-                                                .frame(width: 36, height: 36)
+                    ScrollView {
+                        VStack(spacing: 12) {
+                            ForEach(suggestions, id: \.self) { username in
+                                NavigationLink(destination: FriendProfileView(username: username)) {
+                                    HStack(spacing: 12) {
+                                        FriendProfilePicture(username: username)
+                                            .frame(width: 36, height: 36)
 
-                                            Text(username)
-                                                .font(.body)
-                                                .foregroundColor(.primary)
+                                        Text(username)
+                                            .font(.body)
+                                            .foregroundColor(.primary)
 
-                                            Spacer()
-                                        }
-                                        .padding()
-                                        .background(Color(.systemGray6))
-                                        .cornerRadius(12)
-                                        .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 2)
+                                        Spacer()
                                     }
+                                    .padding()
+                                    .background(Color(.systemGray6))
+                                    .cornerRadius(12)
+                                    .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 2)
                                 }
                             }
-                            .padding(.horizontal)
                         }
-                        .frame(maxHeight: 200)
+                        .padding(.horizontal)
                         .padding(.top, 4)
                     }
+                    .frame(maxHeight: .infinity) // <--- Expand to fill remaining space
                 }
 
                 Spacer()
             }
-            .padding(.top, 40)
-            .navigationTitle("Add Friend")
+            .padding(.top, 20)
+            .navigationTitle("Add Friends") // (only 1 title now!)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -85,7 +86,6 @@ struct FriendSearchView: View {
 }
 
 
-// MARK: — Mini Circle Profile View
 struct FriendProfilePicture: View {
     let username: String
 

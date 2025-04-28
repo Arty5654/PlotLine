@@ -68,7 +68,13 @@ struct FriendProfileView: View {
                         .padding(.horizontal)
                         
                         // Friend request button
-                        if let status = friendStatus {
+                        
+                        if username == currentUsername {
+                            Text("This is you")
+                                .foregroundColor(.gray)
+                                .italic()
+                            
+                        } else if let status = friendStatus {
                             switch status {
                             case .notFriends:
                                 Button("Add Friend") {
@@ -256,8 +262,6 @@ struct FriendProfileView: View {
                 let incoming = try await FriendsAPI.fetchFriendRequests(username: currentUsername).pendingRequests
                 let outgoing = try await FriendsAPI.fetchFriendRequests(username: username).pendingRequests
                 
-                print(incoming)
-                print(outgoing)
 
                 await MainActor.run {
                     if friends.contains(username) {
