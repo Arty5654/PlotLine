@@ -13,6 +13,7 @@ struct ContentView: View {
     @EnvironmentObject var session: AuthViewModel
     @EnvironmentObject var calendarVM: CalendarViewModel
     @EnvironmentObject var friendsVM: FriendsViewModel
+    @EnvironmentObject var chatVM: ChatViewModel
     
     var username: String {
         UserDefaults.standard.string(forKey: "loggedInUsername") ?? "Guest"
@@ -96,7 +97,10 @@ struct ContentView: View {
                 }
             }
             .sheet(isPresented: $isFriendsPresented) {
-                FriendsView().environmentObject(friendsVM)
+                //FriendsView().environmentObject(friendsVM)
+                SocialTabView()
+                    .environmentObject(friendsVM)
+                    .environmentObject(chatVM)
             }
         }
         .task {

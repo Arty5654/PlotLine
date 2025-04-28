@@ -47,8 +47,8 @@ struct AddEventSheet: View {
         _isRecurring = State(initialValue: existingEvent.recurrence != "none")
         _recurrence = State(initialValue: existingEvent.recurrence)
         // Prepopulate selected friends if the event already has invited friends
-        _selectedFriends = State(initialValue: existingEvent.invitedFriends.map { Friend(username: $0) })
-    }
+        _selectedFriends = State(initialValue: existingEvent.invitedFriends.filter { !$0.contains("-creator-user-") }
+            .map { Friend(username: $0) })    }
 
     var body: some View {
         NavigationView {
@@ -106,7 +106,9 @@ struct AddEventSheet: View {
                             Divider()
                             ScrollView {
                                 VStack(spacing: 0) {
-                                    ForEach(friendVM.friends.map { Friend(username: $0) }) { friend in
+                                    ForEach(friendVM.friends.map { Friend(username: $0) }
+                                        .filter { !$0.id.contains("-creator-user-") }
+                                    ) { friend in
                                         if !selectedFriends.contains(friend) {
                                             Button(action: {
                                                 withAnimation {

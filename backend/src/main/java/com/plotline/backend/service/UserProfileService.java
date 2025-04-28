@@ -100,7 +100,6 @@ public class UserProfileService {
     new Trophy("all-around", "All-Around Achiever", "Achieve at least one trophy from each PlotLine Category!", 
     0, 0, new int[]{0, 0, 0, 1}, ZonedDateTime.now(ZoneOffset.UTC).format(formatter)),
 
-    // TODO
     new Trophy("llm-investor", "Portfolio Pro", "Created a stock portfolio with the LLM!", 
     0, 0, new int[]{0, 0, 0, 1}, ZonedDateTime.now(ZoneOffset.UTC).format(formatter)), 
 
@@ -111,13 +110,16 @@ public class UserProfileService {
 
 
   private final S3Client s3Client;
-  private final String bucketName = "plotline-database-bucket";
   private final ObjectMapper objectMapper;
-  Dotenv dotenv = Dotenv.load();
+  private final ChatMessageService chatService;
+  private final String bucketName = "plotline-database-bucket";
+  private final Dotenv dotenv = Dotenv.load();
 
-  public UserProfileService(S3Client s3Client) {
+  public UserProfileService(S3Client s3Client,
+                            ChatMessageService chatService) {
       this.s3Client = s3Client;
       this.objectMapper = new ObjectMapper();
+      this.chatService = chatService;
   }
 
   public void saveProfile(UserProfile profile) {
@@ -286,16 +288,41 @@ public class UserProfileService {
     for (Trophy trophy : trophies) {
         if (trophy.getId().equals(trophyId)) {
             trophy.setProgress(trophy.getProgress() + amount);
+            int previousLevel = trophy.getLevel();
 
             // Upgrade logic
             int newLevel = 0;
             for (int i = 0; i < trophy.getThresholds().length; i++) {
                 if (trophy.getProgress() >= trophy.getThresholds()[i]) {
                     newLevel = i + 1;
-                    trophy.setEarnedDate(ZonedDateTime.now(ZoneOffset.UTC).format(formatter));
                 }
             }
             trophy.setLevel(newLevel);
+
+            String levelName = "";
+            if (trophy.getLevel() == 1) {
+                levelName = "Bronze";
+            } else if (trophy.getLevel() == 2) {
+                levelName = "Silver";
+            } else if (trophy.getLevel() == 3) {
+                levelName = "Gold";
+            } else if (trophy.getLevel() == 4) {
+                levelName = "Diamond";
+            }
+
+
+            if (newLevel > previousLevel) {
+              trophy.setEarnedDate(ZonedDateTime.now(ZoneOffset.UTC).format(formatter));
+
+              try {
+                  String content = String.format("Earned the %s level of '%s' trophy!", levelName, trophy.getName());
+                  chatService.postMessage(username, new com.plotline.backend.dto.ChatMessage(null, username, null, content));
+              } catch (JsonProcessingException e) {
+                  // log and continue
+                  e.printStackTrace();
+              }
+            }
+
             break;
         }
 
@@ -305,6 +332,14 @@ public class UserProfileService {
             trophy.setLevel(4);
             trophy.setProgress(1);
             trophy.setEarnedDate(ZonedDateTime.now(ZoneOffset.UTC).format(formatter));
+
+            try {
+              String content = String.format("Earned the 'All Around Achiever' trophy!", trophy.getName());
+              chatService.postMessage(username, new com.plotline.backend.dto.ChatMessage(null, username, null, content));
+            } catch (JsonProcessingException e) {
+              // log and continue
+              e.printStackTrace();
+            }
           }
         }
     }
