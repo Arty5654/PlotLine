@@ -69,14 +69,10 @@ public class CalendarService {
                 newEvent = avoidDupe(newEvent, existingEvents, username, newEvent.getEventType());
                 return newEvent;
             }
-
-            existingEvents.add(newEvent);
+            
             
             // Event planner (creating calendar events) Trophy
             userProfileService.incrementTrophy(username, "calendar-events-created", 1);
-
-            // write to s3
-            saveEventsToS3(username, existingEvents);
 
             // add to each friend's calendar
             if (newEvent.getInvitedFriends() != null && !newEvent.getInvitedFriends().isEmpty()) {
@@ -96,6 +92,12 @@ public class CalendarService {
                     friendEvents.add(friendEvent);
                     saveEventsToS3(friend, friendEvents);                  
                 }
+
+                newEvent.getInvitedFriends().add("c-123-creator-user-c-987"); // add a unique 'creator' friend so it deletes correctly
+                existingEvents.add(newEvent);
+
+                // write to s3
+                saveEventsToS3(username, existingEvents);
                 
                 // Trophy for inviting friends to calendar events
                 userProfileService.incrementTrophy(username, "invite-friends", newEvent.getInvitedFriends().size());
@@ -177,10 +179,32 @@ public class CalendarService {
 
 
     public void deleteEvent(String eventId, String username) throws Exception {
-      List<EventDto> existing = getEvents(username);
+        List<EventDto> existing = getEvents(username);
 
-      existing.removeIf(event -> event.getId().equals(eventId));
-      saveEventsToS3(username, existing);
+        // get event to delete by id
+        EventDto eventToDelete = null;
+        for (EventDto event : existing) {
+            if (event.getId().equals(eventId)) {
+                eventToDelete = event;
+                break;
+            }
+        }
+
+        if (eventToDelete == null) {
+            throw new Exception("Event not found for ID: " + eventId);
+        } else if (eventToDelete.getInvitedFriends().contains("c-123-creator-user-c-987")) {
+            // remove the event from each invited friend
+            for (String friend : eventToDelete.getInvitedFriends()) {
+                List<EventDto> friendEvents = getEvents(friend);
+                friendEvents.removeIf(event -> event.getId().equals(eventId));
+                saveEventsToS3(friend, friendEvents);
+            }
+        }
+
+        existing.removeIf(event -> event.getId().equals(eventId));
+        saveEventsToS3(username, existing);
+
+
     }
 
     // write to s3 func
