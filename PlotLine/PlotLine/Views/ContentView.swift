@@ -20,6 +20,16 @@ struct ContentView: View {
     }
     @State private var isProfilePresented = false
     @State private var isFriendsPresented = false
+    
+    @State private var tasks: [TaskItem] = []
+    @State private var newTask: String = ""
+    @State private var newTaskPriority: Priority = .medium
+    @State private var newTaskDueDate = Date()
+    @State private var selectedPriorityFilter: Priority? = nil
+    @State private var notificationsEnabled = false
+    @State private var notificationType: String = "dueDate"
+    @State private var notificationTime = Date()
+
 
     
     var body: some View {
@@ -56,7 +66,7 @@ struct ContentView: View {
                         .padding(.horizontal)
 
                         // Goals Widget
-                        NavigationLink(destination: WeeklyGoalsView().environmentObject(calendarVM)) {
+                        NavigationLink(destination: GoalsView().environmentObject(calendarVM)) {
                             GoalsWidget()
                                 .environmentObject(calendarVM)
                         }
@@ -107,6 +117,10 @@ struct ContentView: View {
             calendarVM.fetchEvents()
             await friendsVM.loadFriends(for: self.username)
         }
+    }
+    
+    private func fetchGoals() {
+        print("Fetch goals called!")
     }
     
     private var profileButton: some View {
@@ -268,9 +282,16 @@ struct GoalsWidget: View {
     @State private var tasks: [TaskItem] = []
     @State private var isLoading = true
     let username = UserDefaults.standard.string(forKey: "loggedInUsername") ?? "Guest"
+    @State private var newTask: String = ""
+    @State private var newTaskPriority: Priority = .medium
+    @State private var newTaskDueDate = Date()
+    @State private var selectedPriorityFilter: Priority? = nil
+    @State private var notificationsEnabled = false
+    @State private var notificationType: String = "dueDate"
+    @State private var notificationTime = Date()
     
     var body: some View {
-        NavigationLink(destination: WeeklyGoalsView().environmentObject(calendarVM)) {
+        NavigationLink(destination: GoalsView().environmentObject(calendarVM)) {
             VStack(alignment: .leading, spacing: 8) {
                 ZStack {
                     Text("Goals")
