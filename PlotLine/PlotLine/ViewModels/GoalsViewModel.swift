@@ -110,7 +110,7 @@ struct LongTermStep: Identifiable, Codable {
 
 struct LongTermGoalsResponse: Codable {
     let longTermGoals: [LongTermGoal]
-    let archivedGoals: [LongTermGoal]
+    let archivedGoals: [LongTermGoal]?
 }
 
 struct GoalsResponse: Codable {

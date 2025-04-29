@@ -2,13 +2,17 @@ package com.plotline.backend.controller;
 
 import com.plotline.backend.service.S3Service;
 import com.plotline.backend.service.WeeklyGoalsService;
+import com.plotline.backend.service.FriendsFeedService;
 import com.plotline.backend.service.LongTermGoalsService;
+import com.plotline.backend.dto.FriendPost;
 import com.plotline.backend.dto.LongTermGoal;
 import com.plotline.backend.dto.TaskItem;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import java.io.IOException;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -16,6 +20,9 @@ import java.util.UUID;
 @RequestMapping("/api/goals")
 @CrossOrigin(origins = "*") // Allow frontend requests
 public class WeeklyGoalsController {
+
+  @Autowired
+  private FriendsFeedService friendsFeedService;
 
   private final LongTermGoalsService longTermGoalsService;
   private final WeeklyGoalsService weeklyGoalsService;
@@ -155,6 +162,51 @@ public class WeeklyGoalsController {
     } else {
       return ResponseEntity.status(500).body("Failed to unarchive goal.");
     }
+  }
+
+  // Friends Feed
+
+  @PostMapping("/friends-feed/{username}/post")
+  public ResponseEntity<String> postGoalToFriendsFeed(@PathVariable String username, @RequestBody FriendPost post) {
+    boolean success = friendsFeedService.addPostToFeed(post);
+    return success ? ResponseEntity.ok("Post shared successfully!")
+        : ResponseEntity.status(500).body("Failed to share post.");
+  }
+
+  @GetMapping("/friends-feed/{username}")
+  public ResponseEntity<List<FriendPost>> getFriendsFeed(@PathVariable String username) {
+    List<FriendPost> feed = friendsFeedService.getFriendsFeed(username);
+    return ResponseEntity.ok(feed);
+  }
+
+  @DeleteMapping("/friends-feed/{username}/post/{postId}")
+  public ResponseEntity<String> deleteFriendPost(
+      @PathVariable String username,
+      @PathVariable UUID postId) {
+    boolean success = friendsFeedService.deletePostById(username, postId);
+    if (success) {
+      return ResponseEntity.ok("Post deleted.");
+    } else {
+      return ResponseEntity.status(500).body("Failed to delete post.");
+    }
+  }
+
+  @PutMapping("/friends-feed/{username}/post/{postId}/like")
+  public ResponseEntity<String> toggleLikePost(
+      @PathVariable String username,
+      @PathVariable UUID postId) {
+    boolean success = friendsFeedService.toggleLike(username, postId);
+    return success ? ResponseEntity.ok("Toggled like.") : ResponseEntity.status(500).body("Error.");
+  }
+
+  @PostMapping("/friends-feed/{username}/post/{postId}/comment")
+  public ResponseEntity<String> addCommentToPost(
+      @PathVariable String username,
+      @PathVariable UUID postId,
+      @RequestBody Map<String, String> body) {
+    String comment = body.get("comment");
+    boolean success = friendsFeedService.addComment(username, postId, comment);
+    return success ? ResponseEntity.ok("Comment added.") : ResponseEntity.status(500).body("Error.");
   }
 
 }
