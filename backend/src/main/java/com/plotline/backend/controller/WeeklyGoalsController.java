@@ -1,6 +1,8 @@
 package com.plotline.backend.controller;
 
 import com.plotline.backend.service.S3Service;
+import com.plotline.backend.service.WeeklyGoalsService;
+import com.plotline.backend.service.LongTermGoalsService;
 import com.plotline.backend.dto.LongTermGoal;
 import com.plotline.backend.dto.TaskItem;
 
@@ -15,21 +17,26 @@ import java.util.UUID;
 @CrossOrigin(origins = "*") // Allow frontend requests
 public class WeeklyGoalsController {
 
+  private final LongTermGoalsService longTermGoalsService;
+  private final WeeklyGoalsService weeklyGoalsService;
   private final S3Service s3Service;
 
-  public WeeklyGoalsController(S3Service s3Service) {
+  public WeeklyGoalsController(S3Service s3Service, WeeklyGoalsService weeklyGoalsService,
+      LongTermGoalsService longTermGoalsService) {
     this.s3Service = s3Service;
+    this.weeklyGoalsService = weeklyGoalsService;
+    this.longTermGoalsService = longTermGoalsService;
   }
 
   @GetMapping("/{username}")
   public Map<String, Object> getWeeklyGoals(@PathVariable String username) throws IOException {
-    return s3Service.getWeeklyGoals(username);
+    return weeklyGoalsService.getWeeklyGoals(username);
   }
 
   @PostMapping("/{username}")
   public ResponseEntity<String> addGoal(@PathVariable String username, @RequestBody TaskItem newTask)
       throws IOException {
-    boolean success = s3Service.addGoalToS3(username, newTask);
+    boolean success = weeklyGoalsService.addGoalToS3(username, newTask);
     if (success) {
       return ResponseEntity.ok("Goal added successfully!");
     } else {
@@ -39,7 +46,7 @@ public class WeeklyGoalsController {
 
   @DeleteMapping("/{username}/{taskId}")
   public ResponseEntity<String> deleteGoal(@PathVariable String username, @PathVariable int taskId) throws IOException {
-    boolean success = s3Service.deleteGoalFromS3(username, taskId);
+    boolean success = weeklyGoalsService.deleteGoalFromS3(username, taskId);
     if (success) {
       return ResponseEntity.ok("Goal deleted successfully!");
     } else {
@@ -50,7 +57,7 @@ public class WeeklyGoalsController {
   @PutMapping("/{username}/{taskId}")
   public ResponseEntity<String> updateGoal(@PathVariable String username, @PathVariable int taskId,
       @RequestBody TaskItem updatedTask) throws IOException {
-    boolean success = s3Service.updateGoalInS3(username, taskId, updatedTask);
+    boolean success = weeklyGoalsService.updateGoalInS3(username, taskId, updatedTask);
     if (success) {
       return ResponseEntity.ok("Goal updated successfully!");
     } else {
@@ -60,7 +67,7 @@ public class WeeklyGoalsController {
 
   @DeleteMapping("/{username}/reset")
   public ResponseEntity<String> resetGoals(@PathVariable String username) throws IOException {
-    boolean success = s3Service.resetGoalsInS3(username);
+    boolean success = weeklyGoalsService.resetGoalsInS3(username);
     if (success) {
       return ResponseEntity.ok("All goals have been reset!");
     } else {
@@ -74,7 +81,7 @@ public class WeeklyGoalsController {
       @PathVariable int taskId,
       @RequestBody Map<String, Boolean> request) throws IOException {
     boolean isCompleted = request.get("isCompleted");
-    boolean success = s3Service.updateGoalCompletionInS3(username, taskId, isCompleted);
+    boolean success = weeklyGoalsService.updateGoalCompletionInS3(username, taskId, isCompleted);
     if (success) {
       return ResponseEntity.ok("Task completion updated successfully!");
     } else {
@@ -82,9 +89,11 @@ public class WeeklyGoalsController {
     }
   }
 
+  /* LONG TERM GOALS */
+
   @PostMapping("/{username}/long-term")
   public ResponseEntity<String> addLongTermGoal(@PathVariable String username, @RequestBody LongTermGoal newGoal) {
-    boolean success = s3Service.addLongTermGoalToS3(username, newGoal);
+    boolean success = longTermGoalsService.addLongTermGoalToS3(username, newGoal);
     return success
         ? ResponseEntity.ok("Long-term goal added!")
         : ResponseEntity.status(500).body("Failed to add long-term goal.");
@@ -92,7 +101,7 @@ public class WeeklyGoalsController {
 
   @GetMapping("/{username}/long-term")
   public Map<String, Object> getLongTermGoals(@PathVariable String username) {
-    return s3Service.getLongTermGoals(username);
+    return longTermGoalsService.getLongTermGoals(username);
   }
 
   @PutMapping("/{username}/long-term/{goalId}/steps/{stepId}")
@@ -103,7 +112,7 @@ public class WeeklyGoalsController {
       @RequestBody Map<String, Boolean> request) {
 
     boolean isCompleted = request.get("isCompleted");
-    boolean success = s3Service.updateStepCompletionInS3(username, goalId, stepId, isCompleted);
+    boolean success = longTermGoalsService.updateStepCompletionInS3(username, goalId, stepId, isCompleted);
 
     if (success) {
       return ResponseEntity.ok("Step completion updated successfully!");
@@ -114,11 +123,37 @@ public class WeeklyGoalsController {
 
   @DeleteMapping("/{username}/long-term/reset")
   public ResponseEntity<String> resetLongTermGoals(@PathVariable String username) throws IOException {
-    boolean success = s3Service.resetLongTermGoalsInS3(username);
+    boolean success = longTermGoalsService.resetLongTermGoalsInS3(username);
     if (success) {
       return ResponseEntity.ok("All long-term goals have been reset!");
     } else {
       return ResponseEntity.status(500).body("Failed to reset long-term goals.");
+    }
+  }
+
+  @PutMapping("/{username}/long-term/{goalId}/archive")
+  public ResponseEntity<String> archiveLongTermGoal(
+      @PathVariable String username,
+      @PathVariable UUID goalId) {
+
+    boolean success = longTermGoalsService.archiveLongTermGoalInS3(username, goalId);
+    if (success) {
+      return ResponseEntity.ok("Goal archived successfully!");
+    } else {
+      return ResponseEntity.status(500).body("Failed to archive goal.");
+    }
+  }
+
+  @PutMapping("/{username}/long-term/{goalId}/unarchive")
+  public ResponseEntity<String> unarchiveLongTermGoal(
+      @PathVariable String username,
+      @PathVariable UUID goalId) {
+
+    boolean success = longTermGoalsService.unarchiveLongTermGoalInS3(username, goalId);
+    if (success) {
+      return ResponseEntity.ok("Goal unarchived successfully!");
+    } else {
+      return ResponseEntity.status(500).body("Failed to unarchive goal.");
     }
   }
 
