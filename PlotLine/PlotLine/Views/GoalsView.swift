@@ -155,7 +155,7 @@ struct GoalsView: View {
             do {
                 let jsonString = String(data: data, encoding: .utf8)
                 print("📜 Raw Long-Term JSON Response: \(jsonString ?? "No Data")")
-                
+
                 let decodedResponse = try JSONDecoder().decode(LongTermGoalsResponse.self, from: data)
                 DispatchQueue.main.async {
                     self.longTermGoals = decodedResponse.longTermGoals
@@ -164,6 +164,7 @@ struct GoalsView: View {
             } catch {
                 print("❌ Error decoding long-term goals JSON: \(error)")
             }
+
         }.resume()
     }
     

@@ -126,8 +126,6 @@ struct LongTermGoalsView: View {
                     .padding(.horizontal)
                 }
             }
-        }.onAppear {
-            fetchArchivedGoals()
         }
         
         // Reset button
@@ -157,48 +155,20 @@ struct LongTermGoalsView: View {
                 .padding(.bottom)
         }
         .sheet(isPresented: $showArchiveSheet) {
-            ArchivedGoalsView(archivedGoals: $archivedGoals, unarchiveGoal: { goal in
-                unarchiveGoal(goal)
-            })
+            ArchivedGoalsView(
+                archivedGoals: $archivedGoals,
+                unarchiveGoal: { goal in
+                    unarchiveGoal(goal)
+                },
+                shareGoalToFriends: { goal in
+                    shareGoalToFriends(goal: goal)
+                }
+            )
         }
 
     }
     
-    private func fetchArchivedGoals() {
-        guard username != "Guest",
-              let url = URL(string: "http://localhost:8080/api/goals/\(username)/long-term") else {
-            print("⚠️ Invalid username or URL")
-            return
-        }
-        
-        print("📡 Fetching archived goals from: \(url)")
-        
-        URLSession.shared.dataTask(with: url) { data, response, error in
-            if let error = error {
-                print("❌ Network error: \(error.localizedDescription)")
-                return
-            }
-            
-            if let httpResponse = response as? HTTPURLResponse {
-                print("🔍 HTTP Status Code: \(httpResponse.statusCode)")
-            }
-            
-            guard let data = data else {
-                print("⚠️ No data received from backend")
-                return
-            }
-            
-            do {
-                let decodedResponse = try JSONDecoder().decode(LongTermGoalsResponse.self, from: data)
-                DispatchQueue.main.async {
-                    self.archivedGoals = decodedResponse.archivedGoals
-                    print("✅ Successfully loaded \(self.archivedGoals.count) archived goals")
-                }
-            } catch {
-                print("❌ Error decoding archived goals JSON: \(error)")
-            }
-        }.resume()
-    }
+    
 
     
     private func archiveGoal(_ goal: LongTermGoal) {
@@ -375,14 +345,53 @@ struct LongTermGoalsView: View {
         }
     }
     
+    /* Sharing an archived post*/
+    private func shareGoalToFriends(goal: LongTermGoal) {
+        guard let url = URL(string: "http://localhost:8080/api/goals/friends-feed/\(username)/post") else {
+            print("❌ Invalid share URL")
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let friendPost = FriendPost(
+            id: UUID(),
+            username: username,
+            goal: goal,
+            comment: nil
+        )
+
+        do {
+            let jsonData = try JSONEncoder().encode(friendPost)
+            request.httpBody = jsonData
+        } catch {
+            print("❌ Error encoding FriendPost: \(error)")
+            return
+        }
+
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            if let error = error {
+                print("❌ Share network error: \(error.localizedDescription)")
+                return
+            }
+
+            if let httpResponse = response as? HTTPURLResponse {
+                print("🚀 Share post status code: \(httpResponse.statusCode)")
+            }
+        }.resume()
+    }
+
+    
 }
 
-#Preview {
-    LongTermGoalsView(
-        longTermGoals: .constant([]),
-        newLongTermTitle: .constant(""),
-        newStep: .constant(""),
-        newLongTermSteps: .constant([]),
-        username: "PreviewUser"
-    )
-}
+//#Preview {
+//    LongTermGoalsView(
+//        longTermGoals: .constant([]),
+//        newLongTermTitle: .constant(""),
+//        newStep: .constant(""),
+//        newLongTermSteps: .constant([]),
+//        username: "PreviewUser"
+//    )
+//}

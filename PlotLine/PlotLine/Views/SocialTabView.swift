@@ -32,8 +32,8 @@ struct SocialTabView: View {
 
             // — More tab —
             NavigationStack {
-                ThirdView()
-                    .navigationTitle("More")
+                FriendsFeedView()
+                    .navigationTitle("Friends Feed")
                     .navigationBarTitleDisplayMode(.inline)
             }
             .tabItem { Image(systemName: "ellipsis.circle.fill") }
