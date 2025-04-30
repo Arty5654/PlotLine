@@ -632,13 +632,15 @@ struct GroceryListWidget: View {
         VStack(alignment: .leading, spacing: 8) {
             // Header with icon
             ZStack {
-                Text("Grocery Lists")
+//                Text("Grocery Lists")
+                Text("Nutrition")
                     .font(.custom("AvenirNext-Bold", size: 18))
                     .foregroundColor(.blue)
                             
                 HStack {
                     Spacer()
-                    Image(systemName: "cart.fill")
+//                    Image(systemName: "cart.fill")
+                    Image(systemName: "fork.knife")
                         .foregroundColor(.green)
                         .font(.title3)
                 }
