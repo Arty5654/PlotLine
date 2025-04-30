@@ -8,13 +8,21 @@ struct TopGroceryListView: View {
             VStack {
                 // Tab View for navigating between the active grocery lists and archived grocery lists
                 TabView(selection: $selectedTab) {
+                    // Meals Tab
+                    MealsView()
+                        .tabItem {
+                            Image(systemName: "fork.knife.circle")
+                            Text("Meals")
+                        }
+                        .tag(0)
+                    
                     // Active Grocery List Tab
                     ActiveGroceryListView()
                         .tabItem {
                             Image(systemName: "list.dash")
                             Text("Active Lists")
                         }
-                        .tag(0)
+                        .tag(1)
 
                     // Archived Grocery List Tab
                     ArchivedGroceryListsView(username: UserDefaults.standard.string(forKey: "loggedInUsername") ?? "")
@@ -22,10 +30,10 @@ struct TopGroceryListView: View {
                             Image(systemName: "archivebox")
                             Text("Archived Lists")
                         }
-                        .tag(1)
+                        .tag(2)
                 }
             }
-            .navigationTitle("Grocery Lists")
+            .navigationTitle("Nutrition")
         }
     }
 }
