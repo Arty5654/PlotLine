@@ -3,6 +3,9 @@ import UIKit
 
 struct GroceryListDetailView: View {
     var groceryList: GroceryList
+    
+    @Environment(\.presentationMode) var presentationMode
+
     @State private var items: [GroceryItem] = [] // Array to hold grocery items
     @State private var newItemName: String = ""  // Name of the new item
     @State private var newItemQuantity: Int = 1  // Quantity for the new item
@@ -22,6 +25,15 @@ struct GroceryListDetailView: View {
     @State private var showGroceryAddedAlert = false
     @State private var recentlyAddedGroceryAmount: Double? = nil
     @State private var canUndoGroceryAddition = false
+    
+    // Meal generation states
+    @State private var isGenerating: Bool = false
+    @State private var errorMessage: String? = nil
+    @State private var showError: Bool = false
+    @State private var dietaryMessage: String? = nil
+    @State private var showDietaryInfo: Bool = false
+    @State private var showMealCreatedAlert: Bool = false
+    @State private var mealCreatedMessage: String = ""
     
     // Calculate item text based on totalItems
     private var itemText: String {
@@ -48,14 +60,13 @@ struct GroceryListDetailView: View {
                             Image(systemName: "square.and.arrow.up")
                                 .imageScale(.medium)
                         }
-                        .alert(isPresented: .constant(shareSuccess != nil)) {
-                            Alert(
-                                title: Text(shareSuccess == true ? "Share Successful" : "Share Failed"),
-                                message: Text(shareSuccess == true ? "Your grocery list was shared successfully." : "There was an issue sharing the list."),
-                                dismissButton: .default(Text("OK"))
-                            )
-                        }
                         .padding()
+                    }
+                    
+                    if let mealName = groceryList.mealName {
+                        Text(mealName)
+                    } else {
+                        Text("No meal attached to list")
                     }
 
                     // Archive bar
@@ -79,13 +90,6 @@ struct GroceryListDetailView: View {
                                     .cornerRadius(8)
                             }
                             .disabled(!canArchiveList)
-                            .alert(isPresented: .constant(archiveSuccess != nil)) {
-                                Alert(
-                                    title: Text(archiveSuccess == true ? "Archive Successful" : "Archive Failed"),
-                                    message: Text(archiveSuccess == true ? "Your grocery list was archived successfully." : "There was an issue archiving the list."),
-                                    dismissButton: .default(Text("OK"))
-                                )
-                            }
                             .padding(.trailing)
                         }
                     }
@@ -130,22 +134,25 @@ struct GroceryListDetailView: View {
                                 }
                                 .padding(.horizontal)
                             }
-
-                            // Done shopping button
-                            Button("Done Shopping") {
-                                checkallItems()
-                                estimateGroceryCostAndUpdateBudget()
-                            }
-                            .padding()
-                            .background(Color.green)
-                            .foregroundColor(.white)
-                            .cornerRadius(10)
-                            .alert(isPresented: $showGroceryAddedAlert) {
-                                Alert(
-                                    title: Text("Groceries Added"),
-                                    message: Text("Added $\(recentlyAddedGroceryAmount ?? 0, specifier: "%.2f") to Weekly Groceries."),
-                                    dismissButton: .default(Text("OK"))
-                                )
+                            
+                            HStack {
+                                Button("Generate Meal") {
+                                    generateMealFromListView()
+                                }
+                                .padding()
+                                .background(Color.blue)
+                                .foregroundColor(.white)
+                                .cornerRadius(10)
+                                
+                                // Done shopping button
+                                Button("Done Shopping") {
+                                    checkallItems()
+                                    estimateGroceryCostAndUpdateBudget()
+                                }
+                                .padding()
+                                .background(Color.green)
+                                .foregroundColor(.white)
+                                .cornerRadius(10)
                             }
 
                             // Undo grocery cost
@@ -190,6 +197,12 @@ struct GroceryListDetailView: View {
                     isEditPresented = false
                 })
             }
+            
+            if showDietaryInfo {
+                Text(dietaryMessage ?? "")
+                    .foregroundColor(.red)
+                    .padding()
+            }
         }
         .navigationTitle("Grocery List Details")
         .onAppear {
@@ -197,6 +210,31 @@ struct GroceryListDetailView: View {
         }
         .onChange(of: items) { _ in
             canArchiveList = isListCompleted()
+        }
+        .alert("Share Result", isPresented: .constant(shareSuccess != nil)) {
+            Button("OK") { shareSuccess = nil }
+        } message: {
+            Text(shareSuccess == true ? "Your grocery list was shared successfully." : "There was an issue sharing the list.")
+        }
+        .alert("Archive Result", isPresented: .constant(archiveSuccess != nil)) {
+            Button("OK") { archiveSuccess = nil }
+        } message: {
+            Text(archiveSuccess == true ? "Your grocery list was archived successfully." : "There was an issue archiving the list.")
+        }
+        .alert("Groceries Added", isPresented: $showGroceryAddedAlert) {
+            Button("OK") { }
+        } message: {
+            Text("Added $\(recentlyAddedGroceryAmount ?? 0, specifier: "%.2f") to Weekly Groceries.")
+        }
+        .alert("Meal Created", isPresented: $showMealCreatedAlert) {
+            Button("OK") { }
+        } message: {
+            Text(mealCreatedMessage)
+        }
+        .alert("Error", isPresented: $showError) {
+            Button("OK") { }
+        } message: {
+            Text(errorMessage ?? "An unknown error occurred.")
         }
     }
 
@@ -456,11 +494,8 @@ struct GroceryListDetailView: View {
             let uncheckedItems = items.filter { !$0.checked }
             
             if uncheckedItems.isEmpty {
-                print("All items are already checked off.")
                 return
             }
-            
-            print("Starting to check off \(uncheckedItems.count) items...")
             
             for item in uncheckedItems {
                 do {
@@ -489,14 +524,103 @@ struct GroceryListDetailView: View {
                     
                     // Add a small delay between requests to avoid overwhelming the server
                     try await Task.sleep(nanoseconds: 200_000_000) // 200ms delay
-                    
-                    print("Checked off item: \(item.name)")
                 } catch {
                     print("Failed to check off item \(item.name): \(error)")
                 }
             }
-            
-            print("Finished checking off items")
         }
     }
+    
+    func generateMealFromListView() -> [(name: String, quantity: Int)] {
+        let listItems = items
+        var items_short: [(name: String, quantity: Int)] = []
+        
+        listItems.forEach { item in
+            items_short.append((item.name, item.quantity))
+        }
+        
+        generateMealFromList(groceryListItems: items_short)
+        
+        return items_short
+    }
+    
+    private func generateMealFromList(groceryListItems: [(name: String, quantity: Int)]) {
+        guard !groceryListItems.isEmpty else {
+            return
+        }
+        
+        // Mark the state to indicate that the meal generation is in progress
+        isGenerating = true
+        
+        Task {
+            do {
+                // Construct the request body
+                let result = try await GroceryListAPI.generateMealFromList(listID: groceryList.id.uuidString, groceryListItems: groceryListItems)
+                
+                await MainActor.run {
+                    // Reset the state when meal generation is done
+                    isGenerating = false
+                    
+                    // Check if the result starts with "INCOMPATIBLE:"
+                    if let incompatiblePrefix = result.range(of: "INCOMPATIBLE:") {
+                        // Parse the JSON to extract the reason
+                        let json = String(result[incompatiblePrefix.upperBound...])
+                        
+                        if let data = json.data(using: .utf8),
+                           let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                           let reason = dict["reason"] as? String {
+                            
+                            dietaryMessage = "This meal cannot be made with your dietary restrictions: \n\n \(reason)"
+                            showDietaryInfo = true
+                            errorMessage = "Cannot create meal: \(reason)"
+                            showError = true
+                        } else {
+                            dietaryMessage = "This meal is not compatible with your dietary restrictions."
+                            showDietaryInfo = true
+                            errorMessage = "This meal is not compatible with your dietary restrictions."
+                            showError = true
+                        }
+                    }
+                    // Check if the result contains a modification message
+                    else if let modPrefix = result.range(of: "MODIFIED:") {
+                        let json = String(result[modPrefix.upperBound...])
+                        
+                        if let data = json.data(using: .utf8),
+                           let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                           let modifications = dict["modifications"] as? String {
+                            
+                            dietaryMessage = "We've adjusted this recipe to match your dietary preferences: \n\n \(modifications)"
+                            showDietaryInfo = true
+                            
+                            mealCreatedMessage = "A new meal has been created with adjustments to match your dietary preferences."
+                            showMealCreatedAlert = true
+                        } else {
+                            // If we couldn't parse the modification, still created the list
+                            mealCreatedMessage = "A new meal has been created successfully!"
+                            showMealCreatedAlert = true
+                        }
+                        
+                        onMealCreated?()
+                    }
+                    // Standard success case
+                    else {
+                        // Just created the meal successfully with no modifications
+                        mealCreatedMessage = "A new meal has been created successfully!"
+                        showMealCreatedAlert = true
+                        
+                        onMealCreated?()
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    isGenerating = false
+                    errorMessage = error.localizedDescription
+                    showError = true
+                    print("Error generating meal: \(error)")
+                }
+            }
+        }
+    }
+
+    var onMealCreated: (() -> Void)?
 }

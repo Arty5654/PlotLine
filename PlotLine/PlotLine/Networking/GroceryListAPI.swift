@@ -377,4 +377,54 @@ struct GroceryListAPI {
             throw error
         }
     }
+    
+    // Function to generate a meal suggestion from a grocery list
+    static func generateMealFromList(listID: String, groceryListItems: [(name: String, quantity: Int)]) async throws -> String {
+        guard let username = UserDefaults.standard.string(forKey: "loggedInUsername") else {
+            throw URLError(.userAuthenticationRequired)
+        }
+
+        let url = URL(string: "\(baseURL)/generate-meal-from-list")!
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        // Create the request body with the grocery list and username
+        let requestBody: [String: Any] = [
+            "username": username,
+            "listId": listID,
+            "items": groceryListItems.map { ["name": $0.name, "quantity": $0.quantity] }
+        ]
+        
+        // Serialize the request body to JSON
+        do {
+            request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
+        } catch {
+            throw error
+        }
+        
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            
+            // Check for a successful response
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw URLError(.badServerResponse)
+            }
+            
+            if !(200...299).contains(httpResponse.statusCode) {
+                // Try to get more info from response body
+                let responseString = String(data: data, encoding: .utf8) ?? "No response body"
+                throw URLError(.badServerResponse)
+            }
+            
+            // Return the response data as a string (which will be the meal suggestion or incompatibility message)
+            let resultString = String(data: data, encoding: .utf8) ?? ""
+            return resultString
+            
+        } catch {
+            throw error
+        }
+    }
+
 }

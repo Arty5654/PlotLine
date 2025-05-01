@@ -13,6 +13,8 @@ struct GroceryList: Identifiable, Codable {
     var items: [GroceryItem]
     var username: String
     var isAI: Bool?
+    var mealID: String?
+    var mealName: String?
     
     enum CodingKeys: String, CodingKey {
         case id
@@ -20,6 +22,8 @@ struct GroceryList: Identifiable, Codable {
         case items
         case username
         case isAI = "ai"
+        case mealID
+        case mealName
     }
 }
 
