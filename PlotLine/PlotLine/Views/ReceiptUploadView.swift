@@ -201,7 +201,7 @@ struct ReceiptUploadView: View {
 
         guard let jsonData = try? JSONSerialization.data(withJSONObject: payload) else { return }
 
-        var request = URLRequest(url: URL(string: "http://localhost:8080/api/costs")!)
+        var request = URLRequest(url: URL(string: "http://localhost:8080/api/costs/merge")!)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = jsonData
