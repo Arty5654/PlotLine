@@ -93,4 +93,36 @@ public class BudgetController {
         }
     }
 
+    @GetMapping("/{username}/{type}/groceries")
+    public ResponseEntity<Object> getGroceriesBudget(@PathVariable String username, @PathVariable String type) {
+        try {
+            String editedKey = String.format("users/%s/%s-budget-edited.json", username, type);
+            byte[] data = s3Service.downloadFile(editedKey);
+            String json = new String(data, StandardCharsets.UTF_8);
+            Map<String, Double> budgetMap = objectMapper.readValue(json, new TypeReference<>() {});
+
+            if (budgetMap.containsKey("Groceries")) {
+                return ResponseEntity.ok(Map.of("Groceries", budgetMap.get("Groceries")));
+            } else {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Groceries not found in budget.");
+            }
+        } catch (Exception e) {
+            try {
+                // fallback to original
+                String originalKey = String.format("users/%s/%s-budget.json", username, type);
+                byte[] data = s3Service.downloadFile(originalKey);
+                Map<String, Double> budgetMap = objectMapper.readValue(data, new TypeReference<>() {});
+
+                if (budgetMap.containsKey("Groceries")) {
+                    return ResponseEntity.ok(Map.of("Groceries", budgetMap.get("Groceries")));
+                } else {
+                    return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Groceries not found in budget.");
+                }
+            } catch (Exception ex) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body("No budget found for user: " + username);
+            }
+        }
+    }
+
+
 }

@@ -317,5 +317,19 @@ public class GroceryListController {
             return ResponseEntity.status(500).body("Error generating meal from list: " + e.getMessage());
         }
     }
+
+    // Get cost of the groccery item live (as soon as user inputs it into the list)
+    @PostMapping("/estimate-grocery-cost-live")
+    public ResponseEntity<Double> estimateGroceryCost2(@RequestBody GroceryCostEstimateRequest request) {
+        try {
+            double cost = openAIService.estimateGroceryCost(request);
+            return ResponseEntity.ok(cost);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity
+                .status(HttpStatus.SC_INTERNAL_SERVER_ERROR)
+                .body(-1.0);
+        }
+    }
 }
 

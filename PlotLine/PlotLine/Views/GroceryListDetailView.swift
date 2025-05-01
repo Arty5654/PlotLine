@@ -35,6 +35,8 @@ struct GroceryListDetailView: View {
     @State private var showMealCreatedAlert: Bool = false
     @State private var mealCreatedMessage: String = ""
     
+    @State private var groceryBudget: Double? = nil
+    
     // Calculate item text based on totalItems
     private var itemText: String {
         return totalItems == 1 ? "Item" : "Items"
@@ -52,6 +54,18 @@ struct GroceryListDetailView: View {
                             .padding()
 
                         Spacer()
+                        
+                        // Show live budget
+                        if let budget = groceryBudget {
+                            let currentTotal = items.reduce(0.0) { $0 + ($1.price ?? 0.0) }
+                            Text("Estimated: $\(currentTotal, specifier: "%.2f") / Budget: $\(budget, specifier: "%.2f")")
+                                .foregroundColor(currentTotal > budget ? .red : .green)
+                                .font(.subheadline)
+                                .padding(.horizontal)
+                        }
+                        
+                        Spacer()
+
 
                         Button(action: {
                             shareGroceryList()
@@ -207,6 +221,7 @@ struct GroceryListDetailView: View {
         .navigationTitle("Grocery List Details")
         .onAppear {
             fetchItems()
+            fetchGroceryBudget()
         }
         .onChange(of: items) { _ in
             canArchiveList = isListCompleted()
@@ -266,6 +281,7 @@ struct GroceryListDetailView: View {
                 try await GroceryListAPI.addItem(listId: listIdString, item: newItem)
 
                 items.append(newItem)
+                estimateCostForNewItem(itemID: newItem.id, name: newItem.name, quantity: newItem.quantity)
                 newItemName = ""  // Reset name field
                 newItemQuantity = 1  // Reset quantity field
             } catch {
@@ -273,6 +289,44 @@ struct GroceryListDetailView: View {
             }
         }
     }
+    
+    func estimateCostForNewItem(itemID: UUID, name: String, quantity: Int) {
+        let payload: [String: Any] = [
+            "location": "Indiana",
+            "items": [["name": name, "quantity": quantity]]
+        ]
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: payload) else { return }
+
+        var request = URLRequest(
+            url: URL(string: "http://localhost:8080/api/groceryLists/estimate-grocery-cost-live")!
+        )
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = jsonData
+
+        URLSession.shared.dataTask(with: request) { data, _, _ in
+            guard let data = data,
+                  let estimatedCost = try? JSONDecoder().decode(Double.self, from: data)
+            else {
+                DispatchQueue.main.async {
+                    errorMessage = "Unable to estimate price for '\(name)'."
+                    showError = true
+                }
+                return
+            }
+
+            DispatchQueue.main.async {
+                if let idx = items.firstIndex(where: { $0.id == itemID }) {
+                    items[idx].price = estimatedCost
+                }
+                //showGroceryAddedAlert = true
+                //recentlyAddedGroceryAmount = estimatedCost
+                //canUndoGroceryAddition = true
+            }
+        }.resume()
+    }
+
+
 
     func deleteItem(_ item: GroceryItem) {
         Task {
@@ -395,30 +449,45 @@ struct GroceryListDetailView: View {
     
     func estimateGroceryCostAndUpdateBudget() {
         let username = UserDefaults.standard.string(forKey: "loggedInUsername") ?? "UnknownUser"
-        let location = "Indiana" // Could be fetched from CoreLocation if available
+        //let location = "Indiana" // Could be fetched from CoreLocation if available
+        
+        let totalToAdd = items.reduce(0.0) { $0 + ($1.price ?? 0.0) }
 
-        let groceryItems = items.map { ["name": $0.name, "quantity": $0.quantity] }
 
-        let payload: [String: Any] = [
-            "location": location,
-            "items": groceryItems
-        ]
+        recentlyAddedGroceryAmount = totalToAdd
 
-        guard let jsonData = try? JSONSerialization.data(withJSONObject: payload) else { return }
 
-        var request = URLRequest(url: URL(string: "http://localhost:8080/api/groceryLists/estimate-grocery-cost")!)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = jsonData
+        addCostToWeeklyGroceries(username: username, amount: totalToAdd)
 
-        URLSession.shared.dataTask(with: request) { data, _, _ in
-            guard let data = data, let cost = try? JSONDecoder().decode(Double.self, from: data) else { return }
 
-            DispatchQueue.main.async {
-                recentlyAddedGroceryAmount = cost
-                addCostToWeeklyGroceries(username: username, amount: cost)
-            }
-        }.resume()
+        showGroceryAddedAlert = true
+        canUndoGroceryAddition = true
+
+//        let groceryItems = items.map { ["name": $0.name, "quantity": $0.quantity] }
+//
+//        let payload: [String: Any] = [
+//            "location": location,
+//            "items": groceryItems
+//        ]
+//
+//        guard let jsonData = try? JSONSerialization.data(withJSONObject: payload) else { return }
+//
+//        var request = URLRequest(url: URL(string: "http://localhost:8080/api/groceryLists/estimate-grocery-cost")!)
+//        request.httpMethod = "POST"
+//        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+//        request.httpBody = jsonData
+//
+//        URLSession.shared.dataTask(with: request) { data, _, _ in
+//            guard let data = data, let cost = try? JSONDecoder().decode(Double.self, from: data) else { return }
+//
+//            DispatchQueue.main.async {
+//                recentlyAddedGroceryAmount = cost
+//                addCostToWeeklyGroceries(username: username, amount: cost)
+//                
+//                showGroceryAddedAlert = true
+//                canUndoGroceryAddition = true
+//            }
+//        }.resume()
     }
 
     func addCostToWeeklyGroceries(username: String, amount: Double) {
@@ -543,6 +612,22 @@ struct GroceryListDetailView: View {
         
         return items_short
     }
+    
+    func fetchGroceryBudget() {
+        let username = UserDefaults.standard.string(forKey: "loggedInUsername") ?? "UnknownUser"
+        let url = URL(string: "http://localhost:8080/api/budget/\(username)/monthly/groceries")!
+
+        URLSession.shared.dataTask(with: url) { data, _, _ in
+            guard let data = data,
+                  let result = try? JSONSerialization.jsonObject(with: data) as? [String: Double],
+                  let budget = result["Groceries"] else { return }
+
+            DispatchQueue.main.async {
+                groceryBudget = budget
+            }
+        }.resume()
+    }
+
     
     private func generateMealFromList(groceryListItems: [(name: String, quantity: Int)]) {
         guard !groceryListItems.isEmpty else {

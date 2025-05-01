@@ -16,6 +16,8 @@ import io.github.cdimascio.dotenv.Dotenv;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import com.plotline.backend.dto.GroceryCostEstimateRequest;
+
 // For images
 //import com.openai.models.shared.Content;
 // import com.openai.models.shared.ImageUrl;
@@ -168,6 +170,54 @@ public class OpenAIService {
         return "Service Error";
       }
   }
+
+  // To esimate costs as soon as user adds groccery item to list
+  public double estimateGroceryCost(GroceryCostEstimateRequest req) throws Exception {
+    String location = req.getLocation() != null
+        ? req.getLocation()
+        : "United States";
+
+    StringBuilder userPrompt = new StringBuilder()
+        .append("Estimate the total cost in USD of buying the following groceries in ")
+        .append(location)
+        .append(".\n")
+        .append("Return only a single number rounded to 2 decimals, with no extra text.\n\n")
+        .append("Items:\n");
+
+    for (var item : req.getItems()) {
+        userPrompt
+            .append("- ")
+            .append(item.getQuantity())
+            .append(" x ")
+            .append(item.getName())
+            .append("\n");
+    }
+
+    ResponseCreateParams params = ResponseCreateParams.builder()
+        .model(ChatModel.GPT_4O_MINI)
+        .instructions("""
+            You are a helpful assistant. Respond with ONLY a single plain-text number
+            rounded to 2 decimals (e.g., 15.75) with no extra characters or formatting.
+            """)
+        .input(userPrompt.toString())
+        .build();
+
+    Response resp = openAIClient.responses().create(params);
+    ResponseOutputText rot = resp
+        .output()
+        .get(0)
+        .message()
+        .get()
+        .content()
+        .get(0)
+        .asOutputText();
+
+    String text = rot.text().trim();
+    // Strip any stray quotes or code fences
+    text = text.replaceAll("```", "").replaceAll("\"", "").trim();
+    return Double.parseDouble(text);
+}
+
 
   public String generateBudget(String userMessage) {
     try {
