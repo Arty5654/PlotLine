@@ -282,5 +282,40 @@ public class GroceryListController {
             return ResponseEntity.status(500).body("Error generating grocery list from meal: " + e.getMessage());
         }
     }
+
+    @PostMapping("/generate-meal-from-list")
+    public ResponseEntity<String> generateMealFromList(@RequestBody Map<String, Object> request) {
+        try {
+            if (request == null) {
+                System.out.println("Received a null request.");
+            }
+
+            // Extract the grocery items list and username from the request
+            List<Map<String, Object>> groceryItems = (List<Map<String, Object>>) request.get("items");
+            String username = (String) request.get("username");
+            String listId = (String) request.get("listId");
+
+            if (groceryItems == null || groceryItems.isEmpty()) {
+                return ResponseEntity.badRequest().body("Grocery items list is required");
+            }
+
+            if (username == null || username.trim().isEmpty()) {
+                return ResponseEntity.badRequest().body("Username is required");
+            }
+
+            // Fetch dietary restrictions for the user
+            DietaryRestrictions dietaryRestrictions = dietaryRestrictionsService.getDietaryRestrictions(username);
+
+            // Call OpenAIService to generate a meal suggestion from the grocery list
+            String mealRecipe = openAIService.generateMealFromGroceryList(username, listId, groceryItems, dietaryRestrictions);
+
+            // Return the generated meal recipe or any error messages
+            return ResponseEntity.ok(mealRecipe);
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.status(500).body("Error generating meal from list: " + e.getMessage());
+        }
+    }
 }
 
