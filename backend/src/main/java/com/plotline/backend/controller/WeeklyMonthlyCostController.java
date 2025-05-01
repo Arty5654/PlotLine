@@ -51,7 +51,8 @@ public class WeeklyMonthlyCostController {
 
             // Upload the file to S3 using S3Service
             //s3Service.uploadFile(key, inputStream, jsonData.length());
-            updateWeeklyCosts(request.getUsername(), request.getCosts());
+            //updateWeeklyCosts(request.getUsername(), request.getCosts());
+            overwriteCosts(request.getUsername(), request.getType(), request.getCosts());
 
             return ResponseEntity.ok("Weekly/Monthly costs saved successfully.");
         } catch (Exception e) {
@@ -198,6 +199,22 @@ public class WeeklyMonthlyCostController {
             e.printStackTrace();
         }
     }
+
+    private void overwriteCosts(String username, String type,
+                            Map<String, Double> newCosts) throws Exception {
+        Map<String, Object> data = Map.of(
+            "username", username,
+            "type",     type,
+            "costs",    newCosts
+        );
+
+        String key = "users/" + username + "/" + type + "_costs.json";
+        String json = new ObjectMapper().writeValueAsString(data);
+        s3Service.uploadFile(key,
+            new ByteArrayInputStream(json.getBytes(StandardCharsets.UTF_8)),
+            json.length());
+    }
+
 
 
 }
