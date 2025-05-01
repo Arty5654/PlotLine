@@ -161,44 +161,44 @@ public class WeeklyMonthlyCostController {
         }
     }
 
-    private void updateWeeklyCosts(String username, Map<String, Double> parsedCosts) {
-        try {
-            String type = "weekly";
-            String key = "users/" + username + "/" + type + "_costs.json";
+    // private void updateWeeklyCosts(String username, Map<String, Double> parsedCosts) {
+    //     try {
+    //         String type = "weekly";
+    //         String key = "users/" + username + "/" + type + "_costs.json";
     
-            // Step 1: Fetch existing weekly costs
-            Map<String, Object> currentData;
-            try {
-                byte[] fileData = s3Service.downloadFile(key);
-                String jsonData = new String(fileData, StandardCharsets.UTF_8);
-                currentData = new ObjectMapper().readValue(jsonData, new TypeReference<>() {});
-            } catch (Exception e) {
-                currentData = new HashMap<>();
-                currentData.put("username", username);
-                currentData.put("type", type);
-                currentData.put("costs", new HashMap<String, Double>());
-            }
+    //         // Step 1: Fetch existing weekly costs
+    //         Map<String, Object> currentData;
+    //         try {
+    //             byte[] fileData = s3Service.downloadFile(key);
+    //             String jsonData = new String(fileData, StandardCharsets.UTF_8);
+    //             currentData = new ObjectMapper().readValue(jsonData, new TypeReference<>() {});
+    //         } catch (Exception e) {
+    //             currentData = new HashMap<>();
+    //             currentData.put("username", username);
+    //             currentData.put("type", type);
+    //             currentData.put("costs", new HashMap<String, Double>());
+    //         }
     
-            // Step 2: Merge parsed costs into existing costs
-            Map<String, Double> existingCosts = new HashMap<>((Map<String, Double>) currentData.get("costs"));
+    //         // Step 2: Merge parsed costs into existing costs
+    //         Map<String, Double> existingCosts = new HashMap<>((Map<String, Double>) currentData.get("costs"));
     
-            for (Map.Entry<String, Double> entry : parsedCosts.entrySet()) {
-                String category = entry.getKey();
-                double newAmount = entry.getValue();
-                existingCosts.put(category, existingCosts.getOrDefault(category, 0.0) + newAmount);
-            }
+    //         for (Map.Entry<String, Double> entry : parsedCosts.entrySet()) {
+    //             String category = entry.getKey();
+    //             double newAmount = entry.getValue();
+    //             existingCosts.put(category, existingCosts.getOrDefault(category, 0.0) + newAmount);
+    //         }
     
-            // Step 3: Save merged version back to S3
-            currentData.put("costs", existingCosts);
-            String updatedJson = new ObjectMapper().writeValueAsString(currentData);
-            ByteArrayInputStream inputStream = new ByteArrayInputStream(updatedJson.getBytes(StandardCharsets.UTF_8));
-            s3Service.uploadFile(key, inputStream, updatedJson.length());
+    //         // Step 3: Save merged version back to S3
+    //         currentData.put("costs", existingCosts);
+    //         String updatedJson = new ObjectMapper().writeValueAsString(currentData);
+    //         ByteArrayInputStream inputStream = new ByteArrayInputStream(updatedJson.getBytes(StandardCharsets.UTF_8));
+    //         s3Service.uploadFile(key, inputStream, updatedJson.length());
     
-        } catch (Exception e) {
-            System.err.println("Error updating weekly costs: " + e.getMessage());
-            e.printStackTrace();
-        }
-    }
+    //     } catch (Exception e) {
+    //         System.err.println("Error updating weekly costs: " + e.getMessage());
+    //         e.printStackTrace();
+    //     }
+    // }
 
     private void overwriteCosts(String username, String type,
                             Map<String, Double> newCosts) throws Exception {
@@ -214,6 +214,64 @@ public class WeeklyMonthlyCostController {
             new ByteArrayInputStream(json.getBytes(StandardCharsets.UTF_8)),
             json.length());
     }
+
+
+    private void mergeCosts(String username,
+        String type,
+        Map<String, Double> delta) throws Exception {
+
+        String key = "users/" + username + "/" + type + "_costs.json";
+
+        // 1.  Load existing file (or create an empty shell)
+        Map<String,Object> data;
+        try {
+        byte[] raw = s3Service.downloadFile(key);
+        data = new ObjectMapper().readValue(raw, new TypeReference<>() {});
+        } catch (Exception e) {           // file doesn’t exist yet
+        data = new HashMap<>();
+        data.put("username", username);
+        data.put("type",     type);
+        data.put("costs",    new HashMap<String,Double>());
+        }
+
+        // 2.  Merge the delta
+        @SuppressWarnings("unchecked")
+        Map<String,Double> costs = (Map<String,Double>) data.get("costs");
+        for (var entry : delta.entrySet()) {
+        String  cat   = entry.getKey();
+        double  add   = entry.getValue();
+        costs.put(cat, costs.getOrDefault(cat, 0.0) + add);
+        }
+        data.put("costs", costs);               // (not strictly necessary)
+
+        // 3.  Save back to S3
+        String json = new ObjectMapper().writeValueAsString(data);
+        s3Service.uploadFile(
+        key,
+        new ByteArrayInputStream(json.getBytes(StandardCharsets.UTF_8)),
+        json.length()
+        );
+        }
+
+        /** Convenience wrapper kept for receipt-scanner code */
+        private void updateWeeklyCosts(String username, Map<String,Double> delta){
+        try { mergeCosts(username, "weekly", delta); }
+        catch (Exception e){                       // you can log if you like
+        System.err.println("merge error: "+e.getMessage());
+        }
+    }
+
+    @PostMapping("/merge")
+        public ResponseEntity<String> merge(@RequestBody WeeklyMonthlyCostRequest req){
+        try {
+        mergeCosts(req.getUsername(), req.getType(), req.getCosts());
+        return ResponseEntity.ok("Merged successfully");
+        } catch (Exception e){
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+        .body("Error merging: "+e.getMessage());
+        }
+    }
+
 
 
 
