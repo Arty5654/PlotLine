@@ -39,7 +39,6 @@ public class UserProfileService {
   private static final List<Trophy> DEFAULT_TROPHIES = List.of(
   //goals
 
-    // TODO
     new Trophy("long-term-goals", "Goal Crusher", "Complete long-term goals!", 
     0, 0, new int[]{1, 5, 10, 30}, ZonedDateTime.now(ZoneOffset.UTC).format(formatter)),
 

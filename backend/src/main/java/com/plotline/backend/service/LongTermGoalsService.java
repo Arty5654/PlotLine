@@ -176,6 +176,8 @@ public class LongTermGoalsService {
               msg.setCreator(username);
               msg.setContent("Has completed the long-term goal \"" + goalName + "\"!");
               chatMessageService.postMessage(username, msg);
+
+              userProfileService.incrementTrophy(username, "long-term-goals", 1);
           }
           break;
         }
