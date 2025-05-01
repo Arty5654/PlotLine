@@ -13,7 +13,6 @@ import com.plotline.backend.dto.DietaryRestrictions;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import io.github.cdimascio.dotenv.Dotenv;
-
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -31,7 +30,10 @@ public class OpenAIService {
   private final ObjectMapper objectMapper = new ObjectMapper();
 
   @Autowired
-    private DietaryRestrictionsService dietaryRestrictionsService;
+  private DietaryRestrictionsService dietaryRestrictionsService;
+
+  @Autowired
+  private MealService mealService;
 
   public OpenAIService() {
 
@@ -303,6 +305,103 @@ public class OpenAIService {
     } catch (Exception e) {
         e.printStackTrace();
         throw new Exception("Failed to generate grocery list: " + e.getMessage(), e);
+    }
+  }
+
+  // Function to generate meal from the list of grocery items (tuples)
+  public String generateMealFromGroceryList(String username, String listID, List<Map<String, Object>> groceryItems, DietaryRestrictions dietaryRestrictions) {
+    try {
+        // Build the grocery items string for OpenAI
+        StringBuilder groceryListString = new StringBuilder("Based on the following grocery items, suggest a meal and provide a recipe:\n");
+        for (Map<String, Object> itemMap : groceryItems) {
+            String name = (String) itemMap.get("name");
+            Integer quantity = (Integer) itemMap.get("quantity");
+            groceryListString.append(name).append(" - ").append(quantity).append("\n");
+        }
+
+        // Build dietary restrictions string for OpenAI (if any)
+        StringBuilder dietaryInfo = new StringBuilder();
+        boolean hasRestrictions = false;
+
+        if (dietaryRestrictions != null) {
+            if (dietaryRestrictions.isVegan()) {
+                dietaryInfo.append("- Vegan: No animal products including meat, dairy, eggs, honey\n");
+                hasRestrictions = true;
+            } else if (dietaryRestrictions.isVegetarian()) {
+                dietaryInfo.append("- Vegetarian: No meat, fish, or poultry\n");
+                hasRestrictions = true;
+            }
+
+            if (dietaryRestrictions.isLactoseIntolerant() || dietaryRestrictions.isDairyFree()) {
+                dietaryInfo.append("- No dairy products\n");
+                hasRestrictions = true;
+            }
+
+            if (dietaryRestrictions.isGlutenFree()) {
+                dietaryInfo.append("- Gluten-free: No wheat, barley, rye\n");
+                hasRestrictions = true;
+            }
+
+            if (dietaryRestrictions.isKosher()) {
+                dietaryInfo.append("- Kosher: No pork, shellfish, meat and dairy together\n");
+                hasRestrictions = true;
+            }
+
+            if (dietaryRestrictions.isNutFree()) {
+                dietaryInfo.append("- No nuts\n");
+                hasRestrictions = true;
+            }
+        }
+
+        String dietaryPrefix = hasRestrictions ?
+                "User has the following dietary restrictions:\n" + dietaryInfo.toString() :
+                "User has no specific dietary restrictions.";
+
+        String systemMessage = """
+            You are a helpful assistant that can suggest meals based on available ingredients and dietary restrictions.
+
+            %s
+
+            Please suggest a meal using these ingredients and provide a recipe that can be made with them, while considering the dietary restrictions provided.
+
+            Return the meal details in the following JSON format:
+
+            {
+                "mealName": "Meal Name",
+                "ingredients": ["ingredient1", "ingredient2", ...],
+                "recipe": [
+                    "Step 1: ...",
+                    "Step 2: ..."
+                ],
+                "optionalToppings": ["topping1", "topping2", ...]
+            }
+
+            Respond with only the JSON with no additional text, explanation, or formatting.
+        """.formatted(dietaryPrefix + "\n" + groceryListString.toString());
+
+        ResponseCreateParams params = ResponseCreateParams.builder()
+                .input(systemMessage)
+                .instructions(systemMessage)
+                .model(ChatModel.GPT_4O_MINI)
+                .build();
+
+        // Call OpenAI to get a meal suggestion and recipe
+        Response response = openAIClient.responses().create(params);
+
+        // Get the response text from OpenAI
+        ResponseOutputText rot = response.output().get(0).message().get().content().get(0).asOutputText();
+        String mealRecipe = rot.text();
+
+        mealService.createMeal(username, listID, mealRecipe, groceryItems);
+
+        return mealRecipe;
+
+    } catch (OpenAIException e) {
+        e.printStackTrace();
+        return "{\"incompatible\": true, \"reason\": \"Service Error: Unable to process the meal request\"}";
+    } catch (Exception e) {
+        e.printStackTrace();
+        return "{\"incompatible\": true, \"reason\": \"Service Error: " + e.getMessage() + "\"}";
     }
   }
 }

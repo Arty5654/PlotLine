@@ -497,52 +497,6 @@ public class GroceryListService {
         }
     }
 
-    // public String generateGroceryListFromMeal(String mealName, String username, String rawOpenAIResponse) throws Exception {
-    //     // Parse the raw JSON response from OpenAI
-    //     ObjectMapper mapper = new ObjectMapper();
-    //     List<GroceryItem> items = new ArrayList<>();
-    //     JsonNode array = mapper.readTree(rawOpenAIResponse);
-
-    //     // Generate a UUID for the list
-    //     String listId = UUID.randomUUID().toString().toUpperCase();
-
-    //     // Create all items first
-    //     for (JsonNode node : array) {
-    //         GroceryItem item = new GroceryItem();
-    //         item.setListId(listId);
-    //         item.setId(UUID.randomUUID().toString().toUpperCase());
-    //         item.setName(node.get("name").asText());
-    //         item.setQuantity(node.get("quantity").asInt());
-    //         item.setChecked(false);
-    //         item.setPrice(0.0);
-    //         item.setStore("");
-
-    //         // Check if the node has notes and set them if available
-    //         if (node.has("notes")) {
-    //             item.setNotes(node.get("notes").asText());
-    //         } else {
-    //             item.setNotes("");
-    //         }
-
-    //         items.add(item);
-    //     }
-
-    //     // Create a new grocery list with all items included
-    //     GroceryList list = new GroceryList();
-    //     list.setId(listId);
-    //     list.setUsername(username);
-    //     list.setName("Ingredients for " + mealName);
-    //     list.setItems(items); // Set all items before saving
-    //     list.setAI(true);
-    //     list.setCreatedAt(String.valueOf(System.currentTimeMillis()));
-    //     list.setUpdatedAt(String.valueOf(System.currentTimeMillis()));
-
-    //     // Save the complete list with all items
-    //     String savedListId = createGroceryList(list, username);
-
-    //     return savedListId;
-    // }
-
     public String generateGroceryListFromMeal(String mealName, String username, String rawOpenAIResponse) throws Exception {
         // Parse the raw JSON response from OpenAI
         ObjectMapper mapper = new ObjectMapper();

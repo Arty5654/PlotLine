@@ -10,6 +10,8 @@ public class GroceryList {
     private String updatedAt;               // Date when the list was last updated
     private boolean isAI = false;           // Whether the list was AI-generated or not
     private List<GroceryItem> items;        // List of grocery items in the list
+    private String mealID;                 // ID of the meal associated with the grocery list
+    private String mealName;               // Name of the meal associated with the grocery list
 
     // Default constructor
     public GroceryList() {}
@@ -69,5 +71,21 @@ public class GroceryList {
 
     public void setItems(List<GroceryItem> items) {
         this.items = items;
+    }
+
+    public String getMealID() {
+        return mealID;
+    }
+
+    public void setMealID(String mealID) {
+        this.mealID = mealID;
+    }
+
+    public String getMealName() {
+        return mealName;
+    }
+
+    public void setMealName(String mealName) {
+        this.mealName = mealName;
     }
 }
