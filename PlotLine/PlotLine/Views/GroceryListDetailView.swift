@@ -37,6 +37,16 @@ struct GroceryListDetailView: View {
     
     @State private var groceryBudget: Double? = nil
     
+    @AppStorage private var savedEstimate: Double
+    init(groceryList: GroceryList) {
+       self.groceryList = groceryList
+       // now we can interpolate the key
+       _savedEstimate = AppStorage(
+         wrappedValue: 0,
+         "estimate-\(groceryList.id.uuidString)"
+       )
+     }
+    
     // Calculate item text based on totalItems
     private var itemText: String {
         return totalItems == 1 ? "Item" : "Items"
@@ -296,14 +306,14 @@ struct GroceryListDetailView: View {
             "items": [["name": name, "quantity": quantity]]
         ]
         guard let jsonData = try? JSONSerialization.data(withJSONObject: payload) else { return }
-
+        
         var request = URLRequest(
             url: URL(string: "http://localhost:8080/api/groceryLists/estimate-grocery-cost-live")!
         )
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = jsonData
-
+        
         URLSession.shared.dataTask(with: request) { data, _, _ in
             guard let data = data,
                   let estimatedCost = try? JSONDecoder().decode(Double.self, from: data)
@@ -314,17 +324,18 @@ struct GroceryListDetailView: View {
                 }
                 return
             }
-
+            
             DispatchQueue.main.async {
                 if let idx = items.firstIndex(where: { $0.id == itemID }) {
                     items[idx].price = estimatedCost
+                    savedEstimate = items.reduce(0.0){ $0 + ($1.price ?? 0.0) }
                 }
-                //showGroceryAddedAlert = true
-                //recentlyAddedGroceryAmount = estimatedCost
-                //canUndoGroceryAddition = true
-            }
-        }.resume()
-    }
+                    //showGroceryAddedAlert = true
+                    //recentlyAddedGroceryAmount = estimatedCost
+                    //canUndoGroceryAddition = true
+                }
+            }.resume()
+        }
 
 
 
@@ -451,18 +462,19 @@ struct GroceryListDetailView: View {
         let username = UserDefaults.standard.string(forKey: "loggedInUsername") ?? "UnknownUser"
         //let location = "Indiana" // Could be fetched from CoreLocation if available
         
-        let totalToAdd = items.reduce(0.0) { $0 + ($1.price ?? 0.0) }
+        let totalToAdd = items.reduce(0.0) { partial, item in
+                partial + (item.price ?? 0.0)
+            }
 
+            // 2) remember it so undo works
+            recentlyAddedGroceryAmount = totalToAdd
 
-        recentlyAddedGroceryAmount = totalToAdd
+            // 3) push just that delta up to your weekly-costs endpoint
+            addCostToWeeklyGroceries(username: username, amount: totalToAdd)
 
-
-        addCostToWeeklyGroceries(username: username, amount: totalToAdd)
-
-
-        showGroceryAddedAlert = true
-        canUndoGroceryAddition = true
-
+            // 4) fire your “Done Shopping” alert exactly once
+            showGroceryAddedAlert = true
+            canUndoGroceryAddition = true
 //        let groceryItems = items.map { ["name": $0.name, "quantity": $0.quantity] }
 //
 //        let payload: [String: Any] = [
