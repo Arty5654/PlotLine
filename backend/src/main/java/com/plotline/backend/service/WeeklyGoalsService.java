@@ -302,4 +302,64 @@ public class WeeklyGoalsService {
     }
   }
 
+  public Map<String, Double> getWeeklyCosts(String username) {
+    try {
+      String key = "users/" + username + "/weekly_costs.json";
+      GetObjectRequest request = GetObjectRequest.builder()
+          .bucket(bucketName)
+          .key(key)
+          .build();
+
+      ResponseBytes<GetObjectResponse> objectBytes = s3Client.getObjectAsBytes(request);
+      String jsonData = new String(objectBytes.asByteArray(), StandardCharsets.UTF_8);
+
+      ObjectMapper objectMapper = new ObjectMapper();
+      Map<String, Object> rawData = objectMapper.readValue(jsonData, new TypeReference<>() {
+      });
+      Map<String, Double> costs = (Map<String, Double>) rawData.get("costs");
+
+      return costs;
+    } catch (Exception e) {
+      e.printStackTrace();
+      throw new RuntimeException("Failed to fetch weekly costs", e);
+    }
+  }
+
+  public Map<String, Double> getWeeklyBudget(String username) {
+    try {
+      String key = "users/" + username + "/weekly-budget-edited.json";
+      GetObjectRequest request = GetObjectRequest.builder()
+          .bucket(bucketName)
+          .key(key)
+          .build();
+
+      ResponseBytes<GetObjectResponse> objectBytes = s3Client.getObjectAsBytes(request);
+      String jsonData = new String(objectBytes.asByteArray(), StandardCharsets.UTF_8);
+
+      ObjectMapper objectMapper = new ObjectMapper();
+      Map<String, Object> rawData = objectMapper.readValue(jsonData, new TypeReference<>() {
+      });
+      Map<String, Double> budget = (Map<String, Double>) rawData.get("budget");
+
+      return budget;
+    } catch (Exception e) {
+      e.printStackTrace();
+      throw new RuntimeException("Failed to fetch weekly budget", e);
+    }
+  }
+
+  public Map<String, Double> getFinancialSummary(String username) {
+    Map<String, Double> costs = getWeeklyCosts(username);
+    Map<String, Double> budget = getWeeklyBudget(username);
+
+    double totalCosts = costs.values().stream().mapToDouble(Double::doubleValue).sum();
+    double totalBudget = budget.values().stream().mapToDouble(Double::doubleValue).sum();
+
+    Map<String, Double> summary = new HashMap<>();
+    summary.put("totalCosts", totalCosts);
+    summary.put("totalBudget", totalBudget);
+
+    return summary;
+  }
+
 }
