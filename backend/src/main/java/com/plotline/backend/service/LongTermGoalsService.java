@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.plotline.backend.dto.ChatMessage;
 import com.plotline.backend.dto.LongTermGoal;
 import com.plotline.backend.dto.LongTermStep;
 
@@ -33,8 +34,11 @@ public class LongTermGoalsService {
   private final S3Client s3Client;
   private final String bucketName = "plotline-database-bucket";
   private final UserProfileService userProfileService;
+  private final ChatMessageService chatMessageService;
 
-  public LongTermGoalsService(UserProfileService userProfileService) {
+  public LongTermGoalsService(UserProfileService userProfileService, 
+                              ChatMessageService chatMessageService) {
+    this.chatMessageService = chatMessageService;
     Dotenv dotenv = Dotenv.load();
     String accessKey = dotenv.get("AWS_ACCESS_KEY_ID");
     String secretKey = dotenv.get("AWS_SECRET_ACCESS_KEY");
@@ -153,11 +157,25 @@ public class LongTermGoalsService {
 
       for (LongTermGoal goal : longTermGoals) {
         if (goal.getId().equals(goalId)) {
+
+
           for (LongTermStep step : goal.getSteps()) {
             if (step.getId().equals(stepId)) {
               step.setCompleted(isCompleted);
               break;
             }
+          }
+
+          // post to chat if all steps are completed
+          boolean allCompleted = goal.getSteps().stream()
+          .allMatch(LongTermStep::isCompleted);
+          if (allCompleted) {
+              String goalName = goal.getTitle();
+
+              ChatMessage msg = new ChatMessage();
+              msg.setCreator(username);
+              msg.setContent("Has completed the long-term goal \"" + goalName + "\"!");
+              chatMessageService.postMessage(username, msg);
           }
           break;
         }

@@ -2,6 +2,7 @@ package com.plotline.backend.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.plotline.backend.dto.ChatMessage;
 import com.plotline.backend.dto.TaskItem;
 
 import org.springframework.stereotype.Service;
@@ -26,8 +27,10 @@ public class WeeklyGoalsService {
   private final S3Client s3Client;
   private final String bucketName = "plotline-database-bucket";
   private final UserProfileService userProfileService;
+  private final ChatMessageService chatMessageService;
 
-  public WeeklyGoalsService(UserProfileService userProfileService) {
+  public WeeklyGoalsService(UserProfileService userProfileService, ChatMessageService chatMessageService) {
+    this.chatMessageService = chatMessageService;
     Dotenv dotenv = Dotenv.load();
     String accessKey = dotenv.get("AWS_ACCESS_KEY_ID");
     String secretKey = dotenv.get("AWS_SECRET_ACCESS_KEY");
@@ -284,6 +287,18 @@ public class WeeklyGoalsService {
 
       goalsData.put("weeklyGoals", updatedGoals);
       String updatedJson = objectMapper.writeValueAsString(goalsData);
+
+      for (TaskItem task : goalsData.get("weeklyGoals")) {
+          if (task.getId() == taskId) {
+              // post to chat when goal is completed
+              if (isCompleted) {
+                  ChatMessage msg = new ChatMessage();
+                  msg.setCreator(username);
+                  msg.setContent("Has completed \"" + task.getName() + "\" from their weekly goals!");
+                  chatMessageService.postMessage(username, msg);
+              }
+          }
+      }
 
       PutObjectRequest putObjectRequest = PutObjectRequest.builder()
           .bucket(bucketName)
