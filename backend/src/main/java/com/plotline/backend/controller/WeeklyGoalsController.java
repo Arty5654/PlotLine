@@ -209,4 +209,16 @@ public class WeeklyGoalsController {
     return success ? ResponseEntity.ok("Comment added.") : ResponseEntity.status(500).body("Error.");
   }
 
+  /* Financial Goal */
+
+  @GetMapping("/{username}/financial-data")
+  public ResponseEntity<Map<String, Double>> getFinancialData(@PathVariable String username) {
+    try {
+      Map<String, Double> summary = weeklyGoalsService.getFinancialSummary(username);
+      return ResponseEntity.ok(summary);
+    } catch (Exception e) {
+      return ResponseEntity.status(500).body(Map.of("error", -1.0));
+    }
+  }
+
 }

@@ -33,10 +33,16 @@ struct TaskItem: Identifiable, Codable {
     var notificationsEnabled: Bool
     var notificationType: String?
     var notificationTime: Date?
+    
+    var isFinancialGoal: Bool = false
+    var progress: Double? = nil // 0.0 to 1.0 (optional)
+    var totalBudget: Double? = nil
+    var totalCosts: Double? = nil
 
     enum CodingKeys: String, CodingKey {
         case id, name, priority, isEditing, dueDate, notificationsEnabled, notificationType, notificationTime
         case isCompleted = "completed"
+        case isFinancialGoal, progress, totalBudget, totalCosts
     }
 
     init(from decoder: Decoder) throws {
@@ -51,6 +57,10 @@ struct TaskItem: Identifiable, Codable {
         notificationsEnabled = (try? container.decode(Bool.self, forKey: .notificationsEnabled)) ?? false
         notificationType = try? container.decode(String.self, forKey: .notificationType)
         notificationTime = try? container.decode(Date.self, forKey: .notificationTime)
+        isFinancialGoal = (try? container.decode(Bool.self, forKey: .isFinancialGoal)) ?? false
+        progress = try? container.decode(Double.self, forKey: .progress)
+        totalBudget = try? container.decode(Double.self, forKey: .totalBudget)
+        totalCosts = try? container.decode(Double.self, forKey: .totalCosts)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -65,6 +75,10 @@ struct TaskItem: Identifiable, Codable {
         try container.encode(notificationsEnabled, forKey: .notificationsEnabled)
         try? container.encode(notificationType, forKey: .notificationType)
         try? container.encode(notificationTime, forKey: .notificationTime)
+        try container.encode(isFinancialGoal, forKey: .isFinancialGoal)
+        try? container.encode(progress, forKey: .progress)
+        try? container.encode(totalBudget, forKey: .totalBudget)
+        try? container.encode(totalCosts, forKey: .totalCosts)
     }
 
     init(
@@ -76,7 +90,11 @@ struct TaskItem: Identifiable, Codable {
         dueDate: Date? = nil,
         notificationsEnabled: Bool = false,
         notificationType: String? = nil,
-        notificationTime: Date? = nil
+        notificationTime: Date? = nil,
+        isFinancialGoal: Bool = false,
+        progress: Double? = nil,
+        totalBudget: Double? = nil,
+        totalCosts: Double? = nil
     ) {
         self.id = id
         self.name = name
@@ -87,8 +105,14 @@ struct TaskItem: Identifiable, Codable {
         self.notificationsEnabled = notificationsEnabled
         self.notificationType = notificationType
         self.notificationTime = notificationTime
+        self.isFinancialGoal = isFinancialGoal
+        self.progress = progress
+        self.totalBudget = totalBudget
+        self.totalCosts = totalCosts
     }
 }
+
+
 
 struct LongTermGoal: Identifiable, Codable {
     let id: UUID
@@ -115,4 +139,21 @@ struct LongTermGoalsResponse: Codable {
 
 struct GoalsResponse: Codable {
     let weeklyGoals: [TaskItem]
+}
+
+struct WeeklyCosts: Codable {
+    let username: String
+    let type: String
+    let costs: [String: Double]
+}
+
+struct WeeklyBudget: Codable {
+    let username: String
+    let type: String
+    let budget: [String: Double]
+}
+
+struct FinancialSummary: Codable {
+    let totalCosts: Double
+    let totalBudget: Double
 }
