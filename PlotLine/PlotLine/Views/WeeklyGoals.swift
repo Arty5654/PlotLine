@@ -21,7 +21,28 @@ struct WeeklyGoalsView: View {
     let fetchGoals: () -> Void
 
     @State private var isFinancialGoalDeleted = false
+    
+    // Goal title suggestion variables and data objects
+    @State private var showingGroceryAlert = false
+    @State private var showingHealthAlert = false
+    @State private var showHealthRemindersView = false
+    @State private var showingGroceryActionAlert = false
+    @State private var groceryAlertTitle = ""
+    @State private var groceryAlertMessage = ""
+    @State private var taskNameForGrocList = ""
+    @State private var isGeneratingGroceryList = false
+    
+    private let groceryKeywords = [
+        "eat", "healthy", "vegetarian", "vegan", "protein", "meal", "diet",
+        "nutrition", "food", "cook", "grocery", "ingredients", "recipe",
+        "shopping", "organic", "produce", "fruit", "vegetable", "meat"
+    ]
 
+    private let healthKeywords = [
+        "mood", "water", "sleep", "exercise", "meditation", "mental health",
+        "workout", "wellness", "fitness", "hydrate", "rest", "mindfulness",
+        "anxiety", "stress", "relaxation", "therapy", "breathing"
+    ]
     
     var body: some View {
         NavigationView {
@@ -114,6 +135,54 @@ struct WeeklyGoalsView: View {
                 .background(Color(.systemGray6))
                 .cornerRadius(12)
                 .padding(.horizontal)
+                .alert("Create a Grocery List?", isPresented: $showingGroceryAlert) {
+                        Button("Cancel") { }
+                        Button("Create") {
+                            // Create grocery list/meal plan
+                            createGroceryListFromGoal()
+                        }
+                    } message: {
+                        Text("We noticed your goal contains food-related keywords. Would you like to create a grocery list of healthy foods?")
+                    }
+                    .alert("Set Up Health Reminders?", isPresented: $showingHealthAlert) {
+                        Button("Cancel") { }
+                        Button("Create") {
+                            // Create health goal with reminders
+                            showHealthRemindersView = true
+                        }
+                    } message: {
+                        Text("We noticed your goal contains health-related keywords. Would you like to set up recurring reminders to help you stay on track?")
+                    }
+                    .alert(groceryAlertTitle, isPresented: $showingGroceryActionAlert) {
+                        Button("OK") { }
+                    } message: {
+                        Text(groceryAlertMessage)
+                    }
+                    .sheet(isPresented: $showHealthRemindersView) {
+                        HealthReminderView()
+                    }
+                    .overlay(
+                        isGeneratingGroceryList ?
+                            ZStack {
+                                Color.black.opacity(0.4)
+                                    .edgesIgnoringSafeArea(.all)
+                                
+                                VStack {
+                                    ProgressView()
+                                        .scaleEffect(1.5)
+                                        .padding()
+                                    
+                                    Text("Creating your grocery list...")
+                                        .foregroundColor(.white)
+                                        .bold()
+                                }
+                                .padding()
+                                .background(Color(.systemBackground).opacity(0.8))
+                                .cornerRadius(12)
+                                .shadow(radius: 10)
+                            }
+                            : nil
+                    )
                     
                 let filteredTasks = tasks
                     .filter { selectedPriorityFilter == nil || $0.priority == selectedPriorityFilter }
@@ -231,6 +300,7 @@ struct WeeklyGoalsView: View {
                     .onDelete(perform: deleteTask)
                 }
                 .listStyle(PlainListStyle())
+                
                     
                 // Reset Button
                 Button(action: resetGoals) {
@@ -314,6 +384,18 @@ struct WeeklyGoalsView: View {
     
     private func addTask() {
         guard !newTask.isEmpty else { return }
+        
+        // for potential grocery list creation
+        let taskName = newTask
+        
+        let (hasGroceryKeywords, hasHealthKeywords) = detectKeywords(in: newTask)
+        
+        if hasGroceryKeywords {
+            self.taskNameForGrocList = taskName
+            showingGroceryAlert = true
+        } else if hasHealthKeywords {
+            showingHealthAlert = true
+        }
         
         let newTaskItem = TaskItem(
             id: Int.random(in: 1000...9999),
@@ -595,6 +677,20 @@ struct WeeklyGoalsView: View {
         }
     }
     
+    // Goal title suggestion functions
+    private func detectKeywords(in text: String) -> (hasGroceryKeywords: Bool, hasHealthKeywords: Bool) {
+        let lowercasedText = text.lowercased()
+        
+        let hasGroceryKeywords = groceryKeywords.contains { keyword in
+            lowercasedText.contains(keyword)
+        }
+        
+        let hasHealthKeywords = healthKeywords.contains { keyword in
+            lowercasedText.contains(keyword)
+        }
+        
+        return (hasGroceryKeywords, hasHealthKeywords)
+    }
     private func addFinancialGoal() {
         fetchFinancialSummary { summary in
             guard let summary = summary else {
@@ -743,10 +839,42 @@ struct WeeklyGoalsView: View {
         }
     }
 
+    private func createGroceryListFromGoal() {
+        isGeneratingGroceryList = true
+        
+        Task {
+            do {
+                let groceryList = try await GroceryListAPI.generateGroceryListFromGoal(goalTitle: taskNameForGrocList)
+                
+                // Use the returned grocery items
+                DispatchQueue.main.async {
+                    isGeneratingGroceryList = false
+                    
+                    // Example: Show a success confirmation to the user
+                    showSuccess("Grocery List Created", "Your grocery list \(groceryList) has been created.")
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    isGeneratingGroceryList = false
+                    
+                    // Show an error message to the user
+                    showError("Creation Failed", "Could not create grocery list: \(error.localizedDescription)")
+                }
+            }
+        }
+    }
 
+    private func showSuccess(_ title: String, _ message: String) {
+        groceryAlertTitle = title
+        groceryAlertMessage = message
+        showingGroceryActionAlert = true
+    }
 
-
-    
+    private func showError(_ title: String, _ message: String) {
+        groceryAlertTitle = title
+        groceryAlertMessage = message
+        showingGroceryActionAlert = true
+    }
 }
 
 

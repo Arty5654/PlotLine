@@ -426,5 +426,70 @@ struct GroceryListAPI {
             throw error
         }
     }
-
+    
+    static func generateGroceryListFromGoal(goalTitle: String) async throws -> String {
+        guard let username = UserDefaults.standard.string(forKey: "loggedInUsername") else {
+            throw URLError(.userAuthenticationRequired)
+        }
+        
+        let url = URL(string: "\(baseURL)/generate-list-from-goal")!
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        // Create the request body with the goal title and username
+        let requestBody: [String: String] = [
+            "goal": goalTitle,
+            "username": username
+        ]
+        
+        // Serialize the request body to JSON
+        do {
+            let jsonData = try JSONSerialization.data(withJSONObject: requestBody)
+            request.httpBody = jsonData
+        } catch {
+            throw error
+        }
+        
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            
+            // Check for a successful response
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw URLError(.badServerResponse)
+            }
+            
+            // Always log the response body for debugging
+            let responseString = String(data: data, encoding: .utf8) ?? "No response body"
+            
+            if !(200...299).contains(httpResponse.statusCode) {
+                throw URLError(.badServerResponse)
+            }
+            
+            // Extract title from response
+            do {
+                // Parse the outer JSON to get the data field
+                guard let responseData = responseString.data(using: .utf8),
+                      let jsonResponse = try JSONSerialization.jsonObject(with: responseData) as? [String: Any],
+                      let dataJsonString = jsonResponse["data"] as? String else {
+                    return "Grocery List"
+                }
+                
+                // Parse the inner JSON (data field) to get the title
+                guard let dataJsonData = dataJsonString.data(using: .utf8),
+                      let dataJson = try JSONSerialization.jsonObject(with: dataJsonData) as? [String: Any],
+                      let title = dataJson["title"] as? String else {
+                    return "Grocery List"
+                }
+                
+                return title
+            } catch {
+                return "Grocery List" // Fallback title
+            }
+            
+        } catch {
+            throw error
+        }
+    }
 }
