@@ -542,7 +542,7 @@ public class GroceryListService {
         GroceryList list = new GroceryList();
         list.setId(listId);
         list.setUsername(username);
-        list.setName("Ingredients for " + mealName);
+        list.setName(mealName);
         list.setItems(items);  // Set all items before saving
         list.setAI(true);
         

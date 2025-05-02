@@ -454,4 +454,104 @@ public class OpenAIService {
         return "{\"incompatible\": true, \"reason\": \"Service Error: " + e.getMessage() + "\"}";
     }
   }
+
+    public String generateGroceryListFromGoal(String goal, String username) {
+        try {
+            // Get the user's dietary restrictions
+            DietaryRestrictions dietaryRestrictions = null;
+            try {
+                dietaryRestrictions = dietaryRestrictionsService.getDietaryRestrictions(username);
+            } catch (Exception e) {
+                // If we can't get dietary restrictions, create default ones (all false)
+                dietaryRestrictions = new DietaryRestrictions();
+                dietaryRestrictions.setUsername(username);
+            }
+
+            // Build dietary restrictions string for the prompt
+            StringBuilder dietaryInfo = new StringBuilder();
+            boolean hasRestrictions = false;
+
+            if (dietaryRestrictions != null) {
+                if (dietaryRestrictions.isVegan()) {
+                    dietaryInfo.append("- Vegan: No animal products including meat, dairy, eggs, honey\n");
+                    hasRestrictions = true;
+                } else if (dietaryRestrictions.isVegetarian()) {
+                    dietaryInfo.append("- Vegetarian: No meat, fish, or poultry\n");
+                    hasRestrictions = true;
+                }
+
+                if (dietaryRestrictions.isLactoseIntolerant() || dietaryRestrictions.isDairyFree()) {
+                    dietaryInfo.append("- No dairy products\n");
+                    hasRestrictions = true;
+                }
+
+                if (dietaryRestrictions.isGlutenFree()) {
+                    dietaryInfo.append("- Gluten-free: No wheat, barley, rye\n");
+                    hasRestrictions = true;
+                }
+
+                if (dietaryRestrictions.isKosher()) {
+                    dietaryInfo.append("- Kosher: No pork, shellfish, meat and dairy together\n");
+                    hasRestrictions = true;
+                }
+
+                if (dietaryRestrictions.isNutFree()) {
+                    dietaryInfo.append("- No nuts\n");
+                    hasRestrictions = true;
+                }
+            }
+
+            String dietaryPrefix = hasRestrictions ?
+                "User has the following dietary restrictions:\n" + dietaryInfo.toString() :
+                "User has no specific dietary restrictions.";
+
+            // Create the prompt for OpenAI
+            String systemMessage = """
+                You are a smart health and nutrition assistant that helps users create grocery lists based on their health goals.
+
+                %s
+
+                The user has a health goal: "%s"
+
+                Based on this goal, suggest a healthy meal that aligns with this goal and create a grocery list for it.
+                For example, if the goal mentions "protein", create a high-protein meal grocery list.
+
+                The grocery list should be titled "Ingredients for [MEAL NAME]" where [MEAL NAME] is a descriptive name for the suggested meal.
+
+                Respond with a JSON object in this format:
+                {
+                    "title": "Ingredients for [MEAL NAME]",
+                    "items": [
+                        {"name": "Item name", "quantity": 1, "notes": "Optional measurement or instructions"},
+                        {"name": "Another item", "quantity": 2, "notes": "1 pound"}
+                    ]
+                }
+
+                Ensure all grocery item quantities are natural numbers greater than 0 (e.g., 1, 2, 3, etc.).
+                Ensure all grocery items are in proper case, and provide useful notes.
+                Respond with ONLY the JSON with no additional text, explanation, or formatting.
+                """.formatted(dietaryPrefix, goal);
+
+            ResponseCreateParams params = ResponseCreateParams.builder()
+                .input(goal)
+                .instructions(systemMessage)
+                .model(ChatModel.GPT_4O_MINI)
+                .build();
+
+            Response response = openAIClient.responses().create(params);
+
+            // Get response as text
+            ResponseOutputText rot = response.output().get(0).message().get().content().get(0).asOutputText();
+
+            // Return the raw JSON response
+            return rot.text();
+
+        } catch (OpenAIException e) {
+            e.printStackTrace();
+            return "{\"error\": true, \"message\": \"Service Error: Unable to generate grocery list from goal\"}";
+        } catch (Exception e) {
+            e.printStackTrace();
+            return "{\"error\": true, \"message\": \"Service Error: " + e.getMessage() + "\"}";
+        }
+    }
 }

@@ -331,5 +331,48 @@ public class GroceryListController {
                 .body(-1.0);
         }
     }
+
+    @PostMapping("/generate-list-from-goal")
+    public ResponseEntity<String> generateListFromGoal(@RequestBody Map<String, String> request) {
+        try {
+            String goal = request.get("goal");
+            String username = request.get("username");
+
+            if (goal == null || goal.trim().isEmpty()) {
+                return ResponseEntity.badRequest().body("{\"error\": \"Goal is required\"}");
+            }
+
+            if (username == null || username.trim().isEmpty()) {
+                return ResponseEntity.badRequest().body("{\"error\": \"Username is required\"}");
+            }
+
+            // Call OpenAIService to generate a grocery list based on the goal
+            String groceryListJson = openAIService.generateGroceryListFromGoal(goal, username);
+
+            // Parse the title from the JSON response to use as list name
+            ObjectMapper mapper = new ObjectMapper();
+            JsonNode rootNode = mapper.readTree(groceryListJson);
+            String listTitle = rootNode.has("title") ? rootNode.get("title").asText() : "Grocery List for " + goal;
+            
+            // Extract items array
+            JsonNode itemsNode = rootNode.get("items");
+            if (itemsNode == null || !itemsNode.isArray()) {
+                return ResponseEntity.status(500).body("Invalid response format: missing items array");
+            }
+            
+            // Generate the grocery list and save it to S3
+            String listId = groceryListService.generateGroceryListFromMeal(listTitle, username, mapper.writeValueAsString(itemsNode));
+            
+            // Return the list ID and the full JSON response
+            Map<String, String> response = new HashMap<>();
+            response.put("listId", listId);
+            response.put("data", groceryListJson);
+            
+            return ResponseEntity.ok(mapper.writeValueAsString(response));
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.status(500).body("Error generating grocery list from goal: " + e.getMessage());
+        }
+    }
 }
 

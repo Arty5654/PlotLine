@@ -26,6 +26,11 @@ struct WeeklyGoalsView: View {
     @State private var showingGroceryAlert = false
     @State private var showingHealthAlert = false
     @State private var showHealthRemindersView = false
+    @State private var showingGroceryActionAlert = false
+    @State private var groceryAlertTitle = ""
+    @State private var groceryAlertMessage = ""
+    @State private var taskNameForGrocList = ""
+    @State private var isGeneratingGroceryList = false
     
     private let groceryKeywords = [
         "eat", "healthy", "vegetarian", "vegan", "protein", "meal", "diet",
@@ -130,11 +135,8 @@ struct WeeklyGoalsView: View {
                 .background(Color(.systemGray6))
                 .cornerRadius(12)
                 .padding(.horizontal)
-                .alert("Create a Meal Plan?", isPresented: $showingGroceryAlert) {
-                        Button("Cancel") {
-                            // Just create regular goal
-                            print("continue as normal")
-                        }
+                .alert("Create a Grocery List?", isPresented: $showingGroceryAlert) {
+                        Button("Cancel") { }
                         Button("Create") {
                             // Create grocery list/meal plan
                             createGroceryListFromGoal()
@@ -143,10 +145,7 @@ struct WeeklyGoalsView: View {
                         Text("We noticed your goal contains food-related keywords. Would you like to create a grocery list of healthy foods?")
                     }
                     .alert("Set Up Health Reminders?", isPresented: $showingHealthAlert) {
-                        Button("Cancel") {
-                            // Just create regular goal
-                            print("continue as normal")
-                        }
+                        Button("Cancel") { }
                         Button("Create") {
                             // Create health goal with reminders
                             showHealthRemindersView = true
@@ -154,9 +153,36 @@ struct WeeklyGoalsView: View {
                     } message: {
                         Text("We noticed your goal contains health-related keywords. Would you like to set up recurring reminders to help you stay on track?")
                     }
+                    .alert(groceryAlertTitle, isPresented: $showingGroceryActionAlert) {
+                        Button("OK") { }
+                    } message: {
+                        Text(groceryAlertMessage)
+                    }
                     .sheet(isPresented: $showHealthRemindersView) {
                         HealthReminderView()
                     }
+                    .overlay(
+                        isGeneratingGroceryList ?
+                            ZStack {
+                                Color.black.opacity(0.4)
+                                    .edgesIgnoringSafeArea(.all)
+                                
+                                VStack {
+                                    ProgressView()
+                                        .scaleEffect(1.5)
+                                        .padding()
+                                    
+                                    Text("Creating your grocery list...")
+                                        .foregroundColor(.white)
+                                        .bold()
+                                }
+                                .padding()
+                                .background(Color(.systemBackground).opacity(0.8))
+                                .cornerRadius(12)
+                                .shadow(radius: 10)
+                            }
+                            : nil
+                    )
                     
                 let filteredTasks = tasks
                     .filter { selectedPriorityFilter == nil || $0.priority == selectedPriorityFilter }
@@ -359,15 +385,17 @@ struct WeeklyGoalsView: View {
     private func addTask() {
         guard !newTask.isEmpty else { return }
         
+        // for potential grocery list creation
+        let taskName = newTask
+        
         let (hasGroceryKeywords, hasHealthKeywords) = detectKeywords(in: newTask)
-            
-            if hasGroceryKeywords {
-                // Show grocery suggestion alert
-                showingGroceryAlert = true
-            } else if hasHealthKeywords {
-                // Show health suggestion alert
-                showingHealthAlert = true
-            }
+        
+        if hasGroceryKeywords {
+            self.taskNameForGrocList = taskName
+            showingGroceryAlert = true
+        } else if hasHealthKeywords {
+            showingHealthAlert = true
+        }
         
         let newTaskItem = TaskItem(
             id: Int.random(in: 1000...9999),
@@ -811,10 +839,42 @@ struct WeeklyGoalsView: View {
         }
     }
 
+    private func createGroceryListFromGoal() {
+        isGeneratingGroceryList = true
+        
+        Task {
+            do {
+                let groceryList = try await GroceryListAPI.generateGroceryListFromGoal(goalTitle: taskNameForGrocList)
+                
+                // Use the returned grocery items
+                DispatchQueue.main.async {
+                    isGeneratingGroceryList = false
+                    
+                    // Example: Show a success confirmation to the user
+                    showSuccess("Grocery List Created", "Your grocery list \(groceryList) has been created.")
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    isGeneratingGroceryList = false
+                    
+                    // Show an error message to the user
+                    showError("Creation Failed", "Could not create grocery list: \(error.localizedDescription)")
+                }
+            }
+        }
+    }
 
+    private func showSuccess(_ title: String, _ message: String) {
+        groceryAlertTitle = title
+        groceryAlertMessage = message
+        showingGroceryActionAlert = true
+    }
 
-
-    
+    private func showError(_ title: String, _ message: String) {
+        groceryAlertTitle = title
+        groceryAlertMessage = message
+        showingGroceryActionAlert = true
+    }
 }
 
 
