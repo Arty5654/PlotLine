@@ -21,7 +21,23 @@ struct WeeklyGoalsView: View {
     let fetchGoals: () -> Void
 
     @State private var isFinancialGoalDeleted = false
+    
+    // Goal title suggestion variables and data objects
+    @State private var showingGroceryAlert = false
+    @State private var showingHealthAlert = false
+    @State private var showHealthRemindersView = false
+    
+    private let groceryKeywords = [
+        "eat", "healthy", "vegetarian", "vegan", "protein", "meal", "diet",
+        "nutrition", "food", "cook", "grocery", "ingredients", "recipe",
+        "shopping", "organic", "produce", "fruit", "vegetable", "meat"
+    ]
 
+    private let healthKeywords = [
+        "mood", "water", "sleep", "exercise", "meditation", "mental health",
+        "workout", "wellness", "fitness", "hydrate", "rest", "mindfulness",
+        "anxiety", "stress", "relaxation", "therapy", "breathing"
+    ]
     
     var body: some View {
         NavigationView {
@@ -114,6 +130,33 @@ struct WeeklyGoalsView: View {
                 .background(Color(.systemGray6))
                 .cornerRadius(12)
                 .padding(.horizontal)
+                .alert("Create a Meal Plan?", isPresented: $showingGroceryAlert) {
+                        Button("Cancel") {
+                            // Just create regular goal
+                            print("continue as normal")
+                        }
+                        Button("Create") {
+                            // Create grocery list/meal plan
+                            createGroceryListFromGoal()
+                        }
+                    } message: {
+                        Text("We noticed your goal contains food-related keywords. Would you like to create a grocery list of healthy foods?")
+                    }
+                    .alert("Set Up Health Reminders?", isPresented: $showingHealthAlert) {
+                        Button("Cancel") {
+                            // Just create regular goal
+                            print("continue as normal")
+                        }
+                        Button("Create") {
+                            // Create health goal with reminders
+                            showHealthRemindersView = true
+                        }
+                    } message: {
+                        Text("We noticed your goal contains health-related keywords. Would you like to set up recurring reminders to help you stay on track?")
+                    }
+                    .sheet(isPresented: $showHealthRemindersView) {
+                        HealthReminderView()
+                    }
                     
                 let filteredTasks = tasks
                     .filter { selectedPriorityFilter == nil || $0.priority == selectedPriorityFilter }
@@ -231,6 +274,7 @@ struct WeeklyGoalsView: View {
                     .onDelete(perform: deleteTask)
                 }
                 .listStyle(PlainListStyle())
+                
                     
                 // Reset Button
                 Button(action: resetGoals) {
@@ -314,6 +358,16 @@ struct WeeklyGoalsView: View {
     
     private func addTask() {
         guard !newTask.isEmpty else { return }
+        
+        let (hasGroceryKeywords, hasHealthKeywords) = detectKeywords(in: newTask)
+            
+            if hasGroceryKeywords {
+                // Show grocery suggestion alert
+                showingGroceryAlert = true
+            } else if hasHealthKeywords {
+                // Show health suggestion alert
+                showingHealthAlert = true
+            }
         
         let newTaskItem = TaskItem(
             id: Int.random(in: 1000...9999),
@@ -595,6 +649,20 @@ struct WeeklyGoalsView: View {
         }
     }
     
+    // Goal title suggestion functions
+    private func detectKeywords(in text: String) -> (hasGroceryKeywords: Bool, hasHealthKeywords: Bool) {
+        let lowercasedText = text.lowercased()
+        
+        let hasGroceryKeywords = groceryKeywords.contains { keyword in
+            lowercasedText.contains(keyword)
+        }
+        
+        let hasHealthKeywords = healthKeywords.contains { keyword in
+            lowercasedText.contains(keyword)
+        }
+        
+        return (hasGroceryKeywords, hasHealthKeywords)
+    }
     private func addFinancialGoal() {
         fetchFinancialSummary { summary in
             guard let summary = summary else {

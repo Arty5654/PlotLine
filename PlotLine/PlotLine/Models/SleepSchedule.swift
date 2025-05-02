@@ -15,6 +15,12 @@ struct SleepSchedule: Codable, Identifiable {
     var createdAt: String?
     var updatedAt: String?
     
+    // Notification preferences
+    var sleepTrackingEnabled: Bool = true
+    var moodTrackingEnabled: Bool = true
+    var sleepLogReminderTime: Date?
+    var moodReminderTime: Date?
+    
     init(id: UUID = UUID(), wakeUpTime: Date, sleepTime: Date, username: String? = nil) {
         self.id = id
         self.wakeUpTime = wakeUpTime
