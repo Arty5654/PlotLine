@@ -63,6 +63,8 @@ public class CalendarService {
         try {
             List<EventDto> existingEvents = getEvents(username);
 
+            System.out.println(username + " is creating event: " + newEvent.getTitle());
+
             // if it is rent, subscription, or goal, avoid duplication
             if (!"user".equals(newEvent.getEventType())) {
                 System.out.println("Type: " + newEvent.getEventType());
@@ -94,14 +96,13 @@ public class CalendarService {
                 }
 
                 newEvent.getInvitedFriends().add("c-123-creator-user-c-987"); // add a unique 'creator' friend so it deletes correctly
-                existingEvents.add(newEvent);
-
-                // write to s3
-                saveEventsToS3(username, existingEvents);
-                
                 // Trophy for inviting friends to calendar events
-                userProfileService.incrementTrophy(username, "invite-friends", newEvent.getInvitedFriends().size());
+                userProfileService.incrementTrophy(username, "friends-invited", newEvent.getInvitedFriends().size() - 1);
             }
+
+            existingEvents.add(newEvent);
+            // write to s3
+            saveEventsToS3(username, existingEvents);
 
             return newEvent;
         } finally {
