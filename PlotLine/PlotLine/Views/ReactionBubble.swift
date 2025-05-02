@@ -24,7 +24,7 @@ struct ReactionBubble: View {
         .background(Color.blue.opacity(0.2))   // ← was systemGray5
         .cornerRadius(8)
         .onTapGesture {
-            Task { await vm.removeReaction(to: message, emoji: emoji) }
+            Task { await vm.react(to: message, emoji: emoji) }
         }
     }
 }

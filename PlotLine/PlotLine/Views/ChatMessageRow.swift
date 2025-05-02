@@ -7,10 +7,6 @@ struct ChatMessageRow: View {
     let onReactTap: () -> Void
     let onReplyTap: ()  -> Void
 
-    private var availableEmojisCount: Int {
-        allEmojis.filter { msg.reactions[$0] == nil }.count
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
 
@@ -33,11 +29,11 @@ struct ChatMessageRow: View {
                 Button(action: onReactTap) {
                     Image(systemName: "face.smiling")
                 }
-                .disabled(availableEmojisCount == 0)
                 .buttonStyle(BorderlessButtonStyle())
 
                 Button(action: onReplyTap) {
-                    Image(systemName: "arrowshape.turn.up.left")
+                    Image(systemName: "arrowshape.turn.up.left\(msg.replies.isEmpty ? "" : ".fill")")
+                        .foregroundColor(msg.replies.isEmpty ? .primary : .blue)
                 }
                 .buttonStyle(BorderlessButtonStyle())
             }

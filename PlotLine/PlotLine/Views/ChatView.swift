@@ -40,12 +40,12 @@ struct ChatView: View {
         .navigationTitle("Chat")
         .onAppear { Task { await vm.load() } }
         .sheet(item: $reactingTo) { msg in
-            let used = Set(msg.reactions.keys)
-            EmojiPickerView(emojis: allEmojis.filter { !used.contains($0) }) { emoji in
+            EmojiPickerView(emojis: allEmojis) { emoji in
                 Task { await vm.react(to: msg, emoji: emoji) }
                 reactingTo = nil
             }
         }
+
         .sheet(item: $replyingTo) { msg in
             ReplySheet(message: msg)
                 .environmentObject(vm)
