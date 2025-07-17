@@ -1,0 +1,307 @@
+{
+  "FEDERAL_2024_SINGLE": [
+    { "up_to": 11600,  "rate": 0.10 },
+    { "up_to": 47150,  "rate": 0.12 },
+    { "up_to": 100525, "rate": 0.22 },
+    { "up_to": 191950, "rate": 0.24 },
+    { "up_to": 243725, "rate": 0.32 },
+    { "up_to": 609350, "rate": 0.35 },
+    { "up_to": null,   "rate": 0.37 }
+  ],
+
+  "AL": { "type": "progressive", "brackets":[
+    { "up_to": 500,  "rate": 0.02 },
+    { "up_to": 3000, "rate": 0.04 },
+    { "up_to": null, "rate": 0.05 }
+  ]},
+
+  "AK": { "type": "none" },
+
+  "AZ": { "type": "flat", "rate": 0.025 },
+
+  "AR": { "type": "progressive", "brackets":[
+    { "up_to": 4700,  "rate": 0.00 },
+    { "up_to": 9400,  "rate": 0.02 },
+    { "up_to": 14100, "rate": 0.03 },
+    { "up_to": null,  "rate": 0.044 }
+  ]},
+
+  "CA": { "type": "progressive", "brackets":[
+    { "up_to": 10412,   "rate": 0.01 },
+    { "up_to": 24684,   "rate": 0.02 },
+    { "up_to": 38959,   "rate": 0.04 },
+    { "up_to": 54081,   "rate": 0.06 },
+    { "up_to": 67746,   "rate": 0.08 },
+    { "up_to": 343551,  "rate": 0.093 },
+    { "up_to": 572980,  "rate": 0.103 },
+    { "up_to": 1000000, "rate": 0.113 },
+    { "up_to": null,    "rate": 0.133 }
+  ]},
+
+  "CO": { "type": "flat", "rate": 0.044 },
+
+  "CT": { "type": "progressive", "brackets":[
+    { "up_to": 10000,  "rate": 0.03 },
+    { "up_to": 50000,  "rate": 0.05 },
+    { "up_to": 100000, "rate": 0.055 },
+    { "up_to": 200000, "rate": 0.06 },
+    { "up_to": 250000, "rate": 0.065 },
+    { "up_to": 500000, "rate": 0.069 },
+    { "up_to": null,   "rate": 0.0699 }
+  ]},
+
+  "DE": { "type": "progressive", "brackets":[
+    { "up_to": 2000,  "rate": 0.00 },
+    { "up_to": 5000,  "rate": 0.022 },
+    { "up_to": 10000, "rate": 0.039 },
+    { "up_to": 20000, "rate": 0.048 },
+    { "up_to": 25000, "rate": 0.052 },
+    { "up_to": 60000, "rate": 0.0555 },
+    { "up_to": null,  "rate": 0.066 }
+  ]},
+
+  "DC": { "type": "progressive", "brackets":[
+    { "up_to": 10000,    "rate": 0.04 },
+    { "up_to": 40000,    "rate": 0.06 },
+    { "up_to": 60000,    "rate": 0.065 },
+    { "up_to": 250000,   "rate": 0.085 },
+    { "up_to": 500000,   "rate": 0.0925 },
+    { "up_to": 1000000,  "rate": 0.0975 },
+    { "up_to": null,     "rate": 0.105 }
+  ]},
+
+  "FL": { "type": "none" },
+
+  "GA": { "type": "flat", "rate": 0.0575 },
+
+  "HI": { "type": "progressive", "brackets":[
+    { "up_to": 2400,   "rate": 0.014 },
+    { "up_to": 4800,   "rate": 0.032 },
+    { "up_to": 9600,   "rate": 0.055 },
+    { "up_to": 14400,  "rate": 0.064 },
+    { "up_to": 19200,  "rate": 0.068 },
+    { "up_to": 24000,  "rate": 0.072 },
+    { "up_to": 36000,  "rate": 0.076 },
+    { "up_to": 48000,  "rate": 0.079 },
+    { "up_to": 150000, "rate": 0.0825 },
+    { "up_to": 175000, "rate": 0.09 },
+    { "up_to": 200000, "rate": 0.1 },
+    { "up_to": null,   "rate": 0.11 }
+  ]},
+
+  "ID": { "type": "flat", "rate": 0.054 },
+
+  "IL": { "type": "flat", "rate": 0.0495 },
+
+  "IN": { "type": "flat", "rate": 0.0305 },
+
+  "IA": { "type": "progressive", "brackets":[
+    { "up_to": 7000,  "rate": 0.044 },
+    { "up_to": 15000, "rate": 0.0482 },
+    { "up_to": 25000, "rate": 0.054 },
+    { "up_to": null,  "rate": 0.0598 }
+  ]},
+
+  "KS": { "type": "progressive", "brackets":[
+    { "up_to": 15000,  "rate": 0.031 },
+    { "up_to": 30000,  "rate": 0.0525 },
+    { "up_to": null,   "rate": 0.057 }
+  ]},
+
+  "KY": { "type": "flat", "rate": 0.045 },
+
+  "LA": { "type": "progressive", "brackets":[
+    { "up_to": 12500,  "rate": 0.0185 },
+    { "up_to": 50000,  "rate": 0.0345 },
+    { "up_to": null,   "rate": 0.045 }
+  ]},
+
+  "ME": { "type": "progressive", "brackets":[
+    { "up_to": 25500,  "rate": 0.058 },
+    { "up_to": 60500,  "rate": 0.0675 },
+    { "up_to": null,   "rate": 0.0715 }
+  ]},
+
+  "MD": { "type": "progressive", "brackets":[
+    { "up_to": 1000,   "rate": 0.02 },
+    { "up_to": 2000,   "rate": 0.03 },
+    { "up_to": 3000,   "rate": 0.04 },
+    { "up_to": 100000, "rate": 0.0475 },
+    { "up_to": 125000, "rate": 0.05 },
+    { "up_to": 150000, "rate": 0.0525 },
+    { "up_to": 250000, "rate": 0.054 },
+    { "up_to": null,   "rate": 0.0575 }
+  ]},
+
+  "MA": { "type": "flat", "rate": 0.0500 },
+
+  "MI": { "type": "flat", "rate": 0.0425 },
+
+  "MN": { "type": "progressive", "brackets":[
+    { "up_to": 30405,  "rate": 0.0535 },
+    { "up_to": 100030, "rate": 0.0680 },
+    { "up_to": 190875, "rate": 0.0785 },
+    { "up_to": null,   "rate": 0.0985 }
+  ]},
+
+  "MS": { "type": "progressive", "brackets":[
+    { "up_to": 10000,  "rate": 0.00 },
+    { "up_to": null,   "rate": 0.05 }
+  ]},
+
+  "MO": { "type": "progressive", "brackets":[
+    { "up_to": 111,    "rate": 0.00 },
+    { "up_to": 1122,   "rate": 0.015 },
+    { "up_to": 2244,   "rate": 0.02 },
+    { "up_to": 3366,   "rate": 0.025 },
+    { "up_to": 4488,   "rate": 0.03 },
+    { "up_to": 5610,   "rate": 0.035 },
+    { "up_to": 6732,   "rate": 0.04 },
+    { "up_to": null,   "rate": 0.045 }
+  ]},
+
+  "MT": { "type": "progressive", "brackets":[
+    { "up_to": 3300,   "rate": 0.01 },
+    { "up_to": 5900,   "rate": 0.02 },
+    { "up_to": 9000,   "rate": 0.03 },
+    { "up_to": 12100,  "rate": 0.04 },
+    { "up_to": 15600,  "rate": 0.05 },
+    { "up_to": 20400,  "rate": 0.06 },
+    { "up_to": null,   "rate": 0.0675 }
+  ]},
+
+  "NE": { "type": "progressive", "brackets":[
+    { "up_to": 3740,   "rate": 0.0223 },
+    { "up_to": 22320,  "rate": 0.0334 },
+    { "up_to": 35890,  "rate": 0.0501 },
+    { "up_to": null,   "rate": 0.0684 }
+  ]},
+
+  "NV": { "type": "none" },
+
+  "NH": { "type": "flat", "rate": 0.0375, "note": "Applies only to interest & dividends; scheduled phase-out by 2027" },
+
+  "NJ": { "type": "progressive", "brackets":[
+    { "up_to": 20000,  "rate": 0.014 },
+    { "up_to": 35000,  "rate": 0.0175 },
+    { "up_to": 40000,  "rate": 0.035 },
+    { "up_to": 75000,  "rate": 0.05525 },
+    { "up_to": 500000, "rate": 0.0637 },
+    { "up_to": 1000000,"rate": 0.0897 },
+    { "up_to": null,   "rate": 0.1075 }
+  ]},
+
+  "NM": { "type": "progressive", "brackets":[
+    { "up_to": 5500,   "rate": 0.018 },
+    { "up_to": 11000,  "rate": 0.034 },
+    { "up_to": 16000,  "rate": 0.043 },
+    { "up_to": 210000, "rate": 0.048 },
+    { "up_to": 315000, "rate": 0.049 },
+    { "up_to": null,   "rate": 0.059 }
+  ]},
+
+  "NY": { "type": "progressive", "brackets":[
+    { "up_to": 8500,    "rate": 0.04 },
+    { "up_to": 11700,   "rate": 0.045 },
+    { "up_to": 13900,   "rate": 0.0525 },
+    { "up_to": 21400,   "rate": 0.059 },
+    { "up_to": 80650,   "rate": 0.0621 },
+    { "up_to": 215400,  "rate": 0.0649 },
+    { "up_to": 1077550, "rate": 0.0685 },
+    { "up_to": 5000000, "rate": 0.0965 },
+    { "up_to": 25000000,"rate": 0.103 },
+    { "up_to": null,    "rate": 0.109 }
+  ]},
+
+  "NC": { "type": "flat", "rate": 0.045 },
+
+  "ND": { "type": "progressive", "brackets":[
+    { "up_to": 44525,  "rate": 0.011 },
+    { "up_to": 107650, "rate": 0.0204 },
+    { "up_to": 176200, "rate": 0.0227 },
+    { "up_to": 229500, "rate": 0.0264 },
+    { "up_to": null,   "rate": 0.029 }
+  ]},
+
+  "OH": { "type": "progressive", "brackets":[
+    { "up_to": 26050,  "rate": 0.00 },
+    { "up_to": 51850,  "rate": 0.01985 },
+    { "up_to": 103700, "rate": 0.0276 },
+    { "up_to": 155650, "rate": 0.0326 },
+    { "up_to": null,   "rate": 0.0346 }
+  ]},
+
+  "OK": { "type": "progressive", "brackets":[
+    { "up_to": 1000,   "rate": 0.0025 },
+    { "up_to": 2500,   "rate": 0.0075 },
+    { "up_to": 3750,   "rate": 0.015 },
+    { "up_to": 4900,   "rate": 0.02 },
+    { "up_to": 7200,   "rate": 0.025 },
+    { "up_to": null,   "rate": 0.045 }
+  ]},
+
+  "OR": { "type": "progressive", "brackets":[
+    { "up_to": 4150,   "rate": 0.0475 },
+    { "up_to": 10450,  "rate": 0.0675 },
+    { "up_to": 125250, "rate": 0.0875 },
+    { "up_to": null,   "rate": 0.099 }
+  ]},
+
+  "PA": { "type": "flat", "rate": 0.0307 },
+
+  "RI": { "type": "progressive", "brackets":[
+    { "up_to": 73150,  "rate": 0.0375 },
+    { "up_to": 165250, "rate": 0.0475 },
+    { "up_to": null,   "rate": 0.0599 }
+  ]},
+
+  "SC": { "type": "progressive", "brackets":[
+    { "up_to": 3490,  "rate": 0.00 },
+    { "up_to": 6980,  "rate": 0.03 },
+    { "up_to": 10470, "rate": 0.04 },
+    { "up_to": 13960, "rate": 0.05 },
+    { "up_to": 17450, "rate": 0.06 },
+    { "up_to": null,  "rate": 0.065 }
+  ]},
+
+  "SD": { "type": "none" },
+
+  "TN": { "type": "none" },
+
+  "TX": { "type": "none" },
+
+  "UT": { "type": "flat", "rate": 0.0485 },
+
+  "VT": { "type": "progressive", "brackets":[
+    { "up_to": 42550,  "rate": 0.0335 },
+    { "up_to": 102200, "rate": 0.066 },
+    { "up_to": 221950, "rate": 0.076 },
+    { "up_to": null,   "rate": 0.0875 }
+  ]},
+
+  "VA": { "type": "progressive", "brackets":[
+    { "up_to": 3000,  "rate": 0.02 },
+    { "up_to": 5000,  "rate": 0.03 },
+    { "up_to": 17000, "rate": 0.05 },
+    { "up_to": null,  "rate": 0.0575 }
+  ]},
+
+  "WA": { "type": "none", "note": "No wage income tax; high-earner capital-gains tax not included here" },
+
+  "WV": { "type": "progressive", "brackets":[
+    { "up_to": 10000,  "rate": 0.0236 },
+    { "up_to": 25000,  "rate": 0.0301 },
+    { "up_to": 40000,  "rate": 0.0407 },
+    { "up_to": 60000,  "rate": 0.0455 },
+    { "up_to": null,   "rate": 0.0528 }
+  ]},
+
+  "WI": { "type": "progressive", "brackets":[
+    { "up_to": 14230,  "rate": 0.035 },
+    { "up_to": 28470,  "rate": 0.045 },
+    { "up_to": 31560,  "rate": 0.053 },
+    { "up_to": null,   "rate": 0.0765 }
+  ]},
+
+  "WY": { "type": "none" }
+}

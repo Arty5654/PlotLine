@@ -11,11 +11,14 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import jakarta.annotation.PostConstruct;
+import java.io.InputStream;
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @RestController
@@ -30,11 +33,25 @@ public class BudgetQuizController {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    // Tax Hash Map
+    private static Map<String, Object> TAX_TABLE;     
+
+    @PostConstruct
+    void loadTaxTable() throws Exception {
+        if (TAX_TABLE != null) return;                
+        try (InputStream in = getClass()
+                .getClassLoader()
+                .getResourceAsStream("us_state_federal_tax_brackets_2024.json"))   {
+            TAX_TABLE = objectMapper.readValue(in,
+                    new TypeReference<>() {});
+        }
+    }
+
     @PostMapping
     public ResponseEntity<?> generateBudget(@RequestBody Map<String, Object> quizData) {
         try {
             String username = (String) quizData.get("username");
-            double yearlyIncome = Double.parseDouble(quizData.get("yearlyIncome").toString());
+            double grossYearlyIncome = Double.parseDouble(quizData.get("yearlyIncome").toString());
             String city = (String) quizData.get("city");
             String state = (String) quizData.get("state");
             int dependents = Integer.parseInt(quizData.get("dependents").toString());
@@ -48,6 +65,24 @@ public class BudgetQuizController {
 
 
             String categoriesList = String.join(", ", categories);
+
+            // Get the taxes
+
+            double federalTax = calcTax(
+                    (List<Map<String,Object>>) TAX_TABLE.get("FEDERAL_2024_SINGLE"),
+                    grossYearlyIncome);
+
+            Map<String,Object> stateSpec =
+                    (Map<String,Object>) TAX_TABLE.get(state.toUpperCase());
+            double stateTax   = calcTax(stateSpec, grossYearlyIncome);
+
+            double afterTaxYearly = grossYearlyIncome - federalTax - stateTax;
+            double monthlyNet = afterTaxYearly / 12.0;
+
+            System.out.printf("[TAX] %s - Fed: %.2f  State(%s): %.2f  Net: %.2f%n",
+                    username, federalTax, state, stateTax, afterTaxYearly);
+
+
 
             // Dont think I need this, but just in case
             // if (categories == null || categories.isEmpty()) {
@@ -96,7 +131,7 @@ public class BudgetQuizController {
                     rules = "";
             }
 
-            double monthlyIncome = yearlyIncome / 12;
+            double monthlyIncome = grossYearlyIncome / 12;
             double budgetCap;
 
             switch (spendingStyle.toLowerCase()) {
@@ -119,7 +154,7 @@ public class BudgetQuizController {
             You are a financial assistant helping generate a realistic monthly budget.
 
             Generate a JSON object for a monthly budget for someone living in %s, %s,
-            earning $%.2f yearly, supporting %d dependents, with a %s spending style.
+            earning $%.2f **after federal & state tax** yearly, supporting %d dependents, with a %s spending style.
 
             Use ONLY these categories: %s.
 
@@ -143,7 +178,7 @@ public class BudgetQuizController {
             Try to keep the total budget around $%.2f (%.0f%% of monthly income), but this is a recommendation — the **only hard rule is that the total must not exceed the user's monthly income** ($%.2f). Round each category to whole dollars.
 
             Ensure that savings and investments are separated, and combined they should follow the range based on spending style.
-            """, city, state, yearlyIncome, dependents, spendingStyle, categoriesList, knownAllocations, rules, budgetCap, (budgetCap / monthlyIncome) * 100, monthlyIncome);
+            """, city, state, afterTaxYearly, dependents, spendingStyle, categoriesList, knownAllocations, rules, budgetCap, (budgetCap / monthlyNet) * 100, monthlyNet);
 
             
 
@@ -172,6 +207,45 @@ public class BudgetQuizController {
             e.printStackTrace();
             return ResponseEntity.internalServerError().body("Error generating budget: " + e.getMessage());
         }
+    }
+
+    // Tax Helper Functions
+
+    @SuppressWarnings("unchecked")
+    private double calcTax(Object spec, double income) {
+        if (spec == null) return 0.0;
+
+        if (spec instanceof List<?> brackets) {        // FEDERAL table case
+            return taxFromBrackets((List<Map<String,Object>>) brackets, income);
+        }
+        Map<String,Object> obj = (Map<String,Object>) spec;
+        String type = ((String) obj.get("type")).toLowerCase(Locale.ROOT);
+
+        return switch (type) {
+            case "none" -> 0.0;
+            case "flat" -> income * ((Number) obj.get("rate")).doubleValue();
+            case "progressive" ->
+                    taxFromBrackets((List<Map<String,Object>>) obj.get("brackets"), income);
+            default -> 0.0;
+        };
+    }
+
+    private double taxFromBrackets(List<Map<String,Object>> brackets, double income) {
+        double tax = 0.0;
+        double prevCap = 0.0;
+        for (Map<String,Object> b : brackets) {
+            Number capNum = (Number) b.get("up_to");
+            double cap = capNum == null ? Double.MAX_VALUE : capNum.doubleValue();
+            double rate = ((Number) b.get("rate")).doubleValue();
+            if (income <= cap) {
+                tax += (income - prevCap) * rate;
+                break;
+            } else {
+                tax += (cap - prevCap) * rate;
+                prevCap = cap;
+            }
+        }
+        return tax;
     }
 
 
