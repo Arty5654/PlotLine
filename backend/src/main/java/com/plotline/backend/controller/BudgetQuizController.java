@@ -202,6 +202,10 @@ public class BudgetQuizController {
             saveToS3(username, "weekly-budget.json", weekly);
             //saveToS3(username, "weekly-budget-edited.json", weekly);
 
+<<<<<<< HEAD
+=======
+            saveQuizInput(username, quizData);
+>>>>>>> 03bd998 (Previous Budet quiz data appears)
             return ResponseEntity.ok(monthly);
         } catch (Exception e) {
             e.printStackTrace();
@@ -209,6 +213,19 @@ public class BudgetQuizController {
         }
     }
 
+<<<<<<< HEAD
+=======
+    // Save the previous quiz that was submitted
+    private void saveQuizInput(String username, Map<String,Object> quizData) throws Exception {
+        String key      = "users/%s/last_budget_quiz.json".formatted(username);
+        String json     = objectMapper.writeValueAsString(quizData);
+        try (var in = new ByteArrayInputStream(json.getBytes(StandardCharsets.UTF_8))) {
+            s3Service.uploadFile(key, in, json.length());
+        }
+    }
+
+
+>>>>>>> 03bd998 (Previous Budet quiz data appears)
     // Tax Helper Functions
 
     @SuppressWarnings("unchecked")
@@ -303,7 +320,24 @@ public class BudgetQuizController {
     } catch (Exception e) {
         return ResponseEntity.status(500).body("Failed to revert: " + e.getMessage());
     }
-}
+  }
+    // Get previous quiz
+    @GetMapping("/last/{username}")
+    public ResponseEntity<?> lastQuiz(@PathVariable String username) {
+        try {
+            String key   = "users/%s/last_budget_quiz.json".formatted(username);
+            byte[] bytes = s3Service.downloadFile(key);
+            String json  = new String(bytes, StandardCharsets.UTF_8);
+            return ResponseEntity.ok(objectMapper.readTree(json)); 
+        } catch (Exception e) {
+            // nothing saved yet 
+            return ResponseEntity.noContent().build();
+        }
+    }
+
+
+
+
 
 
 }

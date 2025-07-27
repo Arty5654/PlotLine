@@ -17,9 +17,15 @@ struct BudgetQuizView: View {
     
     @State private var yearlyIncome = ""
     @State private var numberOfDependents = ""
+    
+    // Detected location or manual input
     @State private var city = ""
     @State private var state = ""
+    @State private var manualCity = ""
+    @State private var manualState = ""
     @State private var useDeviceLocation = true
+    
+    
     @State private var spendingStyle = "Medium"
 
     @State private var selectedCategories: Set<String> = Set(defaultCategories)
@@ -75,17 +81,16 @@ struct BudgetQuizView: View {
                         .onChange(of: useDeviceLocation) { enabled in
                             if enabled {
                                 getLocation()
-                            } else {
-                                city = ""
-                                state = ""
                             }
                         }
-
-                    if !useDeviceLocation {
-                        TextField("City", text: $city)
-                        TextField("State", text: $state)
-                    } else {
+                    
+                    // Detected or manual
+                    if useDeviceLocation {
                         Text("Detected: \(city), \(state)")
+                            //.foregroundColor(.secondary)
+                    } else {
+                        TextField("City", text: $manualCity)
+                        TextField("State", text: $manualState)
                     }
                 }
                 
@@ -157,7 +162,12 @@ struct BudgetQuizView: View {
             }
         }
         .onAppear {
-            if useDeviceLocation {
+//            if useDeviceLocation {
+//                getLocation()
+            //}
+            loadSavedQuiz()
+            // No prior quiz and toggle switch is on, show location
+            if useDeviceLocation && city.isEmpty && state.isEmpty {
                 getLocation()
             }
         }
@@ -166,13 +176,18 @@ struct BudgetQuizView: View {
     // MARK: - LLM Budget Gen
     func generateBudgetFromLLM() async {
         let url = URL(string: "http://localhost:8080/api/llm/budget")!
+        
+        // Use either manual or detected location
+        let finalCity = useDeviceLocation ? city : manualCity
+        let finalState = useDeviceLocation ? state : manualState
         let payload: [String: Any] = [
             "username": username,
             "yearlyIncome": yearlyIncome,
             "dependents": numberOfDependents,
-            "city": city,
-            "state": state,
+            "city": finalCity,
+            "state": finalState,
             "spendingStyle": spendingStyle,
+            "useDeviceLocation": useDeviceLocation,
             "categories": Array(selectedCategories.sorted()),
             "knownCosts": knownCosts.compactMapValues { Double($0) }
         ]
@@ -235,7 +250,7 @@ struct BudgetQuizView: View {
         }
     }
 
-    private func postBudget(username: String, type: String, budget: [String: Double]) async throws {
+    func postBudget(username: String, type: String, budget: [String: Double]) async throws {
         let url = URL(string: "http://localhost:8080/api/budget")!
         let payload: [String: Any] = [
             "username": username,
@@ -252,6 +267,51 @@ struct BudgetQuizView: View {
 
         _ = try await URLSession.shared.data(for: request)
     }
+    
+    // Get previous quiz information prefilled
+    func loadSavedQuiz() {
+        guard let url = URL(string: "http://localhost:8080/api/llm/budget/last/\(username)") else { return }
+
+        Task {
+            do {
+                let (data, resp) = try await URLSession.shared.data(from: url)
+                guard let http = resp as? HTTPURLResponse, http.statusCode == 200 else { return }
+
+                if let dict = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    await MainActor.run {
+                        yearlyIncome        = String(describing: dict["yearlyIncome"]  ?? "")
+                        numberOfDependents  = String(describing: dict["dependents"]    ?? "")
+                        city                = String(dict["city"] as? String ?? "")
+                        state               = String(dict["state"] as? String ?? "")
+                        spendingStyle       = String(dict["spendingStyle"] as? String ?? "Medium")
+
+                        if let cats = dict["categories"] as? [String] {
+                            allCategories = Array(Set(allCategories).union(cats))
+                            selectedCategories = Set(cats)
+                        }
+                        if let kc = dict["knownCosts"] as? [String: Double] {
+                            // convert back to String for the text fields
+                            knownCosts = kc.mapValues { String($0) }
+                        }
+                        
+                        // Bool for using device location or not
+                        if let flag = dict["useDeviceLocation"] as? Bool {
+                            useDeviceLocation = flag
+                            if flag { getLocation() }
+                        }
+                        manualCity  = String(dict["city"]  as? String ?? "")
+                        manualState = String(dict["state"] as? String ?? "")
+                    }
+                }
+            } catch {
+                print("No previous quiz data: \(error)")
+            }
+        }
+    }
+    
+    
+
+    
 
     // MARK: - Location
     func getLocation() {
