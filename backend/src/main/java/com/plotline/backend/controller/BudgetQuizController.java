@@ -47,6 +47,13 @@ public class BudgetQuizController {
         }
     }
 
+    // Fica Data - 2024
+    private static final double SS_RATE = 0.062;             
+    private static final double SS_WAGE_BASE_2024 = 168_600.0;       
+    private static final double MEDICARE_RATE = 0.0145;              
+    private static final double ADDL_MEDICARE_RATE = 0.009;          
+    private static final double ADDL_MEDICARE_THRESHOLD_SINGLE = 200_000.0;
+
     @PostMapping
     public ResponseEntity<?> generateBudget(@RequestBody Map<String, Object> quizData) {
         try {
@@ -75,12 +82,13 @@ public class BudgetQuizController {
             Map<String,Object> stateSpec =
                     (Map<String,Object>) TAX_TABLE.get(state.toUpperCase());
             double stateTax   = calcTax(stateSpec, grossYearlyIncome);
+            double fica = calcFica(grossYearlyIncome);
 
-            double afterTaxYearly = grossYearlyIncome - federalTax - stateTax;
+            double afterTaxYearly = grossYearlyIncome - federalTax - stateTax - fica;
             double monthlyNet = afterTaxYearly / 12.0;
 
-            System.out.printf("[TAX] %s - Fed: %.2f  State(%s): %.2f  Net: %.2f%n",
-                    username, federalTax, state, stateTax, afterTaxYearly);
+            System.out.printf("[TAX] %s - Fed: %.2f  State(%s): %.2f  fica %.2f, Net: %.2f%n",
+                    username, federalTax, state, stateTax, fica, afterTaxYearly);
 
 
 
@@ -154,7 +162,7 @@ public class BudgetQuizController {
             You are a financial assistant helping generate a realistic monthly budget.
 
             Generate a JSON object for a monthly budget for someone living in %s, %s,
-            earning $%.2f **after federal & state tax** yearly, supporting %d dependents, with a %s spending style.
+            earning $%.2f **after federal, state, and FICA (Social Security + Medicare) tax** yearly, supporting %d dependents, with a %s spending style.
 
             Use ONLY these categories: %s.
 
@@ -202,10 +210,7 @@ public class BudgetQuizController {
             saveToS3(username, "weekly-budget.json", weekly);
             //saveToS3(username, "weekly-budget-edited.json", weekly);
 
-<<<<<<< HEAD
-=======
             saveQuizInput(username, quizData);
->>>>>>> 03bd998 (Previous Budet quiz data appears)
             return ResponseEntity.ok(monthly);
         } catch (Exception e) {
             e.printStackTrace();
@@ -213,8 +218,6 @@ public class BudgetQuizController {
         }
     }
 
-<<<<<<< HEAD
-=======
     // Save the previous quiz that was submitted
     private void saveQuizInput(String username, Map<String,Object> quizData) throws Exception {
         String key      = "users/%s/last_budget_quiz.json".formatted(username);
@@ -225,7 +228,6 @@ public class BudgetQuizController {
     }
 
 
->>>>>>> 03bd998 (Previous Budet quiz data appears)
     // Tax Helper Functions
 
     @SuppressWarnings("unchecked")
@@ -265,6 +267,13 @@ public class BudgetQuizController {
         return tax;
     }
 
+    // FICA - Social Security + Medicare (+ Additional Medicare over threshold)
+    private double calcFica(double wages) {
+        double ssTax = Math.min(wages, SS_WAGE_BASE_2024) * SS_RATE;
+        double medicare = wages * MEDICARE_RATE;
+        double addlMedicare = Math.max(0.0, wages - ADDL_MEDICARE_THRESHOLD_SINGLE) * ADDL_MEDICARE_RATE;
+        return ssTax + medicare + addlMedicare;
+    }
 
     private void saveToS3(String username, String fileName, Map<String, Double> budget) throws Exception {
         String key = "users/" + username + "/" + fileName;
