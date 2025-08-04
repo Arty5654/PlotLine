@@ -130,7 +130,75 @@ public class OpenAIService {
         ResponseOutputText rot = response.output().get(0).message().get().content().get(0).asOutputText();
         String output = rot.text();
 
-        System.out.println("OpenAI response: " + output);
+        //System.out.println("OpenAI response: " + output);
+        return output;
+
+    } catch (OpenAIException e) {
+      // error handling and types of errors found in SDK readme
+
+      e.printStackTrace();
+      return "Service Error";
+    }
+  }
+
+  // Calcaulate local taxes
+  public String generateResponseLocalTaxes(String userMessage) {
+
+    try {
+        String systemMessage = """
+                You are a meticulous US LOCAL INCOME TAX calculator.
+
+                OUTPUT FORMAT:
+                - Return ONLY a number with two decimals (e.g., 1234.56). No words, symbols, or JSON.
+
+                TASK:
+                - Given the city, state, and taxable income,
+                compute the **annual** local/municipal income tax on wages.
+                - If no local income tax applies for the location, return 0.00.
+                - Handle jurisdictions that use:
+                - Flat percentages on wages (e.g., MD counties, MI/PA cities, NYC, Detroit, Philly).
+                - Surcharges on state liability (e.g., Yonkers = 16.75% of net NY state tax).
+                - Per-pay or monthly head taxes (e.g., Denver $5.75/month, Aurora $2/month, WV per pay period).
+                    Convert to annual: monthlyx12; “per pay period” assume biweekly (26); weeklyx52.
+                - Respect non-tax states and states without municipal income tax.
+
+                KNOWN MUNICIPAL-TAX STATES (non-exhaustive but prioritized):
+                DC, AL, CA (SF), CO (Aurora/Denver/Glendale/Greenwood Village/Sheridan head taxes),
+                DE (Wilmington), IN (all counties), IA (school district surtaxes), KS (interest/dividends),
+                KY (many cities/counties), MD (all counties + Baltimore City), MI (many cities, e.g., Detroit),
+                MO (KC and St. Louis earnings tax), NJ (Newark), NY (NYC, Yonkers),
+                OH (many cities), OR (TriMet, Lane Co transit taxes), PA (EIT, Philadelphia),
+                WV (per pay-period city service fees).
+                If the location is outside these, prefer 0.00.
+
+                EXAMPLES (return is value only):
+
+                - Input: CITY=Denver, STATE=CO, ANNUAL_WAGE=65000
+                Output: 69.00      # $5.75/month x 12
+
+                - Input: CITY=New York, STATE=NY, ANNUAL_WAGE=90000
+                Output:  (NYC city income tax on wages; compute annual dollars)
+
+                - Input: CITY=Philadelphia, STATE=PA, ANNUAL_WAGE=60000
+                Output: 2328.54    # Example using current EIT approximation
+
+                - Input: CITY=San Jose, STATE=CA, ANNUAL_WAGE=85000
+                Output: 0.00       # No local wage tax (SF is special in CA)
+
+                IMPORTANT:
+                - Output must be only the number with two decimals. No explanations.
+                """;
+        ResponseCreateParams params = ResponseCreateParams.builder()
+            .input(userMessage)
+            .instructions(systemMessage)
+            .model(ChatModel.GPT_4O_MINI)
+            .build();
+
+        Response response = openAIClient.responses().create(params);
+        ResponseOutputText rot = response.output().get(0).message().get().content().get(0).asOutputText();
+        String output = rot.text();
+
+        //System.out.println("OpenAI response: " + output);
         return output;
 
     } catch (OpenAIException e) {

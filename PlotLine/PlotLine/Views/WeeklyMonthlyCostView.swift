@@ -351,7 +351,11 @@ struct WeeklyMonthlyCostView: View {
             BudgetItem(category: "Entertainment", amount: ""),
             BudgetItem(category: "Utilities", amount: ""),
             BudgetItem(category: "Savings", amount: ""),
-            BudgetItem(category: "Miscellaneous", amount: "")
+            BudgetItem(category: "Miscellaneous", amount: ""),
+            BudgetItem(category: "Transportation", amount: ""),
+            BudgetItem(category: "401(k)", amount: ""),
+            BudgetItem(category: "Roth IRA", amount: ""),
+            BudgetItem(category: "Other Investments", amount: "")
         ]
     }
 

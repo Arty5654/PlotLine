@@ -11,11 +11,44 @@ import CoreLocation
 struct BudgetQuizView: View {
     static let defaultCategories = [
         "Rent", "Groceries", "Subscriptions", "Eating Out",
-        "Entertainment", "Utilities", "Savings", "Investments", "Transportation", "Miscellaneous"
+        "Entertainment", "Utilities", "Savings", "Miscellaneous", "Transportation", "401(k)", "Roth IRA", "Car Insurance", "Health Insurance", "Other Investments"
     ]
+    
+    let US_STATES: [USState] = [
+        .init(name: "Alabama", code: "AL"), .init(name: "Alaska", code: "AK"),
+        .init(name: "Arizona", code: "AZ"), .init(name: "Arkansas", code: "AR"),
+        .init(name: "California", code: "CA"), .init(name: "Colorado", code: "CO"),
+        .init(name: "Connecticut", code: "CT"), .init(name: "Delaware", code: "DE"),
+        .init(name: "District of Columbia", code: "DC"), .init(name: "Florida", code: "FL"),
+        .init(name: "Georgia", code: "GA"), .init(name: "Hawaii", code: "HI"),
+        .init(name: "Idaho", code: "ID"), .init(name: "Illinois", code: "IL"),
+        .init(name: "Indiana", code: "IN"), .init(name: "Iowa", code: "IA"),
+        .init(name: "Kansas", code: "KS"), .init(name: "Kentucky", code: "KY"),
+        .init(name: "Louisiana", code: "LA"), .init(name: "Maine", code: "ME"),
+        .init(name: "Maryland", code: "MD"), .init(name: "Massachusetts", code: "MA"),
+        .init(name: "Michigan", code: "MI"), .init(name: "Minnesota", code: "MN"),
+        .init(name: "Mississippi", code: "MS"), .init(name: "Missouri", code: "MO"),
+        .init(name: "Montana", code: "MT"), .init(name: "Nebraska", code: "NE"),
+        .init(name: "Nevada", code: "NV"), .init(name: "New Hampshire", code: "NH"),
+        .init(name: "New Jersey", code: "NJ"), .init(name: "New Mexico", code: "NM"),
+        .init(name: "New York", code: "NY"), .init(name: "North Carolina", code: "NC"),
+        .init(name: "North Dakota", code: "ND"), .init(name: "Ohio", code: "OH"),
+        .init(name: "Oklahoma", code: "OK"), .init(name: "Oregon", code: "OR"),
+        .init(name: "Pennsylvania", code: "PA"), .init(name: "Rhode Island", code: "RI"),
+        .init(name: "South Carolina", code: "SC"), .init(name: "South Dakota", code: "SD"),
+        .init(name: "Tennessee", code: "TN"), .init(name: "Texas", code: "TX"),
+        .init(name: "Utah", code: "UT"), .init(name: "Vermont", code: "VT"),
+        .init(name: "Virginia", code: "VA"), .init(name: "Washington", code: "WA"),
+        .init(name: "West Virginia", code: "WV"), .init(name: "Wisconsin", code: "WI"),
+        .init(name: "Wyoming", code: "WY")
+    ]
+
     @State private var allCategories: [String] = defaultCategories
     
     @State private var yearlyIncome = ""
+    @State private var retirement = ""
+    // For the "?" next to 401k Contribution
+    @State private var retirementTip = false
     @State private var numberOfDependents = ""
     
     // Detected location or manual input
@@ -57,6 +90,33 @@ struct BudgetQuizView: View {
                         .onChange(of: yearlyIncome) { newValue in
                             yearlyIncome = newValue.filter { "0123456789.".contains($0) }
                         }
+                    HStack(spacing: 8) {
+                        TextField("Contribution to 401(k) (Percentage)", text: $retirement)
+                            .keyboardType(.decimalPad)
+                            .onChange(of: retirement) { newValue in
+                                retirement = newValue.filter { "0123456789.".contains($0) }
+                            }
+                        Button {
+                            retirementTip = true
+                        } label: {
+                            Image(systemName: "questionmark.circle")
+                                .imageScale(.medium)
+                                .foregroundColor(.blue)
+                                .accessibilityLabel("What contribution percentage should I choose?")
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                    }
+                    .popover(isPresented: $retirementTip, arrowEdge: .top) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("401(k) Contribution Tip")
+                                .font(.headline)
+                            Text("A common target is 10-15% of your gross income. Ensure to contribute enough to get your employer’s full match (it’s essentially free money).")
+                            
+                        }
+                        .padding()
+                        .frame(maxWidth: 320)
+                        
+                    }
                     TextField("Number of Dependents", text: $numberOfDependents)
                         .keyboardType(.numberPad)
                         .onChange(of: numberOfDependents) { newValue in
@@ -67,7 +127,7 @@ struct BudgetQuizView: View {
                     
                 }
                 
-                Section(header: Text("How aggressively do you want to save?")) {
+                Section(header: Text("What is your Spending Style?")) {
                     Picker("Spending Style", selection: $spendingStyle) {
                         Text("Low").tag("Low")
                         Text("Medium").tag("Medium")
@@ -90,7 +150,13 @@ struct BudgetQuizView: View {
                             //.foregroundColor(.secondary)
                     } else {
                         TextField("City", text: $manualCity)
-                        TextField("State", text: $manualState)
+                        //TextField("State", text: $manualState)
+                        Picker("State", selection: $manualState) {
+                            Text("Select a state").tag("")
+                            ForEach(US_STATES) { states in
+                                Text(states.name).tag(states.code)
+                            }
+                        }
                     }
                 }
                 
@@ -152,7 +218,12 @@ struct BudgetQuizView: View {
                                 await generateBudgetFromLLM()
                             }
                         }
-                        .disabled(yearlyIncome.isEmpty || numberOfDependents.isEmpty || (city.isEmpty && !useDeviceLocation))
+                        .disabled(
+                            yearlyIncome.isEmpty || retirement.isEmpty ||
+                            numberOfDependents.isEmpty ||
+                            (useDeviceLocation ? city.isEmpty || state.isEmpty : manualCity.isEmpty || manualState.isEmpty)
+                        )
+
                     }
                 }
             }
@@ -183,6 +254,7 @@ struct BudgetQuizView: View {
         let payload: [String: Any] = [
             "username": username,
             "yearlyIncome": yearlyIncome,
+            "401(k) Contribution": retirement,
             "dependents": numberOfDependents,
             "city": finalCity,
             "state": finalState,
@@ -280,6 +352,7 @@ struct BudgetQuizView: View {
                 if let dict = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
                     await MainActor.run {
                         yearlyIncome        = String(describing: dict["yearlyIncome"]  ?? "")
+                        retirement          = String(describing: dict["401(k) Contribution"] ?? "")
                         numberOfDependents  = String(describing: dict["dependents"]    ?? "")
                         city                = String(dict["city"] as? String ?? "")
                         state               = String(dict["state"] as? String ?? "")
@@ -366,6 +439,12 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     }
     
     
+}
+
+struct USState: Identifiable {
+    let id = UUID()
+    let name: String
+    let code: String
 }
 
 

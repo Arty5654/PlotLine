@@ -54,11 +54,14 @@ public class BudgetQuizController {
     private static final double ADDL_MEDICARE_RATE = 0.009;          
     private static final double ADDL_MEDICARE_THRESHOLD_SINGLE = 200_000.0;
 
+    private static final double K401_EMPLOYEE_LIMIT_2024 = 23_000.0;
+
     @PostMapping
     public ResponseEntity<?> generateBudget(@RequestBody Map<String, Object> quizData) {
         try {
             String username = (String) quizData.get("username");
             double grossYearlyIncome = Double.parseDouble(quizData.get("yearlyIncome").toString());
+            double retirment = Double.parseDouble(quizData.get("401(k) Contribution").toString());
             String city = (String) quizData.get("city");
             String state = (String) quizData.get("state");
             int dependents = Integer.parseInt(quizData.get("dependents").toString());
@@ -73,22 +76,30 @@ public class BudgetQuizController {
 
             String categoriesList = String.join(", ", categories);
 
+            // Account for 401(k) before calcuating taxes
+            double k401Defferal = Math.min(grossYearlyIncome * (retirment / 100.0), K401_EMPLOYEE_LIMIT_2024);
+            double taxableIncome = Math.max(0.0, grossYearlyIncome - k401Defferal);
+
             // Get the taxes
 
             double federalTax = calcTax(
                     (List<Map<String,Object>>) TAX_TABLE.get("FEDERAL_2024_SINGLE"),
-                    grossYearlyIncome);
+                    taxableIncome);
 
             Map<String,Object> stateSpec =
                     (Map<String,Object>) TAX_TABLE.get(state.toUpperCase());
-            double stateTax   = calcTax(stateSpec, grossYearlyIncome);
+            double stateTax   = calcTax(stateSpec, taxableIncome);
             double fica = calcFica(grossYearlyIncome);
+            double localTax = calcLocalTax(city, state, taxableIncome);
 
-            double afterTaxYearly = grossYearlyIncome - federalTax - stateTax - fica;
+            double afterTaxYearly = taxableIncome - federalTax - stateTax - fica - localTax;
             double monthlyNet = afterTaxYearly / 12.0;
 
-            System.out.printf("[TAX] %s - Fed: %.2f  State(%s): %.2f  fica %.2f, Net: %.2f%n",
-                    username, federalTax, state, stateTax, fica, afterTaxYearly);
+            System.out.println("Taxable Income (After 401k): " + taxableIncome);
+            System.out.println("Monthly Net: " + monthlyNet);
+
+            System.out.printf("[TAX] %s - Fed: %.2f  State(%s): %.2f  Local: %.2f fica %.2f, Net: %.2f%n",
+                    username, federalTax, state, stateTax, localTax, fica, afterTaxYearly);
 
 
 
@@ -162,12 +173,14 @@ public class BudgetQuizController {
             You are a financial assistant helping generate a realistic monthly budget.
 
             Generate a JSON object for a monthly budget for someone living in %s, %s,
-            earning $%.2f **after federal, state, and FICA (Social Security + Medicare) tax** yearly, supporting %d dependents, with a %s spending style.
+            earning $%.2f **after Traditional 401(k) contriubtion, federal, state, local/municipal, and FICA (Social Security + Medicare) tax** yearly, supporting %d dependents, with a %s spending style.
 
             Use ONLY these categories: %s.
 
             The user already knows these costs and has requested to fix them:
             %s
+
+            IMPORANT: **Do NOT include a '401k Contribution' category in your output.** The server will append a fixed line for this.
 
             Use the following budgeting rules as **general guidance** — they are recommendations, not strict constraints. Use your judgment to adjust based on cost of living, dependents, and the user's chosen categories.
             
@@ -199,6 +212,13 @@ public class BudgetQuizController {
 
             // Parse response to map
             Map<String, Double> monthly = objectMapper.readValue(jsonOnly, new TypeReference<>() {});
+            double k401Monthly = Math.round(k401Defferal / 12.0);
+            // Making sure the LLM does not put the category itself since it only knows the percentage not the dollar amount
+            monthly.remove("401k"); 
+            monthly.remove("401k Contribution");
+            monthly.remove("401KContribution");
+            monthly.remove("401(k) Contribution");
+            monthly.put("401(k) Contribution", k401Monthly);
             Map<String, Double> weekly = new HashMap<>();
             for (Map.Entry<String, Double> entry : monthly.entrySet()) {
                 weekly.put(entry.getKey(), entry.getValue() / 4.0);
@@ -273,6 +293,19 @@ public class BudgetQuizController {
         double medicare = wages * MEDICARE_RATE;
         double addlMedicare = Math.max(0.0, wages - ADDL_MEDICARE_THRESHOLD_SINGLE) * ADDL_MEDICARE_RATE;
         return ssTax + medicare + addlMedicare;
+    }
+
+    // Calculate local/muniicipal taxes if the state has any
+    private double calcLocalTax(String city, String state, double taxableIncome) {
+        String prompt = String.format("""
+        If the state has any local/Municipal taxes, 
+        then use the city and state, %s, %s, 
+        and the taxable yearly income, $%.2f, to calcuate it. If there is no local/Municipal tax, then just return 0.0.
+        """, city, state, taxableIncome);
+        String localTax = openAIService.generateResponseLocalTaxes(prompt);
+        System.out.println("Local Tax: " + localTax);
+        return Double.parseDouble(localTax);
+
     }
 
     private void saveToS3(String username, String fileName, Map<String, Double> budget) throws Exception {
