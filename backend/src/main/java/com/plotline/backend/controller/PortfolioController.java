@@ -2,6 +2,7 @@ package com.plotline.backend.controller;
 import com.plotline.backend.service.OpenAIService;
 import com.plotline.backend.service.PortfolioService;
 import com.plotline.backend.dto.SavedPortfolio;
+import com.plotline.backend.dto.SavedPortfolio.AccountType;
 import com.plotline.backend.service.S3Service;
 import com.plotline.backend.service.UserProfileService;
 
@@ -44,9 +45,10 @@ public class PortfolioController {
     public ResponseEntity<String> generatePortfolio(@RequestBody Map<String, String> quizData) {
         try {
             String username = quizData.get("username");
+            AccountType accountType = AccountType.fromString(quizData.get("account"));
 
             // Delete original portfilio if user takes the quiz again
-            portfolioService.deleteOriginalPortfolio(username);
+            portfolioService.deleteOriginalPortfolio(username, accountType);
 
             // Fetch income
             ResponseEntity<String> incomeResponse = incomeController.getIncomeData(username);
@@ -61,9 +63,11 @@ public class PortfolioController {
             try {
                 byte[] budgetBytes = s3Service.downloadFile(budgetKey);
                 JsonNode budgetJson = mapper.readTree(new String(budgetBytes, StandardCharsets.UTF_8));
-                JsonNode investmentsNode = budgetJson.get("budget").get("Investments");
-                if (investmentsNode != null) {
-                    investmentAmount = investmentsNode.asText();
+                JsonNode investmentsNode = budgetJson.get("budget").get("Brokerage");
+                if (accountType == AccountType.ROTH_IRA && budgetJson.has("Roth IRA")) {
+                    investmentAmount = budgetJson.get("Roth IRA").asText();
+                } else if (budgetJson.has("Brokerage")) {
+                    investmentAmount = budgetJson.get("Brokerage").asText();
                 }
             } catch (Exception e) {
                 System.out.println("No budget file or investment key found, using income fallback.");
@@ -72,6 +76,17 @@ public class PortfolioController {
             String amountBasis = (investmentAmount != null && !investmentAmount.isEmpty()) ? 
                 "$" + investmentAmount + "/month (based on budget)" : 
                 "$" + income + " annual income";
+            
+            // Different prompt for Roth IRA
+            String accountHint = (accountType == AccountType.ROTH_IRA)
+                ? """
+                    You are constructing a portfolio **for a Roth IRA** (tax-free qualified withdrawals, contributions limited annually).
+                    Keep the format identical; you may emphasize long-term growth and tax-inefficient assets are fine here.
+                    """
+                : """
+                    You are constructing a portfolio **for a taxable brokerage account**.
+                    Prefer tax efficiency (e.g., broad index ETFs; avoid unnecessary turnover).
+                    """;
 
             // Create prompt
             String prompt = String.format("""
@@ -81,6 +96,8 @@ public class PortfolioController {
             - Experience: %s
             - Age: %s
             - Suggested Monthly Investment: %s
+
+            %s
 
             Recommend a diversified investment portfolio. 
 
@@ -102,7 +119,8 @@ public class PortfolioController {
             quizData.get("riskTolerance"),
             quizData.get("experience"),
             quizData.get("age"),
-            amountBasis
+            amountBasis,
+            accountHint
             );
 
 
@@ -132,7 +150,10 @@ public class PortfolioController {
     @PostMapping("/portfolio/save-original")
     public ResponseEntity<String> saveOriginalPortfolio(@RequestBody SavedPortfolio portfolio) {
         try {
-            portfolioService.saveOriginalPortfolio(portfolio.getUsername(), portfolio);
+            if (portfolio.getAccount() == null) {
+                portfolio.setAccount(SavedPortfolio.AccountType.BROKERAGE);
+            }
+            portfolioService.saveOriginalPortfolio(portfolio.getUsername(), portfolio.getAccount(), portfolio);
             return ResponseEntity.ok("Original portfolio saved");
         } catch (Exception e) {
             return ResponseEntity.status(500).body("Failed to save original portfolio: " + e.getMessage());
@@ -144,7 +165,10 @@ public class PortfolioController {
     @PostMapping("/portfolio/save")
     public ResponseEntity<String> saveEditedPortfolio(@RequestBody SavedPortfolio newPortfolio) {
         try {
-            portfolioService.saveEditedPortfolio(newPortfolio.getUsername(), newPortfolio);
+            if (newPortfolio.getAccount() == null) {
+                newPortfolio.setAccount(SavedPortfolio.AccountType.BROKERAGE);
+            }
+            portfolioService.saveEditedPortfolio(newPortfolio.getUsername(), newPortfolio.getAccount(), newPortfolio);
             return ResponseEntity.ok("Edited portfolio saved.");
         } catch (Exception e) {
             e.printStackTrace();
@@ -153,17 +177,17 @@ public class PortfolioController {
     }
 
     @GetMapping("/portfolio/{username}")
-    public ResponseEntity<SavedPortfolio> getPortfolio(@PathVariable String username) {
-        SavedPortfolio edited = portfolioService.loadEditedPortfolio(username);
+    public ResponseEntity<SavedPortfolio> getPortfolio(@PathVariable String username, @RequestParam(name="account", defaultValue="BROKERAGE") AccountType account) {
+        SavedPortfolio edited = portfolioService.loadEditedPortfolio(username, account);
         System.out.println("Edited: " + edited);
         
         if (edited != null) {
             return ResponseEntity.ok(edited);
         } else {
             // Fallback to original if edited doesn't exist
-            SavedPortfolio original = portfolioService.loadOriginalPortfolio(username);
+            SavedPortfolio original = portfolioService.loadOriginalPortfolio(username, account);
             if (original != null) {
-                System.out.println("Here??");
+                //System.out.println("Here??");
                 return ResponseEntity.ok(original);
             }
         }
@@ -172,26 +196,26 @@ public class PortfolioController {
     }    
 
     @PostMapping("/portfolio/revert/{username}")
-    public ResponseEntity<String> revertToOriginal(@PathVariable String username) {
-        SavedPortfolio original = portfolioService.loadOriginalPortfolio(username);
+    public ResponseEntity<String> revertToOriginal(@PathVariable String username, @RequestParam(name = "account", defaultValue = "BROKERAGE") AccountType account) {
+        SavedPortfolio original = portfolioService.loadOriginalPortfolio(username, account);
         if (original == null) {
             return ResponseEntity.status(404).body("Original portfolio not found");
         }
-        portfolioService.saveEditedPortfolio(username, original);
+        portfolioService.saveEditedPortfolio(username, account, original);
         // Clean up old edited portfolio
-        portfolioService.deleteEditedPortfolio(username);
+        portfolioService.deleteEditedPortfolio(username, account);
         return ResponseEntity.ok("Reverted to original portfolio");
     }
 
     // For Stock News
     @GetMapping("/portfolio/risk/{username}")
-    public ResponseEntity<String> getRiskTolerance(@PathVariable String username) {
+    public ResponseEntity<String> getRiskTolerance(@PathVariable String username, @RequestParam(name = "account", defaultValue = "BROKERAGE") AccountType account) {
         // Try to load the edited portfolio first
-        SavedPortfolio portfolio = portfolioService.loadEditedPortfolio(username);
+        SavedPortfolio portfolio = portfolioService.loadEditedPortfolio(username, account);
     
         // If no edited portfolio or risk is invalid, try to load the original
         if (portfolio == null || portfolio.getRiskTolerance() == null || portfolio.getRiskTolerance().equalsIgnoreCase("Edited")) {
-            portfolio = portfolioService.loadOriginalPortfolio(username);
+            portfolio = portfolioService.loadOriginalPortfolio(username, account);
     
             // If still null or invalid, return default
             if (portfolio == null || portfolio.getRiskTolerance() == null) {

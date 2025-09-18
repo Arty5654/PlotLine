@@ -9,6 +9,15 @@ import SwiftUI
 import Charts
 
 struct StockView: View {
+    
+    enum ViewAccount: String, CaseIterable, Identifiable {
+       case brokerage = "Brokerage"
+       case rothIRA   = "Roth IRA"
+       var id: String { rawValue }
+       var apiValue: String { self == .brokerage ? "BROKERAGE" : "ROTH_IRA" }
+    }
+    
+    @State private var viewAccount: ViewAccount = .brokerage
     @State private var savedPortfolio: SavedPortfolio? = nil
     
     // For watchlists
@@ -28,8 +37,19 @@ struct StockView: View {
         ScrollView {
             VStack(spacing: 20) {
                 
+            // Account switcher
+               Picker("Account", selection: $viewAccount) {
+                   ForEach(ViewAccount.allCases) { acct in
+                       Text(acct.rawValue).tag(acct)
+                   }
+               }
+               .pickerStyle(.segmented)
+               .onChange(of: viewAccount) { newVal in
+                   fetchSavedPortfolio(for: newVal)
+               }
+                
                 NavigationLink(destination: InvestmentQuizView(onFinish: {
-                    fetchSavedPortfolio()
+                    fetchSavedPortfolio(for: viewAccount)
                 })
                 .environmentObject(calendarViewModel)
                 //.environmentObject(friendVM)
@@ -98,7 +118,7 @@ struct StockView: View {
                             }
 
                             Button("Revert to LLM Portfolio") {
-                                revertToLLMGeneratedPortfolio()
+                                revertToLLMGeneratedPortfolio(for: viewAccount)
                             }
                             .foregroundColor(.red)
                             .padding()
@@ -113,35 +133,51 @@ struct StockView: View {
             .padding()
         }
         .onAppear {
-            fetchSavedPortfolio()
+            fetchSavedPortfolio(for: viewAccount)
         }
 
     }
 
-    func fetchSavedPortfolio() {
-        print("Fetching portfolio for: \(username)")
-        guard let url = URL(string: "http://localhost:8080/api/llm/portfolio/\(username)") else { return }
-        
+    func fetchSavedPortfolio(for account: ViewAccount) {
+        // Prefer new endpoint with query param, but gracefully fall back to legacy
+        var components = URLComponents(string: "http://localhost:8080/api/llm/portfolio/\(username)")!
+        components.queryItems = [URLQueryItem(name: "account", value: account.apiValue)]
 
-        URLSession.shared.dataTask(with: url) { data, _, _ in
-            if let data = data,
-               let decoded = try? JSONDecoder().decode(SavedPortfolio.self, from: data) {
-                //print("Decoded portfolio: \(decoded)")
+        func decodeAndSet(_ data: Data) {
+            if let decoded = try? JSONDecoder().decode(SavedPortfolio.self, from: data) {
                 DispatchQueue.main.async {
                     self.savedPortfolio = decoded
                 }
+            } else {
+                DispatchQueue.main.async { self.savedPortfolio = nil }
             }
-        }.resume()
+        }
+
+        if let url = components.url {
+            URLSession.shared.dataTask(with: url) { data, resp, _ in
+                if let http = resp as? HTTPURLResponse, http.statusCode == 200, let data = data {
+                    decodeAndSet(data)
+                } else {
+                    // Fallback to old endpoint without account filter
+                    let legacyURL = URL(string: "http://localhost:8080/api/llm/portfolio/\(username)")!
+                    URLSession.shared.dataTask(with: legacyURL) { data2, _, _ in
+                        if let data2 = data2 { decodeAndSet(data2) }
+                    }.resume()
+                }
+            }.resume()
+        }
     }
     
-    func revertToLLMGeneratedPortfolio() {
-        guard let url = URL(string: "http://localhost:8080/api/llm/portfolio/revert/\(username)") else { return }
+    func revertToLLMGeneratedPortfolio(for account: ViewAccount) {
+        var components = URLComponents(string: "http://localhost:8080/api/llm/portfolio/revert/\(username)")!
+        components.queryItems = [URLQueryItem(name: "account", value: account.apiValue)]
+        guard let url = components.url else { return }
 
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
 
-        URLSession.shared.dataTask(with: request) { _, _, _ in
-            fetchSavedPortfolio()
+        URLSession.shared.dataTask(with: req) { _, _, _ in
+            fetchSavedPortfolio(for: account)
         }.resume()
     }
 }

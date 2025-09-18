@@ -1,19 +1,47 @@
 package com.plotline.backend.dto;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonFormat;
+
 public class SavedPortfolio {
+
+    @JsonFormat(shape = JsonFormat.Shape.STRING)
+    public enum AccountType {
+        BROKERAGE,
+        ROTH_IRA;
+
+        // forgiving parser used by controller and/or DTO convenience setter
+        public static AccountType fromString(String s) {
+            if (s == null) return BROKERAGE;
+            String v = s.trim().toUpperCase();
+            switch (v) {
+                case "ROTH_IRA": return ROTH_IRA;
+                case "BROKERAGE":
+                default: return BROKERAGE;
+            }
+        }
+    }
+
     private String username;
-    private String portfolio;           // Current version (may be edited by user)
-    private String originalPortfolio;   // Original LLM-generated portfolio
+    private String portfolio;           
+    private String originalPortfolio;   
     private String riskTolerance;
+    private AccountType account;
 
     // Constructors
     public SavedPortfolio() {}
 
-    public SavedPortfolio(String username, String portfolio, String originalPortfolio, String riskTolerance) {
+    @JsonCreator
+    public SavedPortfolio(
+            @JsonProperty("username") String username,
+            @JsonProperty("portfolio") String portfolio,
+            @JsonProperty("riskTolerance") String riskTolerance,
+            @JsonProperty("account") AccountType account) {
         this.username = username;
         this.portfolio = portfolio;
-        this.originalPortfolio = originalPortfolio;
         this.riskTolerance = riskTolerance;
+        this.account = account;
     }
 
     // Getters
@@ -33,6 +61,10 @@ public class SavedPortfolio {
         return riskTolerance;
     }
 
+    public AccountType getAccount() {
+        return account;
+    }
+
     // Setters
     public void setUsername(String username) {
         this.username = username;
@@ -49,4 +81,28 @@ public class SavedPortfolio {
     public void setRiskTolerance(String riskTolerance) {
         this.riskTolerance = riskTolerance;
     }
+
+    public void setAccount(AccountType accountType) {
+        this.account = account;
+    }
+
+    public void setAccount(String account) {
+        this.account = AccountType.fromString(account);
+    }
+
+    // public enum AccountType {
+    //     BROKERAGE,
+    //     ROTH_IRA;
+
+    //     public static AccountType fromString(String s) {
+    //         if (s == null) return BROKERAGE;
+    //         switch (s.trim().toUpperCase()) {
+    //             case "ROTH_IRA": return ROTH_IRA;
+    //             case "BROKERAGE":
+    //             default: return BROKERAGE;
+    //         }
+    //     }
+    // }   
 }
+
+

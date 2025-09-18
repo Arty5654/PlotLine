@@ -9,6 +9,15 @@ import SwiftUI
 import Foundation
 
 struct InvestmentQuizView: View {
+    enum InvestmentAccount: String, CaseIterable, Identifiable {
+        case brokerage = "Brokerage"
+        case rothIRA = "Roth IRA"
+        var id: String { rawValue }
+        var apiValue: String { self == .brokerage ? "BROKERAGE" : "ROTH_IRA" }
+    }
+
+    @State private var selectedAccount: InvestmentAccount = .brokerage
+
     @State private var goals = ""
     @State private var riskTolerance = ""
     @State private var investingExperience = ""
@@ -54,6 +63,25 @@ struct InvestmentQuizView: View {
                     }
             } else {
                 Form {
+                    Section(header: Text("Account")) {
+                        Picker("Account", selection: $selectedAccount) {
+                            ForEach(InvestmentAccount.allCases) { acct in
+                                Text(acct.rawValue).tag(acct)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+
+                        if selectedAccount == .rothIRA {
+                            Text("We’ll create a Roth IRA portfolio. The monthly amount will be taken from your **Budget → “Roth IRA”** line if available; otherwise we’ll fall back to your income.")
+                                .font(.footnote)
+                                .foregroundColor(.secondary)
+                        } else {
+                            Text("We’ll create a standard brokerage portfolio. The monthly amount will be taken from **Budget → “Other Investments”** if available; otherwise we’ll fall back to your income.")
+                                .font(.footnote)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
                     Section(header: Text("Investment Goals")) {
                         Picker("Goal", selection: $goals) {
                             Text("Retirement").tag("Retirement")
@@ -105,7 +133,8 @@ struct InvestmentQuizView: View {
             "goals": goals,
             "riskTolerance": riskTolerance,
             "experience": investingExperience,
-            "age": age
+            "age": age,
+            "account": selectedAccount.apiValue
         ]
         print("Username: " + username)
 
@@ -133,7 +162,8 @@ struct InvestmentQuizView: View {
         let payload: [String: String] = [
             "username": username,
             "portfolio": recommendation,
-            "riskTolerance": riskTolerance
+            "riskTolerance": riskTolerance,
+            "account": selectedAccount.apiValue
         ]
 
         print("Risk after quiz completion: " + riskTolerance)
