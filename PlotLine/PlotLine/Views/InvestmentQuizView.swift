@@ -26,6 +26,10 @@ struct InvestmentQuizView: View {
     @State private var llmRecommendation: String? = nil
     @Environment(\.dismiss) var dismiss
     
+    // Check for Missing Budget
+    @State private var showBudgetMissingAlert = false
+    @State private var budgetMissingMessage = ""
+    
     // Sometimes pie chart wont refresh
     var onFinish: (() -> Void)? = nil
 
@@ -124,7 +128,65 @@ struct InvestmentQuizView: View {
         }
         .padding()
         .navigationTitle("Investor Quiz")
+        // Pop an alert if user has no budget for investments
+        .alert("Add to Budget First", isPresented: $showBudgetMissingAlert) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(budgetMissingMessage)
+        }
 }
+    
+    // Verify budget contains the required category with a positive amount
+    private func precheckBudgetLine() async -> Bool {
+        guard let url = URL(string: "http://localhost:8080/api/budget/\(username)/monthly") else {
+            budgetMissingMessage = "Could not check your Budget. Please ensure your Budget includes the needed line."
+            showBudgetMissingAlert = true
+            return false
+        }
+
+        do {
+            let (data, response) = try await URLSession.shared.data(from: url)
+            guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode), !data.isEmpty else {
+                // Treat no budget as missing
+                let key = (selectedAccount == .rothIRA) ? "Roth IRA" : "Brokerage"
+                budgetMissingMessage = "We couldn’t find your Budget. Please create a budget and add a “\(key)” line first."
+                showBudgetMissingAlert = true
+                return false
+            }
+
+            struct BudgetResponse: Decodable {
+                let budget: [String: Double]
+            }
+
+            if let decoded = try? JSONDecoder().decode(BudgetResponse.self, from: data) {
+                let key = (selectedAccount == .rothIRA) ? "Roth IRA" : "Brokerage"
+                if let val = decoded.budget[key], val > 0 {
+                    return true
+                } else {
+                    budgetMissingMessage = "To build a \(selectedAccount.rawValue) portfolio, please add a monthly amount for “\(key)” in your Budget first."
+                    showBudgetMissingAlert = true
+                    return false
+                }
+            } else {
+                // Fallback: try flat map (in case backend returns a plain {category: amount} map)
+                if let map = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    let key = (selectedAccount == .rothIRA) ? "Roth IRA" : "Brokerage"
+                    if let val = map[key] as? Double, val > 0 {
+                        return true
+                    }
+                }
+                let key = (selectedAccount == .rothIRA) ? "Roth IRA" : "Brokerage"
+                budgetMissingMessage = "Please add a monthly amount for “\(key)” in your Budget first."
+                showBudgetMissingAlert = true
+                return false
+            }
+        } catch {
+            let key = (selectedAccount == .rothIRA) ? "Roth IRA" : "Brokerage"
+            budgetMissingMessage = "Couldn’t reach the Budget service. Make sure your Budget has a “\(key)” line, then try again."
+            showBudgetMissingAlert = true
+            return false
+        }
+    }
 
     func generatePortfolioFromLLM() async {
         let url = URL(string: "http://localhost:8080/api/llm/portfolio")!

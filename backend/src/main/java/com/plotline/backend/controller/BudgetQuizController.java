@@ -54,7 +54,11 @@ public class BudgetQuizController {
     private static final double ADDL_MEDICARE_RATE = 0.009;          
     private static final double ADDL_MEDICARE_THRESHOLD_SINGLE = 200_000.0;
 
+    // 401k
     private static final double K401_EMPLOYEE_LIMIT_2024 = 23_000.0;
+
+    // Debt
+    private static final double MIN_DEBT_FLOOR = 25.0;
 
     @PostMapping
     public ResponseEntity<?> generateBudget(@RequestBody Map<String, Object> quizData) {
@@ -66,15 +70,68 @@ public class BudgetQuizController {
             String state = (String) quizData.get("state");
             int dependents = Integer.parseInt(quizData.get("dependents").toString());
             String spendingStyle = (String) quizData.get("spendingStyle");
-            List<String> categories = (List<String>) quizData.get("categories");
+            //List<String> categories = (List<String>) quizData.get("categories");
+            List<String> categories = ((List<?>) quizData.getOrDefault("categories", List.of()))
+                .stream()
+                .map(String::valueOf)
+                .collect(Collectors.toCollection(ArrayList::new));
             Map<String, Double> knownCosts = (Map<String, Double>) quizData.getOrDefault("knownCosts", Map.of());
 
-            String knownAllocations = knownCosts.entrySet().stream()
-                    .map(e -> String.format("- Allocate $%.2f to %s.", ((Number) e.getValue()).doubleValue(), e.getKey()))
-                    .collect(Collectors.joining("\n"));
+            // Parse debt
+            boolean hasDebt = Boolean.parseBoolean(String.valueOf(quizData.getOrDefault("hasDebt", false)));
+            List<DebtItem> debts = parseDebts(quizData.get("debts"));
+
+            // Get mins for debts
+            Map<String, Double> debtFixed = new LinkedHashMap<>();
+            for (DebtItem d : debts) {
+                double minDue = computeDebtMinimum(d);
+                if (minDue > 0) {
+                    debtFixed.put(debtLabel(d), minDue);
+                }
+            }
+
+            // Augment categories so LLM is allowed to output debt lines
+            List<String> categoriesAug = new ArrayList<>(categories);
+            for (DebtItem d : debts) {
+                String label = debtLabel(d);
+                if (!categoriesAug.contains(label)) {
+                    categoriesAug.add(label);
+                }
+            }
+
+            // Merge debt minimums into known costs displayed to the LLM
+            Map<String, Double> knownCostsAug = new LinkedHashMap<>(knownCosts);
+            for (var e : debtFixed.entrySet()) {
+                // If the user already put a manual amount for the same label, keep user's amount.
+                knownCostsAug.putIfAbsent(e.getKey(), e.getValue());
+            }
 
 
-            String categoriesList = String.join(", ", categories);
+            // String knownAllocations = knownCosts.entrySet().stream()
+            //         .map(e -> String.format("- Allocate $%.2f to %s.", ((Number) e.getValue()).doubleValue(), e.getKey()))
+            //         .collect(Collectors.joining("\n"));
+
+
+            // String categoriesList = String.join(", ", categories);
+
+            // Augmented list to include debts
+            String knownAllocations = knownCostsAug.entrySet().stream()
+            .map(e -> String.format("- Allocate $%.2f to %s.", e.getValue(), e.getKey()))
+            .collect(Collectors.joining("\n"));
+
+            String categoriesList = String.join(", ", categoriesAug);
+
+            // Create debt text for prompt
+            String debtsSection = debts.isEmpty() ? "None"
+            : debts.stream().map(d -> String.format(
+                "- %s | Principal: $%.2f%s%s",
+                d.name,
+                d.principal,
+                (d.apr != null ? (", APR: " + round2(d.apr) + "%%") : ""),
+                (d.dueDay != null ? (", Due Day: " + d.dueDay) : "")
+            )).collect(Collectors.joining("\n"));
+
+
 
             // Account for 401(k) before calcuating taxes
             double k401Defferal = Math.min(grossYearlyIncome * (retirment / 100.0), K401_EMPLOYEE_LIMIT_2024);
@@ -108,63 +165,63 @@ public class BudgetQuizController {
             //   categories = Arrays.asList("Rent", "Groceries", "Subscriptions", "Savings", "Investments", "Entertainment", "Eating Out", "Utilities", "Other");
             // }
 
-            String rules;
-            switch (spendingStyle.toLowerCase()) {
-                case "low":
-                    rules = """
-                        - Limit rent to 25%% of monthly income.
-                        - Save and invest at least 30%% of monthly income.
-                        - Groceries should stay around 10%%.
-                        - Keep entertainment and eating out under 5%% each.
-                        - Transportation (including gas, public transit, etc.) should be under 5%%.
-                        - Insurance (health, auto, etc.) around 8-10%%.
-                        - Subscriptions should not exceed 2%%.
-                        - Miscellaneous should be capped at 3%%.
-                        """;
-                    break;
-                case "medium":
-                    rules = """
-                        - Allocate up to 30%% of monthly income to rent.
-                        - Save and invest up to 20-25%% combined.
-                        - Groceries up to 12-15%%.
-                        - Entertainment and eating out can be up to 10%% each.
-                        - Transportation (gas, rideshare, car payments) can be up to 8%%.
-                        - Insurance (health, auto, etc.) up to 10-12%%.
-                        - Subscriptions should stay under 4%%.
-                        - Miscellaneous spending should be under 5%%.
-                        """;
-                    break;
-                case "high":
-                    rules = """
-                        - Allow up to 35%% of monthly income for rent.
-                        - Save and invest 10-15%% combined.
-                        - Groceries can be up to 15%%.
-                        - Entertainment and eating out may go up to 15%% each.
-                        - Transportation (car ownership, fuel, etc.) up to 10%%.
-                        - Insurance costs may be up to 15%%.
-                        - Subscriptions can be up to 5%%.
-                        - Miscellaneous spending up to 8%%.
-                        """;
-                    break;
-                default:
-                    rules = "";
-            }
+            // String rules;
+            // switch (spendingStyle.toLowerCase()) {
+            //     case "low":
+            //         rules = """
+            //             - Limit rent to 25%% of monthly income.
+            //             - Save and invest at least 30%% of monthly income.
+            //             - Groceries should stay around 10%%.
+            //             - Keep entertainment and eating out under 5%% each.
+            //             - Transportation (including gas, public transit, etc.) should be under 5%%.
+            //             - Insurance (health, auto, etc.) around 8-10%%.
+            //             - Subscriptions should not exceed 2%%.
+            //             - Miscellaneous should be capped at 3%%.
+            //             """;
+            //         break;
+            //     case "medium":
+            //         rules = """
+            //             - Allocate up to 30%% of monthly income to rent.
+            //             - Save and invest up to 20-25%% combined.
+            //             - Groceries up to 12-15%%.
+            //             - Entertainment and eating out can be up to 10%% each.
+            //             - Transportation (gas, rideshare, car payments) can be up to 8%%.
+            //             - Insurance (health, auto, etc.) up to 10-12%%.
+            //             - Subscriptions should stay under 4%%.
+            //             - Miscellaneous spending should be under 5%%.
+            //             """;
+            //         break;
+            //     case "high":
+            //         rules = """
+            //             - Allow up to 35%% of monthly income for rent.
+            //             - Save and invest 10-15%% combined.
+            //             - Groceries can be up to 15%%.
+            //             - Entertainment and eating out may go up to 15%% each.
+            //             - Transportation (car ownership, fuel, etc.) up to 10%%.
+            //             - Insurance costs may be up to 15%%.
+            //             - Subscriptions can be up to 5%%.
+            //             - Miscellaneous spending up to 8%%.
+            //             """;
+            //         break;
+            //     default:
+            //         rules = "";
+            // }
 
             double monthlyIncome = grossYearlyIncome / 12;
             double budgetCap;
 
             switch (spendingStyle.toLowerCase()) {
                 case "low":
-                    budgetCap = monthlyIncome * 0.75;
+                    budgetCap = monthlyNet* 0.75;
                     break;
                 case "medium":
-                    budgetCap = monthlyIncome * 0.88;
+                    budgetCap = monthlyNet * 0.88;
                     break;
                 case "high":
-                    budgetCap = monthlyIncome * 0.97;
+                    budgetCap = monthlyNet * 0.97;
                     break;
                 default:
-                    budgetCap = monthlyIncome * 0.85;
+                    budgetCap = monthlyNet * 0.85;
             }
 
 
@@ -180,14 +237,17 @@ public class BudgetQuizController {
             The user already knows these costs and has requested to fix them:
             %s
 
+            Debts (allocate at least the listed minimum for each):
+            %s
+            (Use the debt categories exactly as "Debt - <Name>" when allocating.)
+
             IMPORANT: **Do NOT include a '401k Contribution' category in your output.** The server will append a fixed line for this.
 
-            Use the following budgeting rules as **general guidance** — they are recommendations, not strict constraints. Use your judgment to adjust based on cost of living, dependents, and the user's chosen categories.
+            Use your judgment to adjust based on cost of living, dependents, and the user's chosen categories.
             
             You **must allocate money to all user-provided categories**, even if they are not mentioned in the rules (e.g., hobbies like "Tennis"). Make sure each category has a reasonable allocation unless it clearly shouldn't apply.
 
-            Budgeting Guidelines:
-            %s
+           
 
             Output format:
             {
@@ -196,10 +256,10 @@ public class BudgetQuizController {
                 ...
             }
 
-            Try to keep the total budget around $%.2f (%.0f%% of monthly income), but this is a recommendation — the **only hard rule is that the total must not exceed the user's monthly income** ($%.2f). Round each category to whole dollars.
+            Try to keep the total budget around $%.2f (%.0f%% of take-home monthly income), but this is a recommendation — the **only hard rule is that the total must not exceed the user's monthly income** ($%.2f). Round each category to whole dollars.
 
             Ensure that savings and investments are separated, and combined they should follow the range based on spending style.
-            """, city, state, afterTaxYearly, dependents, spendingStyle, categoriesList, knownAllocations, rules, budgetCap, (budgetCap / monthlyNet) * 100, monthlyNet);
+            """, city, state, afterTaxYearly, dependents, spendingStyle, categoriesList, knownAllocations, debtsSection, budgetCap, (budgetCap / monthlyNet) * 100, monthlyNet);
 
             
 
@@ -219,6 +279,17 @@ public class BudgetQuizController {
             monthly.remove("401KContribution");
             monthly.remove("401(k) Contribution");
             monthly.put("401(k) Contribution", k401Monthly);
+
+            // Enforce debt minimums (ensure presence and at least min)
+            for (var e : debtFixed.entrySet()) {
+                String label = e.getKey();
+                double minAmt = e.getValue();
+                double existing = monthly.getOrDefault(label, 0.0);
+                if (existing < minAmt) {
+                    monthly.put(label, (double) round0(minAmt));
+                }
+            }
+
             Map<String, Double> weekly = new HashMap<>();
             for (Map.Entry<String, Double> entry : monthly.entrySet()) {
                 weekly.put(entry.getKey(), entry.getValue() / 4.0);
@@ -229,6 +300,11 @@ public class BudgetQuizController {
             //saveToS3(username, "monthly-budget-edited.json", monthly);
             saveToS3(username, "weekly-budget.json", weekly);
             //saveToS3(username, "weekly-budget-edited.json", weekly);
+
+            // Add net monthly to quiz data for live tracker
+            quizData.put("afterTaxYearly", round2(afterTaxYearly));
+            quizData.put("monthlyNet",     round2(monthlyNet));
+            quizData.put("k401Monthly", k401Monthly);
 
             saveQuizInput(username, quizData);
             return ResponseEntity.ok(monthly);
@@ -322,7 +398,81 @@ public class BudgetQuizController {
           return text.substring(start, end + 1);
       }
       throw new IllegalArgumentException("No valid JSON object found in LLM response.");
-  }
+    }
+
+    // Debt Helper Functions
+    private static class DebtItem {
+        final String name;
+        final double principal;
+        final Double apr;        // percent, nullable
+        final Double minMonthly; // nullable
+        final Integer dueDay;    // nullable
+
+        DebtItem(String name, double principal, Double apr, Double minMonthly, Integer dueDay) {
+            this.name = name;
+            this.principal = principal;
+            this.apr = apr;
+            this.minMonthly = minMonthly;
+            this.dueDay = dueDay;
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<DebtItem> parseDebts(Object raw) {
+        if (!(raw instanceof List<?> list)) return List.of();
+        List<DebtItem> out = new ArrayList<>();
+        for (Object o : list) {
+            if (!(o instanceof Map<?,?> m)) continue;
+            Object nameObj = m.get("name");
+            String name = (nameObj == null ? "" : String.valueOf(nameObj)).trim();
+            if (name.isEmpty()) continue;
+
+            double principal = parseDoubleSafe(m.get("principal"));
+            Double apr = toNullableDouble(m.get("apr"));
+            Double minMonthly = toNullableDouble(m.get("minMonthly"));
+            Integer dueDay = toNullableInt(m.get("dueDay"));
+
+            out.add(new DebtItem(name, principal, apr, minMonthly, dueDay));
+        }
+        return out;
+    }
+
+    private double computeDebtMinimum(DebtItem d) {
+        if (d.minMonthly != null && d.minMonthly > 0) {
+            return round2(d.minMonthly);
+        }
+        if (d.apr != null && d.apr > 0 && d.principal > 0) {
+            double interestOnly = d.principal * (d.apr / 100.0) / 12.0;
+            return round2(Math.max(MIN_DEBT_FLOOR, interestOnly));
+        }
+        return 0.0;
+    }
+
+    private static String debtLabel(DebtItem d) {
+        return "Debt - " + d.name;
+    }
+
+    private static double parseDoubleSafe(Object o) {
+        if (o == null) return 0.0;
+        try { return Double.parseDouble(String.valueOf(o).replaceAll(",", "")); }
+        catch (Exception e) { return 0.0; }
+    }
+    private static Double toNullableDouble(Object o) {
+        if (o == null) return null;
+        String s = String.valueOf(o).replace("%","").trim();
+        if (s.isEmpty()) return null;
+        try { return Double.parseDouble(s); } catch (Exception e) { return null; }
+    }
+    private static Integer toNullableInt(Object o) {
+        if (o == null) return null;
+        String s = String.valueOf(o).trim();
+        if (s.isEmpty()) return null;
+        try { return Integer.parseInt(s); } catch (Exception e) { return null; }
+    }
+    private static double round2(double v) { return Math.round(v * 100.0) / 100.0; }
+    private static long round0(double v) { return Math.round(v); }
+
+   
   
 
     // Load edited budget

@@ -26,6 +26,34 @@ struct WeeklyMonthlyCostView: View {
     @State private var newSubscriptionDueDate: Date = Date()
     @State private var showSubscriptionSaveAlert: Bool = false
     
+    // Get live totals
+    @State private var takeHomeMonthly: Double = 0
+    private let trackerExclusions: Set<String> = ["401(k)", "401(k) Contribution"]
+
+    private var budgetTotal: Double {
+        let base = takeHomeMonthly > 0 ? takeHomeMonthly : budgetLimits.values.reduce(0, +)
+        return selectedType == "Monthly" ? base : base / 4.0
+    }
+
+    private var enteredTotal: Double {
+        costItems
+            .filter { !trackerExclusions.contains($0.category) } // exclude 401k from tracker math
+            .compactMap { Double($0.amount) }
+            .reduce(0, +)
+    }
+
+    private var remaining: Double { budgetTotal - enteredTotal }
+
+    private var utilization: Double {
+        guard budgetTotal > 0 else { return 0 }
+        return min(max(enteredTotal / budgetTotal, 0), 1)
+    }
+
+    private var utilizationPercentText: String {
+        guard budgetTotal > 0 else { return "—" }
+        return String(format: "%.0f%%", utilization * 100)
+    }
+    
     @EnvironmentObject var calendarVM: CalendarViewModel
     
     private var username: String {
@@ -53,6 +81,50 @@ struct WeeklyMonthlyCostView: View {
                     loadBudgetLimits()
                     loadSavedData()
                 }
+                
+                // Summary Card
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("Budget Summary")
+                            .font(.headline)
+                        Spacer()
+                        Text(utilizationPercentText)
+                            .font(.subheadline)
+                            .foregroundColor(utilization >= 1.0 ? .red : .secondary)
+                    }
+
+                    HStack {
+                        VStack(alignment: .leading) {
+                            Text("Total Budget")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            Text("$\(budgetTotal, specifier: "%.2f")")
+                                .font(.headline)
+                        }
+                        Spacer()
+                        VStack(alignment: .trailing) {
+                            Text("Entered")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            Text("$\(enteredTotal, specifier: "%.2f")")
+                                .font(.headline)
+                        }
+                    }
+
+                    ProgressView(value: utilization)
+                        .progressViewStyle(.linear)
+
+                    let over = remaining < 0
+                    Text(over
+                         ? "Over by $\(abs(remaining), specifier: "%.2f")"
+                         : "Left: $\(remaining, specifier: "%.2f")")
+                        .font(.subheadline)
+                        .foregroundColor(over ? .red : .green)
+                }
+                .padding()
+                .background(Color(.systemGray6))
+                .cornerRadius(12)
+
 
                 // Expense Inputs
                 List {
@@ -237,6 +309,7 @@ struct WeeklyMonthlyCostView: View {
             fetchSubscriptions()
             checkForUpcomingSubscriptions()
             requestNotificationPermission()
+            fetchTakeHomeMonthly()
         }
     }
 
@@ -355,7 +428,9 @@ struct WeeklyMonthlyCostView: View {
             BudgetItem(category: "Transportation", amount: ""),
             BudgetItem(category: "401(k)", amount: ""),
             BudgetItem(category: "Roth IRA", amount: ""),
-            BudgetItem(category: "Other Investments", amount: "")
+            BudgetItem(category: "Car Insurance", amount: ""),
+            BudgetItem(category: "Health Insurance", amount: ""),
+            BudgetItem(category: "Brokerage", amount: "")
         ]
     }
 
@@ -553,6 +628,24 @@ struct WeeklyMonthlyCostView: View {
             }
         }
     }
+    
+    private func fetchTakeHomeMonthly() {
+        guard let url = URL(string: "http://localhost:8080/api/llm/budget/last/\(username)") else { return }
+        URLSession.shared.dataTask(with: url) { data, _, _ in
+            guard let data = data,
+                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+            
+            if let v = obj["monthlyNet"] as? Double {
+                DispatchQueue.main.async { self.takeHomeMonthly = v }
+                return
+            }
+            if let s = obj["monthlyNet"] as? String, let v = Double(s) {
+                DispatchQueue.main.async { self.takeHomeMonthly = v }
+                return
+            }
+        }.resume()
+    }
+
 }
 
 // MARK: - Data Models

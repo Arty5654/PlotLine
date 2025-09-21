@@ -21,6 +21,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.Objects;
+import java.util.LinkedHashMap;
+import java.util.Iterator;
 
 @RestController
 @RequestMapping("/api/llm")
@@ -50,32 +53,60 @@ public class PortfolioController {
             // Delete original portfilio if user takes the quiz again
             portfolioService.deleteOriginalPortfolio(username, accountType);
 
-            // Fetch income
-            ResponseEntity<String> incomeResponse = incomeController.getIncomeData(username);
-            String incomeData = incomeResponse.getBody();
-            ObjectMapper mapper = new ObjectMapper();
-            JsonNode incomeJson = mapper.readTree(incomeData);
-            String income = incomeJson.has("income") ? incomeJson.get("income").asText() : "Unknown";
+            // Prefer edited monthly budget if it exists; otherwise original.
+            // And support both file shapes (wrapped vs flat).
+            String editedKey  = "users/" + username + "/monthly-budget-edited.json";
+            String origKey    = "users/" + username + "/monthly-budget.json";
 
-            // Fetch budget for 'Investments'
-            String budgetKey = "users/" + username + "/monthly-budget.json"; // or "/monthly_budget.json" if that's the convention
-            String investmentAmount = null;
+            Double brokerageEdited = null, rothEdited = null;
+            Double brokerageOrig   = null, rothOrig   = null;
+
             try {
-                byte[] budgetBytes = s3Service.downloadFile(budgetKey);
-                JsonNode budgetJson = mapper.readTree(new String(budgetBytes, StandardCharsets.UTF_8));
-                JsonNode investmentsNode = budgetJson.get("budget").get("Brokerage");
-                if (accountType == AccountType.ROTH_IRA && budgetJson.has("Roth IRA")) {
-                    investmentAmount = budgetJson.get("Roth IRA").asText();
-                } else if (budgetJson.has("Brokerage")) {
-                    investmentAmount = budgetJson.get("Brokerage").asText();
-                }
-            } catch (Exception e) {
-                System.out.println("No budget file or investment key found, using income fallback.");
+                byte[] b = s3Service.downloadFile(editedKey);
+                Map<String, Double> m = parseBudgetBytes(b);
+                brokerageEdited = m.get("Brokerage");
+                rothEdited      = m.get("Roth IRA");
+            } catch (Exception ignore) {}
+
+            try {
+                byte[] b = s3Service.downloadFile(origKey);
+                Map<String, Double> m = parseBudgetBytes(b);
+                brokerageOrig = m.get("Brokerage");
+                rothOrig      = m.get("Roth IRA");
+            } catch (Exception ignore) { 
+                System.out.println("No original monthly budget found; using edited/income if available.");
             }
 
-            String amountBasis = (investmentAmount != null && !investmentAmount.isEmpty()) ? 
-                "$" + investmentAmount + "/month (based on budget)" : 
-                "$" + income + " annual income";
+            Double chosenMonthly = null;
+            boolean usedEdited = false;
+
+            if (accountType == AccountType.ROTH_IRA) {
+                // “Use edited if it’s different, else use original”
+                if (rothEdited != null && !Objects.equals(rothEdited, rothOrig)) {
+                    chosenMonthly = rothEdited; usedEdited = true;
+                } else if (rothOrig != null) {
+                    chosenMonthly = rothOrig;
+                } else if (rothEdited != null) {
+                    chosenMonthly = rothEdited; usedEdited = true; // edited exists but original missing
+                }
+            } else { // BROKERAGE
+                if (brokerageEdited != null && !Objects.equals(brokerageEdited, brokerageOrig)) {
+                    chosenMonthly = brokerageEdited; usedEdited = true;
+                } else if (brokerageOrig != null) {
+                    chosenMonthly = brokerageOrig;
+                } else if (brokerageEdited != null) {
+                    chosenMonthly = brokerageEdited; usedEdited = true;
+                }
+            }
+
+            String amountBasis = "";
+            if (chosenMonthly != null) {
+                amountBasis = String.format("$%.2f/month (based on %s budget)",
+                        chosenMonthly, usedEdited ? "edited" : "original");
+            } else {
+                System.out.println("No Budget For Investments");
+            }
+
             
             // Different prompt for Roth IRA
             String accountHint = (accountType == AccountType.ROTH_IRA)
@@ -146,6 +177,28 @@ public class PortfolioController {
             return ResponseEntity.status(500).body("Error generating portfolio");
         }
     }
+
+    // Get budget for Brokerage or Roth IRA
+    private Map<String, Double> parseBudgetBytes(byte[] bytes) throws Exception {
+        JsonNode root = new ObjectMapper().readTree(bytes);
+        // Edited file: { "username": "...", "type": "monthly", "budget": { ... } }
+        // Original file: { "Rent": 1459.0, "Brokerage": 300.0, ... }
+        JsonNode obj = (root.has("budget") && root.get("budget").isObject()) ? root.get("budget") : root;
+
+        Map<String, Double> out = new LinkedHashMap<>();
+        Iterator<Map.Entry<String, JsonNode>> it = obj.fields();
+        while (it.hasNext()) {
+            Map.Entry<String, JsonNode> e = it.next();
+            JsonNode v = e.getValue();
+            if (v.isNumber()) {
+                out.put(e.getKey(), v.asDouble());
+            } else if (v.isTextual()) {
+                try { out.put(e.getKey(), Double.parseDouble(v.asText())); } catch (Exception ignore) {}
+            }
+        }
+        return out;
+    }
+
 
     @PostMapping("/portfolio/save-original")
     public ResponseEntity<String> saveOriginalPortfolio(@RequestBody SavedPortfolio portfolio) {

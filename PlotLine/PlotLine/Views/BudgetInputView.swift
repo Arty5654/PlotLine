@@ -21,6 +21,29 @@ struct BudgetInputView: View {
     // Whether the user acknowledged warnings
     @State private var warningsAcknowledged: Bool = false
     
+    // Live totals
+    // Exclude 401k from tracker math
+    private let trackerExclusions: Set<String> = ["401(k)", "401(k) Contribution"]
+
+    // Live totals (exclude 401k)
+    private var totalEntered: Double {
+        budgetItems
+            .filter { !trackerExclusions.contains($0.category) }
+            .compactMap { Double($0.amount) }
+            .reduce(0, +)
+    }
+
+    private var totalAllowance: Double {
+        // Treat `userIncome` as monthly; Weekly view uses 1/4 of that.
+        selectedType == "Monthly" ? userIncome : userIncome / 4.0
+    }
+    private var remaining: Double { totalAllowance - totalEntered }
+    private var progress: Double {
+        guard totalAllowance > 0 else { return 0 }
+        return min(max(totalEntered / totalAllowance, 0), 1)
+    }
+
+    
     // MARK: - Constants / Defaults
     private let username: String = UserDefaults.standard.string(forKey: "loggedInUsername") ?? "UnknownUser"
     
@@ -40,7 +63,9 @@ struct BudgetInputView: View {
         BudgetItem(category: "Transportation", amount: ""),
         BudgetItem(category: "401(k)", amount: ""),
         BudgetItem(category: "Roth IRA", amount: ""),
-        BudgetItem(category: "Other Investments", amount: "")
+        BudgetItem(category: "Car Insurance", amount: ""),
+        BudgetItem(category: "Health Insurance", amount: ""),
+        BudgetItem(category: "Brokerage", amount: "")
     ]
     
     // ("Weekly"/"Monthly") to backend param ("weekly"/"monthly")
@@ -67,6 +92,46 @@ struct BudgetInputView: View {
                 fetchBudgetData()
                 UserDefaults.standard.set(selectedType, forKey: "selectedType")
             }
+            
+            // Live Budget Tracker
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text("Total Entered")
+                    Spacer()
+                    Text("$\(totalEntered, specifier: "%.2f")")
+                        .bold()
+                }
+                HStack {
+                    Text("Target (\(selectedType))")
+                    Spacer()
+                    if totalAllowance > 0 {
+                        Text("$\(totalAllowance, specifier: "%.2f")")
+                            .bold()
+                    } else {
+                        Text("—").foregroundColor(.secondary)
+                    }
+                }
+                HStack {
+                    Text(remaining >= 0 ? "Remaining" : "Over by")
+                    Spacer()
+                    Text("$\(abs(remaining), specifier: "%.2f")")
+                        .bold()
+                        .foregroundColor(remaining >= 0 ? .green : .red)
+                }
+                if totalAllowance > 0 {
+                    ProgressView(value: progress)
+                        .tint(remaining >= 0 ? .green : .red)
+                }
+            }
+            .padding()
+            .background(Color(.systemGroupedBackground))
+            .cornerRadius(10)
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(Color.secondary.opacity(0.15), lineWidth: 1)
+            )
+            .padding(.horizontal)
+
             
             // Budget Input List
             List {
@@ -179,7 +244,7 @@ struct BudgetInputView: View {
             if let prefilled = prefilledBudget {
                 self.budgetItems = prefilled.map { BudgetItem(category: $0.key, amount: String($0.value)) }
             } else {
-                fetchIncomeData()
+                fetchTakeHomeFromLastQuiz()
                 fetchBudgetData()
             }
         }
@@ -351,22 +416,28 @@ extension BudgetInputView {
         let savings = Double(budgetItems.first(where: { $0.category == "Savings" })?.amount ?? "0") ?? 0
         let eatingOut = Double(budgetItems.first(where: { $0.category == "Eating Out" })?.amount ?? "0") ?? 0
 
-        if rent > userIncome * 0.3 {
-            budgetingWarnings += "⚠️ Your rent exceeds 30% of your income. Consider reducing it.\n"
+        if userIncome > 0 {
+            if rent > userIncome * 0.3 {
+                budgetingWarnings += "⚠️ Your rent exceeds 30% of your monthly income.\n"
+            }
+            if savings < userIncome * 0.1 {
+                budgetingWarnings += "⚠️ Consider increasing savings to at least 10% of monthly income.\n"
+            }
+            // NEW: total check (compare against monthly or weekly target)
+            if totalAllowance > 0 && totalEntered > totalAllowance {
+                budgetingWarnings += "⚠️ Your \(selectedType.lowercased()) budget is over by $\(String(format: "%.2f", totalEntered - totalAllowance)).\n"
+            }
         }
-        
-        if savings < userIncome * 0.1 {
-            budgetingWarnings += "⚠️ Consider increasing your savings to at least 10% of your income.\n"
-        }
-        
+
         if eatingOut > 200 {
             budgetingWarnings += "⚠️ You’re spending a lot on eating out. Try cooking at home more often.\n"
         }
-        
+
         if !budgetingWarnings.isEmpty {
             activeAlert2 = .warning
         }
     }
+
     
     // Clear all budget data, update backend, then revert to default categories
     private func clearAllBudget() {
@@ -423,6 +494,52 @@ extension BudgetInputView {
             }
         }.resume()
     }
+    
+    private func parseNumber(_ any: Any?) -> Double? {
+        guard let any = any else { return nil }
+        let s = String(describing: any)
+            .replacingOccurrences(of: ",", with: "")
+            .replacingOccurrences(of: "$", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return Double(s)
+    }
+    
+    private func fetchTakeHomeFromLastQuiz() {
+        let urlString = "http://localhost:8080/api/llm/budget/last/\(username)"
+        guard let url = URL(string: urlString) else { return }
+
+        URLSession.shared.dataTask(with: url) { data, response, error in
+            if let error = error {
+                print("Error fetching last quiz:", error.localizedDescription)
+                self.fetchIncomeData() // fallback
+                return
+            }
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200,
+                  let data = data, !data.isEmpty else {
+                self.fetchIncomeData() // no quiz yet -> fallback
+                return
+            }
+            do {
+                if let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    if let net = parseNumber(obj["monthlyNet"]) {
+                        DispatchQueue.main.async { self.userIncome = net }
+                        return
+                    }
+                    // soft fallback to yearlyIncome if monthlyNet missing (older files)
+//                    if let yearly = parseNumber(obj["yearlyIncome"]) {
+//                        DispatchQueue.main.async { self.userIncome = yearly / 12.0 }
+//                        return
+//                    }
+                }
+                self.fetchIncomeData()
+            } catch {
+                print("Could not parse last quiz JSON:", error)
+                self.fetchIncomeData()
+            }
+        }.resume()
+    }
+
+
 
     
     

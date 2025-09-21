@@ -16,6 +16,7 @@ struct ReceiptUploadView: View {
     @State private var showCategoryPrompt: Bool = false
     @State private var unmatchedItems: [ReceiptItem] = []
     @State private var userCorrections: [String: String] = [:]
+    @State private var availableCategories: [String] = []
 
     private var username: String {
         UserDefaults.standard.string(forKey: "loggedInUsername") ?? "UnknownUser"
@@ -72,12 +73,93 @@ struct ReceiptUploadView: View {
         .sheet(isPresented: $showCategoryPrompt) {
           ManualCategoryAssignmentView(
             items: $unmatchedItems,
-            corrections: $userCorrections
+            corrections: $userCorrections,
+            categories: $availableCategories
           ) {
             submitCorrections()
           }
         }
+        .onAppear() {
+            loadCategories()
+        }
     }
+    
+    private func loadCategories() {
+        // Fetch from 4 places and union them.
+        let group = DispatchGroup()
+        var buckets: [Set<String>] = []
+
+        func add(_ arr: [String]?) {
+            if let arr = arr { buckets.append(Set(arr)) }
+        }
+
+        // weekly budget
+        group.enter()
+        fetchCategoriesFromBudget(type: "weekly") { cats in
+            add(cats)
+            group.leave()
+        }
+
+        // monthly budget
+        group.enter()
+        fetchCategoriesFromBudget(type: "monthly") { cats in
+            add(cats)
+            group.leave()
+        }
+
+        // weekly costs
+        group.enter()
+        fetchCategoriesFromCosts(type: "weekly") { cats in
+            add(cats)
+            group.leave()
+        }
+
+        // monthly costs
+        group.enter()
+        fetchCategoriesFromCosts(type: "monthly") { cats in
+            add(cats)
+            group.leave()
+        }
+
+        group.notify(queue: .main) {
+            var union = buckets.reduce(into: Set<String>()) { $0.formUnion($1) }
+
+            // fallback if nothing found
+            if union.isEmpty {
+                union = [
+                    "Rent","Groceries","Subscriptions","Eating Out","Entertainment",
+                    "Utilities","Savings","Miscellaneous","Transportation","401(k)",
+                    "Roth IRA","Car Insurance","Health Insurance","Brokerage"
+                ]
+            }
+
+            self.availableCategories = Array(union).sorted()
+        }
+    }
+
+
+    private func fetchCategoriesFromBudget(type: String, completion: @escaping ([String]?) -> Void) {
+        let urlString = "http://localhost:8080/api/budget/\(username)/\(type)"
+        guard let url = URL(string: urlString) else { completion(nil); return }
+        URLSession.shared.dataTask(with: url) { data, _, _ in
+            guard let data = data, let resp = try? JSONDecoder().decode(BudgetResponse.self, from: data) else {
+                completion(nil); return
+            }
+            completion(Array(resp.budget.keys))
+        }.resume()
+    }
+
+    private func fetchCategoriesFromCosts(type: String, completion: @escaping ([String]?) -> Void) {
+        let urlString = "http://localhost:8080/api/costs/\(username)/\(type)"
+        guard let url = URL(string: urlString) else { completion(nil); return }
+        URLSession.shared.dataTask(with: url) { data, _, _ in
+            guard let data = data, let resp = try? JSONDecoder().decode(WeeklyMonthlyCostResponse.self, from: data) else {
+                completion(nil); return
+            }
+            completion(Array(resp.costs.keys))
+        }.resume()
+    }
+
 
     private func uploadReceipt() {
         guard let image = selectedImage,
@@ -184,6 +266,30 @@ struct ReceiptUploadView: View {
             resultMessage = "Added:\n" + finalMessage
         }
     }
+    
+    // Upload to both weekly and monthly costs
+    private func postMergeCosts(type: String, costs: [String: Double], completion: @escaping (Bool) -> Void) {
+        let payload: [String: Any] = [
+            "username": username,
+            "type": type,
+            "costs": costs
+        ]
+
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: payload) else {
+            completion(false)
+            return
+        }
+
+        var request = URLRequest(url: URL(string: "http://localhost:8080/api/costs/merge")!)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = jsonData
+
+        URLSession.shared.dataTask(with: request) { _, resp, err in
+            completion(err == nil)
+        }.resume()
+    }
+
 
     private func submitCorrections() {
         var additions: [String: Double] = [:]
@@ -193,24 +299,40 @@ struct ReceiptUploadView: View {
             additions[category, default: 0.0] += amount
         }
 
-        let payload: [String: Any] = [
-            "username": username,
-            "type": "weekly",
-            "costs": additions
-        ]
+        // Send to both sheets
+        let group = DispatchGroup()
+        var okWeekly = false
+        var okMonthly = false
 
-        guard let jsonData = try? JSONSerialization.data(withJSONObject: payload) else { return }
+        group.enter()
+        postMergeCosts(type: "weekly", costs: additions) { ok in
+            okWeekly = ok
+            group.leave()
+        }
 
-        var request = URLRequest(url: URL(string: "http://localhost:8080/api/costs/merge")!)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = jsonData
+        group.enter()
+        postMergeCosts(type: "monthly", costs: additions) { ok in
+            okMonthly = ok
+            group.leave()
+        }
 
-        URLSession.shared.dataTask(with: request).resume()
+        group.notify(queue: .main) {
+            // Friendly result text
+            self.resultMessage = """
+            Uploaded to Weekly & Monthly:
+            \(additions.map { "\($0.key): $\(String(format: "%.2f", $0.value))" }.joined(separator: "\n"))
+            """
+            self.showCategoryPrompt = false
 
-        resultMessage = "Uploaded:\n" + additions.map { "\($0.key): $\(String(format: "%.2f", $0.value))" }.joined(separator: "\n")
-        showCategoryPrompt = false
+            // Refresh the dropdown right away so new categories persist
+            self.loadCategories()
+
+            if !(okWeekly && okMonthly) {
+                print("One of the merges failed (weekly:\(okWeekly), monthly:\(okMonthly))")
+            }
+        }
     }
+
 }
 
 struct ReceiptItem: Identifiable {
@@ -220,38 +342,69 @@ struct ReceiptItem: Identifiable {
 }
 
 struct ManualCategoryAssignmentView: View {
-  @Binding var items: [ReceiptItem]
-  @Binding var corrections: [String: String]
-  var onConfirm: () -> Void
+    @Binding var items: [ReceiptItem]
+    @Binding var corrections: [String: String]
+    @Binding var categories: [String]
+    var onConfirm: () -> Void
 
-  var body: some View {
-    NavigationView {
-      VStack {
-        if items.isEmpty {
-          Text("No unmatched items to categorize.")
-            .padding()
-        } else {
-          Form {
-            ForEach(items) { item in
-              Section(header: Text("\(item.name) ($\(item.amount, specifier: "%.2f"))")) {
-                TextField("Assign category", text: Binding(
-                  get: { corrections[item.name] ?? "" },
-                  set: { corrections[item.name] = $0 }
-                ))
-              }
-            }
+    @State private var newCategoryName: String = ""
 
-            Button("Confirm") {
-              onConfirm()
-            }
-            .disabled(corrections.count < items.count)
-          }
-        }
-      }
-      .navigationTitle("Assign Categories")
+    var allChosen: Bool {
+        // Ensure each item has a non-empty selection
+        items.allSatisfy { corrections[$0.name]?.isEmpty == false }
     }
-  }
+
+    var body: some View {
+        NavigationView {
+            VStack {
+                if items.isEmpty {
+                    Text("No unmatched items to categorize.")
+                        .padding()
+                } else {
+                    Form {
+                        Section(header: Text("Add New Category")) {
+                            HStack {
+                                TextField("New category name", text: $newCategoryName)
+                                Button {
+                                    let trimmed = newCategoryName.trimmingCharacters(in: .whitespacesAndNewlines)
+                                    guard !trimmed.isEmpty else { return }
+                                    if !categories.contains(where: { $0.caseInsensitiveCompare(trimmed) == .orderedSame }) {
+                                        categories.append(trimmed)
+                                        categories.sort()
+                                    }
+                                    newCategoryName = ""
+                                } label: {
+                                    Label("Add", systemImage: "plus.circle.fill")
+                                }
+                            }
+                        }
+
+                        ForEach(items) { item in
+                            Section(header: Text("\(item.name) ($\(item.amount, specifier: "%.2f"))")) {
+                                Picker("Category", selection: Binding(
+                                    get: { corrections[item.name] ?? "" },
+                                    set: { corrections[item.name] = $0 }
+                                )) {
+                                    Text("— Select —").tag("")
+                                    ForEach(categories, id: \.self) { cat in
+                                        Text(cat).tag(cat)
+                                    }
+                                }
+                            }
+                        }
+
+                        Button("Confirm") {
+                            onConfirm()
+                        }
+                        .disabled(!allChosen)
+                    }
+                }
+            }
+            .navigationTitle("Assign Categories")
+        }
+    }
 }
+
 
 
 

@@ -73,12 +73,12 @@ struct ContentView: View {
                         .buttonStyle(PlainButtonStyle())
                         .padding(.horizontal)
                         
-                        // Health Widget
-                        NavigationLink(destination: HealthView()) {
-                            HealthWidget()
-                        }
-                        .buttonStyle(PlainButtonStyle())
-                        .padding(.horizontal)
+                        // Health Widget - Not going to include health
+//                        NavigationLink(destination: HealthView()) {
+//                            HealthWidget()
+//                        }
+//                        .buttonStyle(PlainButtonStyle())
+//                        .padding(.horizontal)
                     }
                     .padding([.horizontal, .bottom])
                     

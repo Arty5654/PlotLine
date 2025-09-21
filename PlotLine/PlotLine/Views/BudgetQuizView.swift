@@ -51,6 +51,14 @@ struct BudgetQuizView: View {
     @State private var retirementTip = false
     @State private var numberOfDependents = ""
     
+    // Debts
+    @State private var hasDebt = false
+    @State private var debts: [DebtItem] = []
+    var debtEntriesValid: Bool {
+        guard hasDebt else { return true }
+        return debts.allSatisfy { !$0.name.isEmpty && Double($0.principal) != nil }
+    }
+    
     // Detected location or manual input
     @State private var city = ""
     @State private var state = ""
@@ -123,7 +131,51 @@ struct BudgetQuizView: View {
                             numberOfDependents = newValue.filter { "0123456789".contains($0) }
                         }
                     
-                    .pickerStyle(SegmentedPickerStyle())
+                    //.pickerStyle(SegmentedPickerStyle())
+                    
+                }
+                
+                Section(header: Text("Debt")) {
+                    Toggle("I have debt to payoff", isOn: $hasDebt)
+                        .onChange(of: hasDebt) { on in
+                            if !on { debts.removeAll()}
+                        }
+                    if hasDebt {
+                        ForEach($debts) { $debt in
+                            VStack(alignment: .leading, spacing: 8) {
+                                TextField("Name (e.g., Chase Credit Card)", text: $debt.name)
+
+                                HStack {
+                                    TextField("Remaining Balance ($)", text: $debt.principal)
+                                        .keyboardType(.decimalPad)
+                                        .onChange(of: debt.principal) { v in
+                                            debt.principal = v.filter { "0123456789.".contains($0) }
+                                        }
+                                    TextField("APR (%)", text: $debt.apr)
+                                        .keyboardType(.decimalPad)
+                                        .onChange(of: debt.apr) { v in
+                                            debt.apr = v.filter { "0123456789.".contains($0) }
+                                        }
+                                }
+
+                                TextField("Minimum Monthly Payment ($)", text: $debt.minPayment)
+                                    .keyboardType(.decimalPad)
+                                    .onChange(of: debt.minPayment) { v in
+                                        debt.minPayment = v.filter { "0123456789.".contains($0) }
+                                    }
+
+                                DatePicker("Next Payment Due", selection: $debt.dueDate, displayedComponents: .date)
+                            }
+                            .padding(.vertical, 4)
+                        }
+                        .onDelete { idx in debts.remove(atOffsets: idx) }
+
+                        Button {
+                            debts.append(DebtItem())
+                        } label: {
+                            Label("Add Debt", systemImage: "plus.circle.fill")
+                        }
+                    }
                     
                 }
                 
@@ -221,7 +273,8 @@ struct BudgetQuizView: View {
                         .disabled(
                             yearlyIncome.isEmpty || retirement.isEmpty ||
                             numberOfDependents.isEmpty ||
-                            (useDeviceLocation ? city.isEmpty || state.isEmpty : manualCity.isEmpty || manualState.isEmpty)
+                            (useDeviceLocation ? city.isEmpty || state.isEmpty : manualCity.isEmpty || manualState.isEmpty) ||
+                            !debtEntriesValid
                         )
 
                     }
@@ -248,6 +301,19 @@ struct BudgetQuizView: View {
     func generateBudgetFromLLM() async {
         let url = URL(string: "http://localhost:8080/api/llm/budget")!
         
+        let iso = ISO8601DateFormatter()
+        let debtsPayload: [[String: Any]] = hasDebt ? debts.map { d in
+            return [
+                "name": d.name,
+                "principal": Double(d.principal) ?? 0.0,
+                "apr": Double(d.apr) ?? 0.0,             // APR as % number (e.g., 22.99)
+                "minPayment": Double(d.minPayment) ?? 0.0,
+                "dueDate": iso.string(from: d.dueDate)
+                // TODO: Maybe might need this instead
+                // "dueDay": Calendar.current.component(.day, from: d.dueDate)
+            ]
+        } : []
+        
         // Use either manual or detected location
         let finalCity = useDeviceLocation ? city : manualCity
         let finalState = useDeviceLocation ? state : manualState
@@ -261,7 +327,9 @@ struct BudgetQuizView: View {
             "spendingStyle": spendingStyle,
             "useDeviceLocation": useDeviceLocation,
             "categories": Array(selectedCategories.sorted()),
-            "knownCosts": knownCosts.compactMapValues { Double($0) }
+            "knownCosts": knownCosts.compactMapValues { Double($0) },
+            "hasDebt": hasDebt,
+            "debts": debtsPayload
         ]
         
         //print("Categories: \(Array(selectedCategories.sorted()))")
@@ -305,6 +373,9 @@ struct BudgetQuizView: View {
             // Save weekly budget (monthly / 4)
             let weekly = budget.mapValues { $0 / 4.0 }
             try await postBudget(username: username, type: "weekly", budget: weekly)
+            
+            // Reset weekly/monthly costs after each quiz
+            await resetCostsToSelectedCategories()
 
             // Save completion flag
             UserDefaults.standard.set(true, forKey: "budgetQuizCompleted")
@@ -374,6 +445,27 @@ struct BudgetQuizView: View {
                         }
                         manualCity  = String(dict["city"]  as? String ?? "")
                         manualState = String(dict["state"] as? String ?? "")
+                        
+                        // Get Debts
+                        if let hasDebtSaved = dict["hasDebt"] as? Bool {
+                            hasDebt = hasDebtSaved
+                        }
+                        if let savedDebts = dict["debts"] as? [[String: Any]] {
+                            let iso = ISO8601DateFormatter()
+                            debts = savedDebts.map { d in
+                                let name = d["name"] as? String ?? ""
+                                let principalStr = String(describing: d["principal"] ?? "")
+                                let aprStr = String(describing: d["apr"] ?? "")
+                                let minStr = String(describing: d["minPayment"] ?? "")
+                                let dueStr = d["dueDate"] as? String ?? ""
+                                let due = iso.date(from: dueStr) ?? Date()
+                                return DebtItem(name: name,
+                                                principal: principalStr,
+                                                apr: aprStr,
+                                                minPayment: minStr,
+                                                dueDate: due)
+                            }
+                        }
                     }
                 }
             } catch {
@@ -382,9 +474,44 @@ struct BudgetQuizView: View {
         }
     }
     
-    
+    // POST /api/costs
+    func postCosts(username: String, type: String, costs: [String: Double]) async throws {
+        let url = URL(string: "http://localhost:8080/api/costs")!
+        let payload: [String: Any] = [
+            "username": username,
+            "type": type,
+            "costs": costs
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload)
 
-    
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = data
+
+        _ = try await URLSession.shared.data(for: req)
+    }
+
+    // Reset costs for both weekly & monthly to zeros for the quiz-selected categories
+    func resetCostsToSelectedCategories() async {
+        // zero map from selected categories
+        var zeros = Dictionary(uniqueKeysWithValues: selectedCategories.map { ($0, 0.0) })
+
+        // If you want debt lines (if the user entered debts) to also appear in costs:
+        if hasDebt {
+            for d in debts where !d.name.trimmingCharacters(in: .whitespaces).isEmpty {
+                zeros["Debt - \(d.name)"] = 0.0
+            }
+        }
+
+        do {
+            try await postCosts(username: username, type: "monthly", costs: zeros)
+            try await postCosts(username: username, type: "weekly",  costs: zeros)
+            print("Costs reset to zeros for selected categories.")
+        } catch {
+            print("Failed to reset costs: \(error)")
+        }
+    }
 
     // MARK: - Location
     func getLocation() {
@@ -398,29 +525,29 @@ struct BudgetQuizView: View {
 class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     private let manager = CLLocationManager()
     private var completion: ((String, String) -> Void)?
-
+    
     override init() {
         super.init()
         manager.delegate = self
     }
-
+    
     func requestLocation(completion: @escaping (String, String) -> Void) {
         self.completion = completion
         manager.delegate = self
-
+        
         let status = manager.authorizationStatus
-
+        
         if status == .denied || status == .restricted {
             print("Location access denied")
             self.completion?("Permission", "Denied")
             return
         }
-
+        
         manager.requestWhenInUseAuthorization()
         manager.requestLocation()
     }
-
-
+    
+    
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let location = locations.first else { return }
         CLGeocoder().reverseGeocodeLocation(location) { placemarks, _ in
@@ -433,19 +560,32 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
             }
         }
     }
-
+    
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         print("Location error:", error)
     }
-    
-    
 }
+    
+   
+
+    
+    
 
 struct USState: Identifiable {
     let id = UUID()
     let name: String
     let code: String
 }
+
+struct DebtItem: Identifiable, Codable {
+    var id = UUID()
+    var name: String = ""            // e.g., “Chase Credit Card”
+    var principal: String = ""       // store as String for TextField; convert before sending
+    var apr: String = ""             // APR as percentage string, e.g., “22.99”
+    var minPayment: String = ""      // optional minimum payment per month
+    var dueDate: Date = Date()       // next payment due (or target payoff date)
+}
+
 
 
 #Preview {
