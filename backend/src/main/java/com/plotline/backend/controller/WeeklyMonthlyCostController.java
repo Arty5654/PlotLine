@@ -24,6 +24,17 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import java.util.Objects;
+import java.util.LinkedHashMap;
+import java.util.Iterator;
+
+import java.time.DayOfWeek;
+import java.time.YearMonth;
+import java.time.temporal.WeekFields;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+
+
 @RestController
 @RequestMapping("/api/costs")
 public class WeeklyMonthlyCostController {
@@ -161,45 +172,6 @@ public class WeeklyMonthlyCostController {
         }
     }
 
-    // private void updateWeeklyCosts(String username, Map<String, Double> parsedCosts) {
-    //     try {
-    //         String type = "weekly";
-    //         String key = "users/" + username + "/" + type + "_costs.json";
-    
-    //         // Step 1: Fetch existing weekly costs
-    //         Map<String, Object> currentData;
-    //         try {
-    //             byte[] fileData = s3Service.downloadFile(key);
-    //             String jsonData = new String(fileData, StandardCharsets.UTF_8);
-    //             currentData = new ObjectMapper().readValue(jsonData, new TypeReference<>() {});
-    //         } catch (Exception e) {
-    //             currentData = new HashMap<>();
-    //             currentData.put("username", username);
-    //             currentData.put("type", type);
-    //             currentData.put("costs", new HashMap<String, Double>());
-    //         }
-    
-    //         // Step 2: Merge parsed costs into existing costs
-    //         Map<String, Double> existingCosts = new HashMap<>((Map<String, Double>) currentData.get("costs"));
-    
-    //         for (Map.Entry<String, Double> entry : parsedCosts.entrySet()) {
-    //             String category = entry.getKey();
-    //             double newAmount = entry.getValue();
-    //             existingCosts.put(category, existingCosts.getOrDefault(category, 0.0) + newAmount);
-    //         }
-    
-    //         // Step 3: Save merged version back to S3
-    //         currentData.put("costs", existingCosts);
-    //         String updatedJson = new ObjectMapper().writeValueAsString(currentData);
-    //         ByteArrayInputStream inputStream = new ByteArrayInputStream(updatedJson.getBytes(StandardCharsets.UTF_8));
-    //         s3Service.uploadFile(key, inputStream, updatedJson.length());
-    
-    //     } catch (Exception e) {
-    //         System.err.println("Error updating weekly costs: " + e.getMessage());
-    //         e.printStackTrace();
-    //     }
-    // }
-
     private void overwriteCosts(String username, String type,
                             Map<String, Double> newCosts) throws Exception {
         Map<String, Object> data = Map.of(
@@ -242,7 +214,7 @@ public class WeeklyMonthlyCostController {
         double  add   = entry.getValue();
         costs.put(cat, costs.getOrDefault(cat, 0.0) + add);
         }
-        data.put("costs", costs);               // (not strictly necessary)
+        data.put("costs", costs);
 
         // 3.  Save back to S3
         String json = new ObjectMapper().writeValueAsString(data);
@@ -272,7 +244,98 @@ public class WeeklyMonthlyCostController {
         }
     }
 
+    // Calander format for weekly costs
+    private static String weekKey(LocalDate date) {
+        // Sunday-based week example
+        DayOfWeek dow = date.getDayOfWeek();
+        LocalDate start = date.minusDays((dow.getValue() % 7)); // Sunday = 0
+        int weekOfYear = start.get(WeekFields.SUNDAY_START.weekOfWeekBasedYear());
+        int year = start.get(WeekFields.SUNDAY_START.weekBasedYear());
+        return "%04d-W%02d".formatted(year, weekOfYear);
+    }
 
+    private static String monthKey(LocalDate date) {
+        return "%04d-%02d".formatted(date.getYear(), date.getMonthValue());
+    }
 
+    @PostMapping("/merge-dated")
+    public ResponseEntity<?> mergeDatedCosts(@RequestBody Map<String, Object> body) {
+        try {
+            String username = String.valueOf(body.get("username"));
+            String type = String.valueOf(body.get("type")); // weekly|monthly
+            String dateStr = String.valueOf(body.getOrDefault("date", LocalDate.now().toString()));
+            @SuppressWarnings("unchecked")
+            Map<String, Number> costs = (Map<String, Number>) body.get("costs");
+
+            LocalDate date = LocalDate.parse(dateStr);
+            String periodKey = "weekly".equalsIgnoreCase(type) ? weekKey(date) : monthKey(date);
+
+            String key = "users/%s/costs/%s/%s.json".formatted(username, type.toLowerCase(), periodKey);
+            Map<String, Object> period = loadJsonOrEmpty(key);
+
+            // init fields if new
+            period.putIfAbsent("periodKey", periodKey);
+            period.putIfAbsent("days", new LinkedHashMap<String, Map<String, Double>>());
+            period.putIfAbsent("totals", new LinkedHashMap<String, Double>());
+
+            @SuppressWarnings("unchecked")
+            Map<String, Map<String, Double>> days = (Map<String, Map<String, Double>>) period.get("days");
+            @SuppressWarnings("unchecked")
+            Map<String, Double> totals = (Map<String, Double>) period.get("totals");
+
+            String dayKey = date.toString();
+            Map<String, Double> dayCosts = days.getOrDefault(dayKey, new LinkedHashMap<>());
+
+            // merge
+            for (var e : costs.entrySet()) {
+                String cat = e.getKey();
+                double add = e.getValue() == null ? 0.0 : e.getValue().doubleValue();
+                if (add == 0.0) continue;
+                dayCosts.put(cat, round2(dayCosts.getOrDefault(cat, 0.0) + add));
+                totals.put(cat, round2(totals.getOrDefault(cat, 0.0) + add));
+            }
+            days.put(dayKey, dayCosts);
+
+            // Store start/end for weekly/monthly
+            if ("weekly".equalsIgnoreCase(type)) {
+                // compute Sunday-start week
+                LocalDate start = date.minusDays((date.getDayOfWeek().getValue() % 7));
+                LocalDate end = start.plusDays(6);
+                period.put("start", start.toString());
+                period.put("end", end.toString());
+            } else {
+                YearMonth ym = YearMonth.from(date);
+                period.put("start", ym.atDay(1).toString());
+                period.put("end", ym.atEndOfMonth().toString());
+            }
+
+            saveJson(key, period);
+            return ResponseEntity.ok(period);
+
+        } catch (Exception ex) {
+            ex.printStackTrace();
+            return ResponseEntity.status(500).body("merge-dated failed: " + ex.getMessage());
+        }
+    }
+
+    private Map<String, Object> loadJsonOrEmpty(String key) throws Exception {
+        try {
+            byte[] raw = s3Service.downloadFile(key);
+            return new ObjectMapper().readValue(raw, new TypeReference<Map<String,Object>>() {});
+        } catch (Exception e) {
+            return new LinkedHashMap<>();
+        }
+    }
+
+    private void saveJson(String key, Map<String, Object> payload) throws Exception {
+        String json = new ObjectMapper().writeValueAsString(payload);
+        try (var in = new ByteArrayInputStream(json.getBytes(StandardCharsets.UTF_8))) {
+            s3Service.uploadFile(key, in, json.length());
+        }
+    }
+
+    private static double round2(double v) {
+        return Math.round(v * 100.0) / 100.0;
+    }
 
 }

@@ -28,7 +28,12 @@ struct WeeklyMonthlyCostView: View {
     
     // Get live totals
     @State private var takeHomeMonthly: Double = 0
-    private let trackerExclusions: Set<String> = ["401(k)", "401(k) Contribution"]
+    private let trackerExclusions: Set<String> = ["401(k)", "401k", "401(k) Contribution", "401k Contribution"]
+    
+    // for the Days of the week at the top of the page
+    @State private var selectedDay: Date = Date()
+    @State private var weekDays: [Date] = []
+    @State private var weeklyPeriod: WeeklyPeriod? = nil
 
     private var budgetTotal: Double {
         let base = takeHomeMonthly > 0 ? takeHomeMonthly : budgetLimits.values.reduce(0, +)
@@ -77,9 +82,18 @@ struct WeeklyMonthlyCostView: View {
                 }
                 .pickerStyle(SegmentedPickerStyle())
                 .padding()
-                .onChange(of: selectedType) {
+                .onChange(of: selectedType) { newVal in
                     loadBudgetLimits()
                     loadSavedData()
+                    if newVal == "Weekly" {
+                        rebuildWeek(for: selectedDay)
+                        loadWeeklyPeriod(for: selectedDay)
+                    }
+                }
+                
+                if selectedType == "Weekly" {
+                    weekHeader
+                        .padding(.top, 4)
                 }
                 
                 // Summary Card
@@ -128,7 +142,7 @@ struct WeeklyMonthlyCostView: View {
 
                 // Expense Inputs
                 List {
-                    ForEach($costItems) { $item in
+                    ForEach($costItems.filter { !trackerExclusions.contains($0.wrappedValue.category) }) { $item in
                         HStack {
                             Text(item.category)
                                 .frame(width: 120, alignment: .leading)
@@ -139,7 +153,7 @@ struct WeeklyMonthlyCostView: View {
                                     checkBudgetWarnings()
                                 }
 
-                            // ⚠️ Budget Warning Indicator (if cost exceeds budget)
+                            // Budget Warning Indicator (if cost exceeds budget)
                             if let budget = budgetLimits[item.category],
                                let cost = Double(item.amount) {
                                 if cost > budget {
@@ -304,6 +318,9 @@ struct WeeklyMonthlyCostView: View {
         }
         // onAppear at the end, so it’s still inside the struct’s body
         .onAppear {
+            rebuildWeek(for: Date())
+            selectedDay = Date()
+            loadWeeklyPeriod(for: selectedDay)
             loadBudgetLimits()
             loadSavedData()
             fetchSubscriptions()
@@ -331,32 +348,53 @@ struct WeeklyMonthlyCostView: View {
         costItems.remove(atOffsets: offsets)
     }
 
-    private func saveCosts() {
-        let costData: [String: Any] = [
+    private func postMerge(type: String, date: Date, values: [String: Double], completion: @escaping (Bool)->Void) {
+        let payload: [String: Any] = [
             "username": username,
-            "type": selectedType.lowercased(),
-            "costs": costItems.reduce(into: [String: Double]()) { result, item in
-                if let amount = Double(item.amount) {
-                    result[item.category] = amount
-                }
-            }
+            "type": type, // "weekly" | "monthly"
+            "date": date.ymd(),
+            "costs": values
         ]
+        guard let data = try? JSONSerialization.data(withJSONObject: payload) else { completion(false); return }
 
-        guard let jsonData = try? JSONSerialization.data(withJSONObject: costData) else { return }
+        var req = URLRequest(url: URL(string: "http://localhost:8080/api/costs/merge-dated")!)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = data
 
-        var request = URLRequest(url: URL(string: "http://localhost:8080/api/costs")!)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = jsonData
-
-        URLSession.shared.dataTask(with: request) { data, response, error in
-            if error == nil {
-                DispatchQueue.main.async {
-                    self.showSuccessAlert = true
-                }
-            }
+        URLSession.shared.dataTask(with: req) { _,_,err in
+            completion(err == nil)
         }.resume()
     }
+
+    private func saveCosts() {
+        let values = costItems.reduce(into: [String: Double]()) { acc, item in
+            //if let v = Double(item.amount), v != 0 { acc[item.category] = v }
+            guard !trackerExclusions.contains(item.category),
+                  let v = Double(item.amount),
+                  v != 0
+                else { return }
+            acc[item.category] = v
+        }
+
+        let day = selectedDay
+        let group = DispatchGroup()
+        var okW = false, okM = false
+
+        group.enter()
+        postMerge(type: "weekly", date: day, values: values) { ok in okW = ok; group.leave() }
+
+        group.enter()
+        postMerge(type: "monthly", date: day, values: values) { ok in okM = ok; group.leave() }
+
+        group.notify(queue: .main) {
+            if !(okW && okM) { print("⚠️ Merge failed weekly:\(okW), monthly:\(okM)") }
+            // Refresh week so totals update
+            self.loadWeeklyPeriod(for: self.selectedDay)
+            self.showSuccessAlert = true
+        }
+    }
+
 
     // MARK: - Budget Limits
     private func loadBudgetLimits() {
@@ -365,22 +403,22 @@ struct WeeklyMonthlyCostView: View {
 
         URLSession.shared.dataTask(with: url) { data, response, error in
             if let error = error {
-                print("❌ Error fetching budget:", error.localizedDescription)
+                print("Error fetching budget:", error.localizedDescription)
                 return
             }
 
             guard let data = data, !data.isEmpty else {
-                print("⚠️ No budget data found.")
+                print("No budget data found.")
                 return
             }
 
             do {
                 let decodedData = try JSONDecoder().decode(BudgetResponse.self, from: data)
                 DispatchQueue.main.async {
-                    self.budgetLimits = decodedData.budget
+                    self.budgetLimits = decodedData.budget.filter { !trackerExclusions.contains($0.key)}
                 }
             } catch {
-                print("❌ Failed to decode budget data:", error)
+                print("Failed to decode budget data:", error)
             }
         }.resume()
     }
@@ -392,12 +430,12 @@ struct WeeklyMonthlyCostView: View {
 
         URLSession.shared.dataTask(with: url) { data, response, error in
             if let error = error {
-                print("❌ Error fetching costs:", error.localizedDescription)
+                print("Error fetching costs:", error.localizedDescription)
                 return
             }
 
             guard let data = data, !data.isEmpty else {
-                print("⚠️ No cost data found.")
+                print("No cost data found.")
                 DispatchQueue.main.async {
                     self.setDefaultCategories()
                 }
@@ -407,10 +445,12 @@ struct WeeklyMonthlyCostView: View {
             do {
                 let decodedData = try JSONDecoder().decode(WeeklyMonthlyCostResponse.self, from: data)
                 DispatchQueue.main.async {
-                    self.costItems = decodedData.costs.map { BudgetItem(category: $0.key, amount: String($0.value)) }
+                    self.costItems = decodedData.costs
+                        .filter { !trackerExclusions.contains($0.key) }
+                        .map { BudgetItem(category: $0.key, amount: String($0.value)) }
                 }
             } catch {
-                print("❌ Failed to decode costs:", error)
+                print("Failed to decode costs:", error)
             }
         }.resume()
     }
@@ -426,7 +466,7 @@ struct WeeklyMonthlyCostView: View {
             BudgetItem(category: "Savings", amount: ""),
             BudgetItem(category: "Miscellaneous", amount: ""),
             BudgetItem(category: "Transportation", amount: ""),
-            BudgetItem(category: "401(k)", amount: ""),
+            //BudgetItem(category: "401(k)", amount: ""),
             BudgetItem(category: "Roth IRA", amount: ""),
             BudgetItem(category: "Car Insurance", amount: ""),
             BudgetItem(category: "Health Insurance", amount: ""),
@@ -468,7 +508,7 @@ struct WeeklyMonthlyCostView: View {
 
         URLSession.shared.dataTask(with: url) { data, response, error in
             if let error = error {
-                print("❌ Error fetching subscription data:", error.localizedDescription)
+                print("Error fetching subscription data:", error.localizedDescription)
                 DispatchQueue.main.async {
                     self.subscriptions = []
                 }
@@ -476,7 +516,7 @@ struct WeeklyMonthlyCostView: View {
             }
 
             guard let data = data, !data.isEmpty else {
-                print("⚠️ No subscription data found; using empty list.")
+                print("No subscription data found; using empty list.")
                 DispatchQueue.main.async {
                     self.subscriptions = []
                 }
@@ -497,7 +537,7 @@ struct WeeklyMonthlyCostView: View {
                     self.checkForUpcomingSubscriptions()
                 }
             } catch {
-                print("❌ Failed to decode subscription data:", error)
+                print("Failed to decode subscription data:", error)
                 DispatchQueue.main.async {
                     self.subscriptions = []
                 }
@@ -548,7 +588,7 @@ struct WeeklyMonthlyCostView: View {
         )
         
         guard let jsonData = try? JSONEncoder().encode(payload) else {
-            print("❌ Failed to encode SubscriptionMapUpload")
+            print("Failed to encode SubscriptionMapUpload")
             return
         }
 
@@ -597,7 +637,7 @@ struct WeeklyMonthlyCostView: View {
         }
         
         UNUserNotificationCenter.current().getNotificationSettings { settings in
-            print("🔍 Notification Settings: \(settings.authorizationStatus.rawValue)")
+            print("Notification Settings: \(settings.authorizationStatus.rawValue)")
         }
     }
 
@@ -645,8 +685,125 @@ struct WeeklyMonthlyCostView: View {
             }
         }.resume()
     }
+    
+    // Calander of Days of the Week
+    private func rebuildWeek(for date: Date) {
+        let start = Calendar.current.startOfWeek(for: date)
+        weekDays = (0..<7).map { start.addingDays($0) }
+    }
+
+    private var weekHeader: some View {
+        HStack {
+            Button {
+                selectedDay = selectedDay.addingDays(-7)
+                rebuildWeek(for: selectedDay)
+                loadWeeklyPeriod(for: selectedDay)
+            } label: { Image(systemName: "chevron.left") }
+
+            Spacer()
+
+            ForEach(weekDays, id: \.self) { d in
+                let isSelected = Calendar.current.isDate(d, inSameDayAs: selectedDay)
+                VStack(spacing: 4) {
+                    Text(d.shortWeekday())
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    Text(d.monthDay())
+                        .font(.footnote).bold()
+                }
+                .padding(.vertical, 6).frame(width: 44)
+                .background(isSelected ? Color.blue.opacity(0.15) : Color.clear)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .onTapGesture {
+                    selectedDay = d
+                    loadCostsForSelectedDay() // populate costItems for that day
+                }
+            }
+
+            Spacer()
+
+            Button {
+                selectedDay = selectedDay.addingDays(+7)
+                rebuildWeek(for: selectedDay)
+                loadWeeklyPeriod(for: selectedDay)
+            } label: { Image(systemName: "chevron.right") }
+        }
+        .padding(.horizontal)
+    }
+    
+    private func loadWeeklyPeriod(for anyDate: Date) {
+        // choose one: send week_start (YYYY-MM-DD of week’s start) or period key
+        let weekStart = Calendar.current.startOfWeek(for: anyDate).ymd()
+        let urlStr = "http://localhost:8080/api/costs/weekly/\(username)?week_start=\(weekStart)"
+        guard let url = URL(string: urlStr) else { return }
+
+        URLSession.shared.dataTask(with: url) { data, _, error in
+            guard let data = data, error == nil,
+                  let period = try? JSONDecoder().decode(WeeklyPeriod.self, from: data) else {
+                // no file yet? treat as empty week
+                DispatchQueue.main.async {
+                    self.weeklyPeriod = WeeklyPeriod(periodKey: "", start: weekStart, end: weekStart, days: [:], totals: [:])
+                    self.loadCostsForSelectedDay()
+                }
+                return
+            }
+            DispatchQueue.main.async {
+                self.weeklyPeriod = period
+                self.loadCostsForSelectedDay()
+            }
+        }.resume()
+    }
+
+    private func loadCostsForSelectedDay() {
+        // Pull day map from the loaded week, fall back to empty categories
+        let dayKey = selectedDay.ymd()
+        let dayMap = weeklyPeriod?.days[dayKey] ?? [:]
+        // If you want to preserve previous input categories too:
+        let keys = Set(dayMap.keys)
+            .union(Set(budgetLimits.keys))
+            .subtracting(trackerExclusions)
+            .sorted()
+        self.costItems = keys.map { BudgetItem(category: $0, amount: String(dayMap[$0] ?? 0.0)) }
+    }
+
+
 
 }
+
+// For Days of the week at the top
+extension Calendar {
+    // Sunday-based weeks; switch to .iso8601 if you prefer ISO
+    func startOfWeek(for date: Date) -> Date {
+        let comps = dateComponents([.yearForWeekOfYear, .weekOfYear], from: date)
+        // For Sunday-start: subtract weekday-1 from date
+        let weekday = component(.weekday, from: date) // 1..7 (Sun=1)
+        return self.date(byAdding: .day, value: -(weekday - 1), to: date.startOfDay) ?? date.startOfDay
+    }
+}
+
+extension Date {
+    var startOfDay: Date { Calendar.current.startOfDay(for: self) }
+    func addingDays(_ n: Int) -> Date {
+        Calendar.current.date(byAdding: .day, value: n, to: self) ?? self
+    }
+    func ymd() -> String {
+        let f = DateFormatter()
+        f.calendar = Calendar(identifier: .gregorian)
+        f.dateFormat = "yyyy-MM-dd"
+        return f.string(from: self)
+    }
+    func shortWeekday() -> String {
+        let f = DateFormatter()
+        f.dateFormat = "EEE"
+        return f.string(from: self)
+    }
+    func monthDay() -> String {
+        let f = DateFormatter()
+        f.dateFormat = "M/d"
+        return f.string(from: self)
+    }
+}
+
 
 // MARK: - Data Models
 //struct BudgetResponse: Codable {
@@ -676,6 +833,16 @@ struct SubscriptionItem: Identifiable, Codable {
     var dueDate: Date
 }
 
+// For the days of the week at the top
+struct WeeklyPeriod: Codable {
+    let periodKey: String
+    let start: String
+    let end: String
+    let days: [String: [String: Double]] // "YYYY-MM-DD" -> category->amount
+    let totals: [String: Double]
+}
+
+
 // Decode date to be able to upload it to the backend
 @propertyWrapper
 struct CodableDate: Codable {
@@ -695,7 +862,7 @@ struct CodableDate: Codable {
             self.wrappedValue = date
             print("Successfully decoded date:", date)
         } else {
-            print("❌ Failed to decode date:", dateString)
+            print("Failed to decode date:", dateString)
             throw DecodingError.dataCorruptedError(in: container, debugDescription: "Invalid date format")
         }
     }
