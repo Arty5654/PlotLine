@@ -1,251 +1,341 @@
 import SwiftUI
 
+// MARK: - Design Tokens (scoped)
+private enum PLColor {
+    static let surface       = Color(.secondarySystemBackground)
+    static let cardBorder    = Color.black.opacity(0.06)
+    static let textPrimary   = Color.primary
+    static let textSecondary = Color.secondary
+    static let accent        = Color.blue
+    static let danger        = Color.red
+}
+private enum PLSpacing {
+    static let xs: CGFloat = 6
+    static let sm: CGFloat = 10
+    static let md: CGFloat = 16
+    static let lg: CGFloat = 20
+}
+private enum PLRadius { static let md: CGFloat = 12 }
+
+private struct CardModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .padding(PLSpacing.md)
+            .background(PLColor.surface)
+            .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
+            .overlay(RoundedRectangle(cornerRadius: PLRadius.md).stroke(PLColor.cardBorder))
+    }
+}
+private extension View { func plCard() -> some View { modifier(CardModifier()) } }
+
+private struct PrimaryButton: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.headline)
+            .foregroundColor(.white)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .background(PLColor.accent.opacity(configuration.isPressed ? 0.88 : 1))
+            .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
+    }
+}
+
+// MARK: - View
 struct GroceryItemInfoView: View {
     @Binding var item: GroceryItem?
     var onClose: () -> Void
     
-    // State vars to track whether we are editing the item
+    // Editing mode
     @State private var isEditing = false
-    @State private var priceWarning = "" // Track price warning message
-    @State private var quantityWarning = "" // Track quantity warning message
-    @State private var isSaveDisabled = false // Track if Save button should be disabled
     
-    // Update Save button state (disabled if there's a warning on either price or quantity)
-    private func updateSaveButtonState() {
-        if !priceWarning.isEmpty || !quantityWarning.isEmpty {
-            isSaveDisabled = true
-        } else {
-            isSaveDisabled = false
-        }
+    // Local editable fields (don’t mutate source until Save)
+    @State private var nameText: String = ""
+    @State private var quantityText: String = ""
+    @State private var priceText: String = ""
+    @State private var storeText: String = ""
+    @State private var notesText: String = ""
+    
+    // Validation
+    @State private var priceWarning = ""
+    @State private var quantityWarning = ""
+    private var isSaveDisabled: Bool { !priceWarning.isEmpty || !quantityWarning.isEmpty || !hasChanges }
+    
+    // Track changes vs original
+    private var hasChanges: Bool {
+        guard let it = item else { return false }
+        let qOrig = it.quantity
+        let pOrig = it.price ?? 0
+        let qNew  = Int(quantityText) ?? qOrig
+        let pNew  = Double(priceText) ?? pOrig
+        return nameText != it.name
+            || qNew != qOrig
+            || pNew != pOrig
+            || storeText != (it.store ?? "")
+            || notesText != (it.notes ?? "")
+    }
+    
+    // Currency formatter
+    private var priceFormatter: NumberFormatter {
+        let f = NumberFormatter()
+        f.numberStyle = .currency
+        f.minimumFractionDigits = 2
+        f.maximumFractionDigits = 2
+        return f
     }
     
     var body: some View {
-        VStack {
-            HStack {
-                Text(isEditing ? "Edit Item" : "View Item")
-                    .font(.title)
-                    .fontWeight(.bold)
-                    .padding()
-
+        VStack(spacing: PLSpacing.lg) {
+            // Header
+            HStack(spacing: PLSpacing.sm) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(isEditing ? "Edit Item" : "Item Details")
+                        .font(.title3).bold()
+                    Text(item?.name ?? "—")
+                        .font(.subheadline)
+                        .foregroundColor(PLColor.textSecondary)
+                        .lineLimit(1)
+                }
                 Spacer()
-
-                Button(action: {
-                    if !priceWarning.isEmpty || !quantityWarning.isEmpty {
-                        // If there's a warning, do not allow the user to save
-                        return
-                    }
-
-                    if isEditing {
-                        // When Done is clicked, update the item
-                        Task {
-                            await updateItemInBackend()
-                        }
-                    }
-                    isEditing.toggle()
-                }) {
-                    Text(isEditing ? "Save" : "Edit")
-                        .fontWeight(.bold)
-                        .padding()
-                        .background(!isEditing ? Color.blue : (isSaveDisabled ? Color.green.opacity(0.5) : Color.green))
-                        .foregroundColor(.white)
-                        .cornerRadius(10)
+                Button(action: onClose) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title2)
+                        .foregroundColor(PLColor.textSecondary)
                 }
-                .disabled(isSaveDisabled) // Disable Save button if there are warnings
-            }
-
-            // Editable or non-editable form
-            VStack(spacing: 20) {
-                // Item Name
-                HStack {
-                    Text("Item Name:")
-                        .frame(width: 100, alignment: .leading)
-                    if isEditing {
-                        TextField("Item Name", text: Binding(
-                            get: { item?.name ?? "" },
-                            set: { item?.name = $0 }
-                        ))
-                        .textFieldStyle(RoundedBorderTextFieldStyle())
-                        .frame(width: 180)
-                    } else {
-                        Text(item?.name ?? "No name set")
-                            .frame(width: 180, alignment: .leading)
-                    }
-                }
-
-                // Quantity
-                HStack {
-                    Text("Quantity:")
-                        .frame(width: 100, alignment: .leading)
-                    if isEditing {
-                        TextField("Quantity", text: Binding(
-                            get: { item?.quantity != nil ? String(item?.quantity ?? 0) : "" },
-                            set: { input in
-                                let validInput = validateQuantityInput(input)
-                                item?.quantity = Int(validInput) ?? 0
-                                updateSaveButtonState()
-                            }
-                        ))
-                        .textFieldStyle(RoundedBorderTextFieldStyle())
-                        .frame(width: 180)
-                    } else {
-                        Text("\(item?.quantity ?? 1)")
-                            .frame(width: 180, alignment: .leading)
-                    }
-                }
-
-                // Price
-                HStack {
-                    Text("Price:")
-                        .frame(width: 100, alignment: .leading)
-                    if isEditing {
-                        TextField("Price", text: Binding(
-                            get: { item?.price != nil ? String(item?.price ?? 0.0) : "" },
-                            set: { input in
-                                let validInput = validatePriceInput(input)
-                                item?.price = Double(validInput) ?? 0.0
-                                updateSaveButtonState()
-                            }
-                        ))
-                        .textFieldStyle(RoundedBorderTextFieldStyle())
-                        .frame(width: 180)
-                    } else {
-                        // Format the price with a dollar sign and 2 decimal places
-                        Text(item?.price == 0.0 || item?.price == nil ? "No price set" : priceFormatter.string(from: NSNumber(value: item?.price ?? 0.0)) ?? "No price set")
-                            .frame(width: 180, alignment: .leading)
-                    }
-                }
-
-                // Store
-                HStack {
-                    Text("Store:")
-                        .frame(width: 100, alignment: .leading)
-                    if isEditing {
-                        TextField("Store", text: Binding(
-                            get: { item?.store ?? "" },
-                            set: { item?.store = $0 }
-                        ))
-                        .textFieldStyle(RoundedBorderTextFieldStyle())
-                        .frame(width: 180)
-                    } else {
-                        Text(item?.store?.isEmpty ?? true ? "No store set" : item?.store ?? "No store set")
-                            .frame(width: 180, alignment: .leading)
-                    }
-                }
-
-                // Notes
-                HStack {
-                    Text("Notes:")
-                        .frame(width: 100, alignment: .leading)
-                    if isEditing {
-                        TextField("Notes", text: Binding(
-                            get: { item?.notes ?? "" },
-                            set: { item?.notes = $0 }
-                        ))
-                        .textFieldStyle(RoundedBorderTextFieldStyle())
-                        .frame(width: 180)
-                    } else {
-                        Text(item?.notes?.isEmpty ?? true ? "No notes set" : item?.notes ?? "No notes set")
-                            .frame(width: 180, alignment: .leading)
-                    }
-                }
+                .buttonStyle(.plain)
             }
             
-            // Warning messages with fixed height box
-            VStack {
-                // Empty warning box, fixed height
-                VStack {
-                    if !priceWarning.isEmpty {
-                        Text(priceWarning)
-                            .foregroundColor(.red)
-                            .font(.caption)
-                            .padding(.top, 5)
+            if let it = item {
+                // Fields card
+                VStack(spacing: PLSpacing.md) {
+                    Row(label: "Name") {
+                        if isEditing {
+                            TextField("Item name", text: $nameText)
+                                .textFieldStyle(.roundedBorder)
+                        } else {
+                            Text(it.name.isEmpty ? "—" : it.name)
+                        }
                     }
-                    if !quantityWarning.isEmpty {
-                        Text(quantityWarning)
-                            .foregroundColor(.red)
-                            .font(.caption)
-                            .padding(.top, 5)
+                    
+                    Row(label: "Quantity") {
+                        if isEditing {
+                            TextField("Qty", text: Binding(
+                                get: { quantityText },
+                                set: { new in
+                                    quantityText = new.filter { "0123456789".contains($0) }
+                                    validateQuantity()
+                                }
+                            ))
+                            .keyboardType(.numberPad)
+                            .textFieldStyle(.roundedBorder)
+                        } else {
+                            Text("\(it.quantity)")
+                        }
+                    }
+                    
+                    Row(label: "Price") {
+                        if isEditing {
+                            TextField("0.00", text: Binding(
+                                get: { priceText },
+                                set: { new in
+                                    priceText = filterPriceInput(new)
+                                    validatePrice()
+                                }
+                            ))
+                            .keyboardType(.decimalPad)
+                            .textFieldStyle(.roundedBorder)
+                        } else {
+                            let priceValue = it.price ?? 0
+                            let s = priceValue == 0 ? "—" : (priceFormatter.string(from: NSNumber(value: priceValue)) ?? "—")
+                            Text(s)
+                        }
+                    }
+                    
+                    Row(label: "Store") {
+                        if isEditing {
+                            TextField("Optional", text: $storeText)
+                                .textFieldStyle(.roundedBorder)
+                        } else {
+                            Text((it.store?.isEmpty ?? true) ? "—" : (it.store ?? "—"))
+                        }
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Notes")
+                            .font(.subheadline)
+                            .foregroundColor(PLColor.textSecondary)
+                        if isEditing {
+                            TextField("Optional notes", text: $notesText, axis: .vertical)
+                                .textFieldStyle(.roundedBorder)
+                                .lineLimit(3, reservesSpace: true)
+                        } else {
+                            Text((it.notes?.isEmpty ?? true) ? "—" : (it.notes ?? "—"))
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
                 }
-                .frame(height: 40) // Set a fixed height for the warning box
-                .padding(.top, 10) // Optional: add some top padding for spacing
+                .plCard()
+                
+                // Warnings
+                VStack(spacing: 4) {
+                    if !quantityWarning.isEmpty {
+                        WarningRow(text: quantityWarning)
+                    }
+                    if !priceWarning.isEmpty {
+                        WarningRow(text: priceWarning)
+                    }
+                }
+                .frame(minHeight: 18)
+                
+                // Actions
+                HStack(spacing: PLSpacing.sm) {
+                    if isEditing {
+                        Button("Cancel") {
+                            loadFromItem()                // revert local edits
+                            priceWarning = ""; quantityWarning = ""
+                            isEditing = false
+                        }
+                        .buttonStyle(.bordered)
+                        
+                        Button("Save") {
+                            Task { await saveEdits() }
+                        }
+                        .buttonStyle(PrimaryButton())
+                        .disabled(isSaveDisabled)
+                    } else {
+                        Button {
+                            isEditing = true
+                        } label: {
+                            Label("Edit", systemImage: "pencil")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(PrimaryButton())
+                    }
+                }
+                
+                // Close
+                Button("Close") { onClose() }
+                    .font(.subheadline)
+                    .foregroundColor(PLColor.textSecondary)
+                    .padding(.top, 2)
+            } else {
+                // Empty state
+                VStack(spacing: PLSpacing.sm) {
+                    Image(systemName: "cart")
+                        .font(.largeTitle)
+                        .foregroundColor(PLColor.textSecondary)
+                    Text("No item selected")
+                        .foregroundColor(PLColor.textSecondary)
+                }
+                .plCard()
+                .frame(maxWidth: .infinity, minHeight: 220)
             }
-
-            // Close Button
-            Button(action: {
-                onClose() // Close the window
-            }) {
-                Text("Close")
-                    .fontWeight(.bold)
-                    .padding()
-                    .background(Color.red)
-                    .foregroundColor(.white)
-                    .cornerRadius(10)
-            }
-            .padding()
-
-            Spacer()
+            
+            Spacer(minLength: 0)
         }
-        .padding()
-        .frame(width: 350, height: 500) // Set size of the window
-        .background(Color.white)
-        .cornerRadius(20)
+        .padding(PLSpacing.lg)
+        .frame(width: 360, height: 520)
+        .background(Color(.systemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 20))
         .shadow(radius: 10)
-        .padding(40) // Keep some padding from the edges of the screen
+        .onAppear(perform: loadFromItem)
+        .onChange(of: item) { _ in loadFromItem() }
     }
     
-    // Formatter for the price to show two decimal places with a dollar sign
-    private var priceFormatter: NumberFormatter {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .currency
-        formatter.minimumFractionDigits = 2
-        formatter.maximumFractionDigits = 2
-        return formatter
+    // MARK: - Load / Save
+    private func loadFromItem() {
+        guard let it = item else { return }
+        nameText     = it.name
+        quantityText = String(it.quantity)
+        priceText    = (it.price ?? 0) == 0 ? "" : String(format: "%.2f", it.price ?? 0)
+        storeText    = it.store ?? ""
+        notesText    = it.notes ?? ""
+        priceWarning = ""; quantityWarning = ""
     }
     
-    // Helper method to validate price input
-    private func validatePriceInput(_ input: String) -> String {
-        let decimalRegex = "^[0-9]*\\.?[0-9]{0,2}$"  // Only numbers and up to two decimal places
-        let priceTest = NSPredicate(format: "SELF MATCHES %@", decimalRegex)
+    private func saveEdits() async {
+        guard var it = item else { return }
         
-        if priceTest.evaluate(with: input) {
-            priceWarning = "" // Clear the warning if input is valid
-            return input // Return valid input
-        } else {
-            priceWarning = "Please enter a valid price."
-            return "" // Return empty string or previous valid input
-        }
-    }
-    
-    // Helper method to validate quantity input (positive integer only)
-    private func validateQuantityInput(_ input: String) -> String {
-        let integerRegex = "^[0-9]+$" // Only positive integers (no decimals, no negative)
-        let quantityTest = NSPredicate(format: "SELF MATCHES %@", integerRegex)
+        // Final validation
+        validateQuantity()
+        validatePrice()
+        guard priceWarning.isEmpty, quantityWarning.isEmpty else { return }
         
-        if quantityTest.evaluate(with: input), let value = Int(input), value >= 0 {
-            quantityWarning = "" // Clear the warning if input is valid
-            return input // Return valid input
-        } else {
-            quantityWarning = "Please enter a valid quantity (positive integer)."
-            return "" // Return empty string or previous valid input
-        }
-    }
-    
-    // API call to update item
-    func updateItemInBackend() async {
-        guard let item = item else {
-            print("Item is nil, cannot update.")
-            return
-        }
+        // Normalize & apply
+        it.name     = nameText.trimmingCharacters(in: .whitespacesAndNewlines)
+        it.quantity = Int(quantityText) ?? it.quantity
+        it.price    = priceText.isEmpty ? nil : Double(priceText)
+        let trimmedStore = storeText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedNotes = notesText.trimmingCharacters(in: .whitespacesAndNewlines)
+        it.store    = trimmedStore.isEmpty ? nil : trimmedStore
+        it.notes    = trimmedNotes.isEmpty ? nil : trimmedNotes
         
-        let listId = item.listId.uuidString
-        let itemId = item.id.uuidString
-
+        // Update backend
         do {
-            try await GroceryListAPI.updateItem(listId: listId, itemId: itemId, updatedItem: item)
-            print("Item updated successfully.")
+            try await GroceryListAPI.updateItem(listId: it.listId.uuidString, itemId: it.id.uuidString, updatedItem: it)
+            self.item = it
+            isEditing = false
         } catch {
+            // You can surface a toast/alert here if you want
             print("Failed to update item: \(error)")
         }
+    }
+    
+    // MARK: - Validation
+    private func validatePrice() {
+        // allow empty while editing
+        guard !priceText.isEmpty else { priceWarning = ""; return }
+        let regex = #"^[0-9]*\.?[0-9]{0,2}$"#
+        let ok = NSPredicate(format: "SELF MATCHES %@", regex).evaluate(with: priceText)
+        priceWarning = ok ? "" : "Enter a valid price (up to two decimals)."
+    }
+    
+    private func validateQuantity() {
+        guard !quantityText.isEmpty else { quantityWarning = ""; return }
+        if let v = Int(quantityText), v >= 0 {
+            quantityWarning = ""
+        } else {
+            quantityWarning = "Quantity must be a non-negative whole number."
+        }
+    }
+    
+    private func filterPriceInput(_ input: String) -> String {
+        // Keep only digits and at most one decimal point, clamp to 2 decimals
+        let allowed = input.filter { "0123456789.".contains($0) }
+        let parts = allowed.split(separator: ".", maxSplits: 1, omittingEmptySubsequences: false)
+        if parts.count == 2 {
+            let intPart = String(parts[0])
+            let decPart = String(parts[1].prefix(2))
+            return intPart + "." + decPart
+        }
+        return String(allowed)
+    }
+}
+
+// MARK: - Small Subviews
+private struct Row<Content: View>: View {
+    let label: String
+    @ViewBuilder var content: () -> Content
+    var body: some View {
+        HStack(spacing: PLSpacing.md) {
+            Text(label)
+                .font(.subheadline)
+                .foregroundColor(PLColor.textSecondary)
+                .frame(width: 90, alignment: .leading)
+            content()
+            Spacer(minLength: PLSpacing.sm)
+        }
+    }
+}
+
+private struct WarningRow: View {
+    let text: String
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "exclamationmark.triangle.fill")
+            Text(text)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .font(.caption)
+        .foregroundColor(PLColor.danger)
     }
 }

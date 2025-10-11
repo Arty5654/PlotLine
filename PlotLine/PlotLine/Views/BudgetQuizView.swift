@@ -8,10 +8,83 @@
 import SwiftUI
 import CoreLocation
 
+// ---------- Design tokens to match other screens ----------
+private enum PLColor {
+    static let surface        = Color(.secondarySystemBackground)
+    static let cardBorder     = Color.black.opacity(0.06)
+    static let textPrimary    = Color.primary
+    static let textSecondary  = Color.secondary
+    static let accent         = Color.blue
+    static let danger         = Color.red
+    static let warning        = Color.orange
+}
+private enum PLSpacing {
+    static let xs: CGFloat = 6
+    static let sm: CGFloat = 10
+    static let md: CGFloat = 16
+    static let lg: CGFloat = 20
+}
+private enum PLRadius {
+    static let md: CGFloat = 12
+}
+private struct CardModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .padding(PLSpacing.md)
+            .background(PLColor.surface)
+            .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
+            .overlay(
+                RoundedRectangle(cornerRadius: PLRadius.md)
+                    .stroke(PLColor.cardBorder)
+            )
+    }
+}
+private extension View { func plCard() -> some View { modifier(CardModifier()) } }
+
+private struct PrimaryButton: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.headline)
+            .foregroundColor(.white)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .background(PLColor.accent.opacity(configuration.isPressed ? 0.85 : 1))
+            .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
+    }
+}
+private struct DestructiveButton: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.headline)
+            .foregroundColor(.white)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .background(PLColor.danger.opacity(configuration.isPressed ? 0.85 : 1))
+            .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
+    }
+}
+private struct OutlineButton: ButtonStyle {
+    let tint: Color
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.headline)
+            .foregroundColor(tint)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .overlay(
+                RoundedRectangle(cornerRadius: PLRadius.md)
+                    .stroke(tint.opacity(configuration.isPressed ? 0.6 : 1))
+            )
+            .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
+    }
+}
+
 struct BudgetQuizView: View {
     static let defaultCategories = [
         "Rent", "Groceries", "Subscriptions", "Eating Out",
-        "Entertainment", "Utilities", "Savings", "Miscellaneous", "Transportation", "401(k)", "Roth IRA", "Car Insurance", "Health Insurance", "Brokerage"
+        "Entertainment", "Utilities", "Savings", "Miscellaneous",
+        "Transportation", "Roth IRA", "Car Insurance",
+        "Health Insurance", "Brokerage"
     ]
     
     let US_STATES: [USState] = [
@@ -42,16 +115,14 @@ struct BudgetQuizView: View {
         .init(name: "West Virginia", code: "WV"), .init(name: "Wisconsin", code: "WI"),
         .init(name: "Wyoming", code: "WY")
     ]
-
-    @State private var allCategories: [String] = defaultCategories
     
+    @State private var allCategories: [String] = defaultCategories
     @State private var yearlyIncome = ""
     @State private var retirement = ""
-    // For the "?" next to 401k Contribution
     @State private var retirementTip = false
     @State private var numberOfDependents = ""
     
-    // Debts
+    // Debt
     @State private var hasDebt = false
     @State private var debts: [DebtItem] = []
     var debtEntriesValid: Bool {
@@ -59,262 +130,277 @@ struct BudgetQuizView: View {
         return debts.allSatisfy { !$0.name.isEmpty && Double($0.principal) != nil }
     }
     
-    // Detected location or manual input
+    // Location
     @State private var city = ""
     @State private var state = ""
     @State private var manualCity = ""
     @State private var manualState = ""
     @State private var useDeviceLocation = true
     
-    
+    // Style
     @State private var spendingStyle = "Medium"
-
+    
+    // Categories & known costs
     @State private var selectedCategories: Set<String> = Set(defaultCategories)
     @State private var customCategory = ""
-
+    @State private var knownCosts: [String: String] = [:]
+    
+    // Loading / errors
     @State private var isLoading = false
     @State private var showError = false
-
+    @State private var showLoadingSheet = false
+    
+    // 401K dups, dont need to show it since the budet already accounts for it
+    private let trackerExclusions: Set<String> = [
+        "401(k)", "401k", "401(k) Contribution", "401k Contribution"
+    ]
+    
     @Environment(\.dismiss) var dismiss
     @StateObject private var locationManager = LocationManager()
     
-    // For known costs
-    @State private var knownCosts: [String: String] = [:]
-    
-    // Loading screen
-    @State private var showLoadingSheet = false
-    
-
     var username: String {
         UserDefaults.standard.string(forKey: "loggedInUsername") ?? "UnknownUser"
     }
-
+    
     var body: some View {
-        NavigationStack {
-            Form {
-                Section(header: Text("Income & Household")) {
+        ScrollView {
+            VStack(spacing: PLSpacing.lg) {
+                
+                // Header
+                VStack(alignment: .leading, spacing: PLSpacing.sm) {
+                    Text("Budget Quiz")
+                        .font(.headline).bold()
+                    Text("Tell us a bit about you so we can generate a smart starting budget.")
+                        .font(.subheadline)
+                        .foregroundColor(PLColor.textSecondary)
+                }
+                .plCard()
+                
+                // Income & household
+                VStack(alignment: .leading, spacing: PLSpacing.sm) {
+                    Text("Income & Household")
+                        .font(.headline)
+                    
                     TextField("Yearly Income ($)", text: $yearlyIncome)
                         .keyboardType(.decimalPad)
-                        .onChange(of: yearlyIncome) { newValue in
-                            yearlyIncome = newValue.filter { "0123456789.".contains($0) }
-                        }
-                    HStack(spacing: 8) {
-                        TextField("Contribution to 401(k) (Percentage)", text: $retirement)
+                        .textFieldStyle(.roundedBorder)
+                        .onChange(of: yearlyIncome) { v in yearlyIncome = v.filter { "0123456789.".contains($0) } }
+                    
+                    HStack(spacing: PLSpacing.sm) {
+                        TextField("401(k) Contribution (%)", text: $retirement)
                             .keyboardType(.decimalPad)
-                            .onChange(of: retirement) { newValue in
-                                retirement = newValue.filter { "0123456789.".contains($0) }
-                            }
+                            .textFieldStyle(.roundedBorder)
+                            .onChange(of: retirement) { v in retirement = v.filter { "0123456789.".contains($0) } }
                         Button {
                             retirementTip = true
                         } label: {
                             Image(systemName: "questionmark.circle")
                                 .imageScale(.medium)
-                                .foregroundColor(.blue)
-                                .accessibilityLabel("What contribution percentage should I choose?")
                         }
-                        .buttonStyle(PlainButtonStyle())
-                    }
-                    .popover(isPresented: $retirementTip, arrowEdge: .top) {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("401(k) Contribution Tip")
-                                .font(.headline)
-                            Text("A common target is 10-15% of your gross income. Ensure to contribute enough to get your employer’s full match (it’s essentially free money).")
-                            
+                        .buttonStyle(.plain)
+                        .popover(isPresented: $retirementTip, arrowEdge: .top) {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("401(k) Contribution Tip").font(.headline)
+                                Text("A common target is 10–15% of your gross income. At minimum, try to capture your employer match.")
+                                    .font(.subheadline)
+                                    .foregroundColor(PLColor.textSecondary)
+                            }
+                            .padding()
+                            .frame(maxWidth: 320)
                         }
-                        .padding()
-                        .frame(maxWidth: 320)
-                        
                     }
+                    
                     TextField("Number of Dependents", text: $numberOfDependents)
                         .keyboardType(.numberPad)
-                        .onChange(of: numberOfDependents) { newValue in
-                            numberOfDependents = newValue.filter { "0123456789".contains($0) }
-                        }
-                    
-                    //.pickerStyle(SegmentedPickerStyle())
-                    
+                        .textFieldStyle(.roundedBorder)
+                        .onChange(of: numberOfDependents) { v in numberOfDependents = v.filter { "0123456789".contains($0) } }
                 }
+                .plCard()
                 
-                Section(header: Text("Debt")) {
+                // Debt
+                VStack(alignment: .leading, spacing: PLSpacing.sm) {
+                    Text("Debt")
+                        .font(.headline)
                     Toggle("I have debt to payoff", isOn: $hasDebt)
-                        .onChange(of: hasDebt) { on in
-                            if !on { debts.removeAll()}
-                        }
+                        .onChange(of: hasDebt) { on in if !on { debts.removeAll() } }
+                    
                     if hasDebt {
-                        ForEach($debts) { $debt in
-                            VStack(alignment: .leading, spacing: 8) {
-                                TextField("Name (e.g., Chase Credit Card)", text: $debt.name)
-
-                                HStack {
-                                    TextField("Remaining Balance ($)", text: $debt.principal)
-                                        .keyboardType(.decimalPad)
-                                        .onChange(of: debt.principal) { v in
-                                            debt.principal = v.filter { "0123456789.".contains($0) }
-                                        }
-                                    TextField("APR (%)", text: $debt.apr)
-                                        .keyboardType(.decimalPad)
-                                        .onChange(of: debt.apr) { v in
-                                            debt.apr = v.filter { "0123456789.".contains($0) }
-                                        }
-                                }
-
-                                TextField("Minimum Monthly Payment ($)", text: $debt.minPayment)
-                                    .keyboardType(.decimalPad)
-                                    .onChange(of: debt.minPayment) { v in
-                                        debt.minPayment = v.filter { "0123456789.".contains($0) }
-                                    }
-
-                                DatePicker("Next Payment Due", selection: $debt.dueDate, displayedComponents: .date)
+                        LazyVStack(spacing: PLSpacing.sm) {
+                            ForEach($debts) { $debt in
+                                DebtRow(debt: $debt)
+                                    .plCard()
                             }
-                            .padding(.vertical, 4)
-                        }
-                        .onDelete { idx in debts.remove(atOffsets: idx) }
-
-                        Button {
-                            debts.append(DebtItem())
-                        } label: {
-                            Label("Add Debt", systemImage: "plus.circle.fill")
+                            .onDelete { idx in debts.remove(atOffsets: idx) }
+                            
+                            Button {
+                                debts.append(DebtItem())
+                            } label: {
+                                Label("Add Debt", systemImage: "plus.circle.fill")
+                                    .labelStyle(.titleAndIcon)
+                            }
+                            .tint(.green)
                         }
                     }
-                    
                 }
+                .plCard()
                 
-                Section(header: Text("What is your Spending Style?")) {
+                // Spending style
+                VStack(alignment: .leading, spacing: PLSpacing.sm) {
+                    Text("Spending Style")
+                        .font(.headline)
                     Picker("Spending Style", selection: $spendingStyle) {
                         Text("Low").tag("Low")
                         Text("Medium").tag("Medium")
                         Text("High").tag("High")
                     }
-                    .pickerStyle(SegmentedPickerStyle())
+                    .pickerStyle(.segmented)
                 }
-
-                Section(header: Text("Location")) {
+                .plCard()
+                
+                // Location
+                VStack(alignment: .leading, spacing: PLSpacing.sm) {
+                    Text("Location")
+                        .font(.headline)
                     Toggle("Use My Location", isOn: $useDeviceLocation)
                         .onChange(of: useDeviceLocation) { enabled in
-                            if enabled {
-                                getLocation()
-                            }
+                            if enabled { getLocation() }
                         }
                     
-                    // Detected or manual
                     if useDeviceLocation {
-                        Text("Detected: \(city), \(state)")
-                            //.foregroundColor(.secondary)
+                        HStack {
+                            Image(systemName: "mappin.and.ellipse")
+                            Text(city.isEmpty && state.isEmpty ? "Detecting…" : "Detected: \(city), \(state)")
+                                .foregroundColor(PLColor.textSecondary)
+                        }
+                        .font(.subheadline)
                     } else {
                         TextField("City", text: $manualCity)
-                        //TextField("State", text: $manualState)
+                            .textFieldStyle(.roundedBorder)
                         Picker("State", selection: $manualState) {
                             Text("Select a state").tag("")
-                            ForEach(US_STATES) { states in
-                                Text(states.name).tag(states.code)
-                            }
+                            ForEach(US_STATES) { st in Text(st.name).tag(st.code) }
+                        }
+                        .pickerStyle(.navigationLink)
+                    }
+                }
+                .plCard()
+                
+                // Known monthly costs (optional)
+                VStack(alignment: .leading, spacing: PLSpacing.sm) {
+                    Text("Known Monthly Costs (Optional)")
+                        .font(.headline)
+                    LazyVStack(spacing: PLSpacing.sm) {
+                        ForEach(Array(selectedCategories.subtracting(trackerExclusions)).sorted(), id: \.self) { category in
+                            TextField("\(category) ($)", text: Binding(
+                                get: { knownCosts[category] ?? "" },
+                                set: { knownCosts[category] = $0.filter { "0123456789.".contains($0) } }
+                            ))
+                            .keyboardType(.decimalPad)
+                            .textFieldStyle(.roundedBorder)
                         }
                     }
                 }
+                .plCard()
                 
-                Section(header: Text("Known Monthly Costs (Optional)")) {
-                    ForEach(Array(selectedCategories).sorted(), id: \.self) { category in
-                        TextField("\(category) ($)", text: Binding(
-                            get: { knownCosts[category] ?? "" },
-                            set: { knownCosts[category] = $0.filter { "0123456789.".contains($0) } }
-                        ))
-                        .keyboardType(.decimalPad)
-                    }
-                }
-
-                Section(header: Text("Select Budget Categories")) {
-                    ForEach(allCategories.sorted(), id: \.self) { category in
-                        Toggle(category, isOn: Binding(
-                            get: { selectedCategories.contains(category) },
-                            set: { isSelected in
-                                if isSelected {
-                                    selectedCategories.insert(category)
-                                } else {
-                                    selectedCategories.remove(category)
+                // Category selection
+                VStack(alignment: .leading, spacing: PLSpacing.sm) {
+                    Text("Select Budget Categories")
+                        .font(.headline)
+                    
+                    // Simple, readable toggle list for now (can switch to chips later)
+                    LazyVStack(spacing: 8) {
+                        ForEach(allCategories.filter { !trackerExclusions.contains($0) }.sorted(), id: \.self) { category in
+                            Toggle(category, isOn: Binding(
+                                get: { selectedCategories.contains(category) },
+                                set: { isSelected in
+                                    if isSelected { selectedCategories.insert(category) }
+                                    else { selectedCategories.remove(category) }
                                 }
-                            }
-                        ))
+                            ))
+                        }
                     }
-
-                    HStack {
+                    
+                    HStack(spacing: PLSpacing.sm) {
                         TextField("Custom Category", text: $customCategory)
+                            .textFieldStyle(.roundedBorder)
                         Button("Add") {
                             let trimmed = customCategory.trimmingCharacters(in: .whitespacesAndNewlines)
-                            if !trimmed.isEmpty && !allCategories.contains(trimmed) {
+                            if !trimmed.isEmpty && !allCategories.contains(trimmed) && !trackerExclusions.contains(trimmed) {
                                 allCategories.append(trimmed)
                                 selectedCategories.insert(trimmed)
                                 customCategory = ""
                             }
                         }
+                        .buttonStyle(OutlineButton(tint: PLColor.accent))
                     }
                 }
-                // Loading Screen
-                .sheet(isPresented: $showLoadingSheet) {
-                    VStack(spacing: 16) {
-                        ProgressView("Generating Budget...")
-                            .progressViewStyle(CircularProgressViewStyle())
-                            .padding()
-                        Text("This may take a few seconds.")
-                            .font(.subheadline)
-                            .foregroundColor(.gray)
+                .plCard()
+                
+                // Actions
+                VStack(spacing: PLSpacing.sm) {
+                    Button {
+                        Task { await generateBudgetFromLLM() }
+                    } label: {
+                        Text(isLoading ? "Generating…" : "Generate Budget")
                     }
-                    .presentationDetents([.fraction(0.25)])
-                }
-
-                Section {
-                    if isLoading {
-                        ProgressView("Generating Budget...")
-                    } else {
-                        Button("Generate Budget") {
-                            Task {
-                                await generateBudgetFromLLM()
-                            }
-                        }
-                        .disabled(
-                            yearlyIncome.isEmpty || retirement.isEmpty ||
-                            numberOfDependents.isEmpty ||
-                            (useDeviceLocation ? city.isEmpty || state.isEmpty : manualCity.isEmpty || manualState.isEmpty) ||
-                            !debtEntriesValid
-                        )
-
-                    }
+                    .buttonStyle(PrimaryButton())
+                    .disabled(
+                        isLoading ||
+                        yearlyIncome.isEmpty || retirement.isEmpty || numberOfDependents.isEmpty ||
+                        (useDeviceLocation ? (city.isEmpty || state.isEmpty) : (manualCity.isEmpty || manualState.isEmpty)) ||
+                        !debtEntriesValid
+                    )
                 }
             }
-            .navigationTitle("Budget Quiz")
-            .alert("Something went wrong", isPresented: $showError) {
-                Button("OK", role: .cancel) { }
+            .padding(.horizontal, PLSpacing.lg)
+            .padding(.vertical, PLSpacing.lg)
+            .scrollDismissesKeyboard(.interactively)
+        }
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Text("Budget Quiz").font(.headline)
             }
         }
+        .tint(PLColor.accent)
+        .alert("Something went wrong", isPresented: $showError) {
+            Button("OK", role: .cancel) { }
+        }
+        // Loading bottom-sheet (same behavior, just declared at root)
+        .sheet(isPresented: $showLoadingSheet) {
+            VStack(spacing: 16) {
+                ProgressView("Generating Budget...")
+                    .progressViewStyle(CircularProgressViewStyle())
+                    .padding()
+                Text("This may take a few seconds.")
+                    .font(.subheadline)
+                    .foregroundColor(PLColor.textSecondary)
+            }
+            .presentationDetents([.fraction(0.25)])
+        }
         .onAppear {
-//            if useDeviceLocation {
-//                getLocation()
-            //}
             loadSavedQuiz()
-            // No prior quiz and toggle switch is on, show location
             if useDeviceLocation && city.isEmpty && state.isEmpty {
                 getLocation()
             }
         }
     }
-
-    // MARK: - LLM Budget Gen
+    
+    // MARK: - LLM Budget Gen (logic unchanged)
     func generateBudgetFromLLM() async {
         let url = URL(string: "http://localhost:8080/api/llm/budget")!
         
         let iso = ISO8601DateFormatter()
         let debtsPayload: [[String: Any]] = hasDebt ? debts.map { d in
-            return [
+            [
                 "name": d.name,
                 "principal": Double(d.principal) ?? 0.0,
-                "apr": Double(d.apr) ?? 0.0,             // APR as % number (e.g., 22.99)
+                "apr": Double(d.apr) ?? 0.0,
                 "minPayment": Double(d.minPayment) ?? 0.0,
                 "dueDate": iso.string(from: d.dueDate)
-                // TODO: Maybe might need this instead
-                // "dueDay": Calendar.current.component(.day, from: d.dueDate)
             ]
         } : []
         
-        // Use either manual or detected location
         let finalCity = useDeviceLocation ? city : manualCity
         let finalState = useDeviceLocation ? state : manualState
         let payload: [String: Any] = [
@@ -326,28 +412,24 @@ struct BudgetQuizView: View {
             "state": finalState,
             "spendingStyle": spendingStyle,
             "useDeviceLocation": useDeviceLocation,
-            "categories": Array(selectedCategories.sorted()),
+            "categories": Array(selectedCategories.subtracting(trackerExclusions).sorted()),
             "knownCosts": knownCosts.compactMapValues { Double($0) },
             "hasDebt": hasDebt,
             "debts": debtsPayload
         ]
         
-        //print("Categories: \(Array(selectedCategories.sorted()))")
-        
-        print("Sending categories to backend:", Array(selectedCategories))
-
         guard let jsonData = try? JSONSerialization.data(withJSONObject: payload) else { return }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = jsonData
         
         DispatchQueue.main.async {
             isLoading = true
             showLoadingSheet = true
         }
-
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = jsonData
+        
         do {
             let (data, _) = try await URLSession.shared.data(for: request)
             if let decoded = try? JSONDecoder().decode([String: Double].self, from: data) {
@@ -364,24 +446,18 @@ struct BudgetQuizView: View {
             }
         }
     }
-
+    
     func saveBudgetToBackend(_ budget: [String: Double]) async {
         do {
-            // Save monthly budget
             try await postBudget(username: username, type: "monthly", budget: budget)
-
-            // Save weekly budget (monthly / 4)
             let weekly = budget.mapValues { $0 / 4.0 }
             try await postBudget(username: username, type: "weekly", budget: weekly)
-            
-            // Reset weekly/monthly costs after each quiz
             await resetCostsToSelectedCategories()
-
-            // Save completion flag
             UserDefaults.standard.set(true, forKey: "budgetQuizCompleted")
-
+            
             DispatchQueue.main.async {
                 isLoading = false
+                showLoadingSheet = false
                 dismiss()
             }
         } catch {
@@ -389,10 +465,11 @@ struct BudgetQuizView: View {
             DispatchQueue.main.async {
                 showError = true
                 isLoading = false
+                showLoadingSheet = false
             }
         }
     }
-
+    
     func postBudget(username: String, type: String, budget: [String: Double]) async throws {
         let url = URL(string: "http://localhost:8080/api/budget")!
         let payload: [String: Any] = [
@@ -400,26 +477,20 @@ struct BudgetQuizView: View {
             "type": type,
             "budget": budget
         ]
-
         let jsonData = try JSONSerialization.data(withJSONObject: payload)
-
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = jsonData
-
         _ = try await URLSession.shared.data(for: request)
     }
     
-    // Get previous quiz information prefilled
     func loadSavedQuiz() {
         guard let url = URL(string: "http://localhost:8080/api/llm/budget/last/\(username)") else { return }
-
         Task {
             do {
                 let (data, resp) = try await URLSession.shared.data(from: url)
                 guard let http = resp as? HTTPURLResponse, http.statusCode == 200 else { return }
-
                 if let dict = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
                     await MainActor.run {
                         yearlyIncome        = String(describing: dict["yearlyIncome"]  ?? "")
@@ -428,17 +499,15 @@ struct BudgetQuizView: View {
                         city                = String(dict["city"] as? String ?? "")
                         state               = String(dict["state"] as? String ?? "")
                         spendingStyle       = String(dict["spendingStyle"] as? String ?? "Medium")
-
+                        
                         if let cats = dict["categories"] as? [String] {
-                            allCategories = Array(Set(allCategories).union(cats))
-                            selectedCategories = Set(cats)
+                            let filtered = cats.filter { !trackerExclusions.contains($0) }
+                            allCategories = Array(Set(allCategories).union(filtered))
+                            selectedCategories = Set(filtered)
                         }
                         if let kc = dict["knownCosts"] as? [String: Double] {
-                            // convert back to String for the text fields
                             knownCosts = kc.mapValues { String($0) }
                         }
-                        
-                        // Bool for using device location or not
                         if let flag = dict["useDeviceLocation"] as? Bool {
                             useDeviceLocation = flag
                             if flag { getLocation() }
@@ -446,10 +515,7 @@ struct BudgetQuizView: View {
                         manualCity  = String(dict["city"]  as? String ?? "")
                         manualState = String(dict["state"] as? String ?? "")
                         
-                        // Get Debts
-                        if let hasDebtSaved = dict["hasDebt"] as? Bool {
-                            hasDebt = hasDebtSaved
-                        }
+                        if let hasDebtSaved = dict["hasDebt"] as? Bool { hasDebt = hasDebtSaved }
                         if let savedDebts = dict["debts"] as? [[String: Any]] {
                             let iso = ISO8601DateFormatter()
                             debts = savedDebts.map { d in
@@ -468,13 +534,10 @@ struct BudgetQuizView: View {
                         }
                     }
                 }
-            } catch {
-                print("No previous quiz data: \(error)")
-            }
+            } catch { print("No previous quiz data: \(error)") }
         }
     }
     
-    // POST /api/costs
     func postCosts(username: String, type: String, costs: [String: Double]) async throws {
         let url = URL(string: "http://localhost:8080/api/costs")!
         let payload: [String: Any] = [
@@ -483,37 +546,31 @@ struct BudgetQuizView: View {
             "costs": costs
         ]
         let data = try JSONSerialization.data(withJSONObject: payload)
-
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = data
-
         _ = try await URLSession.shared.data(for: req)
     }
-
-    // Reset costs for both weekly & monthly to zeros for the quiz-selected categories
+    
     func resetCostsToSelectedCategories() async {
-        // zero map from selected categories
-        var zeros = Dictionary(uniqueKeysWithValues: selectedCategories.map { ($0, 0.0) })
-
-        // If you want debt lines (if the user entered debts) to also appear in costs:
+        var zeros = Dictionary(
+            uniqueKeysWithValues: selectedCategories
+                .subtracting(trackerExclusions)
+                .map { ($0, 0.0) }
+        )
         if hasDebt {
             for d in debts where !d.name.trimmingCharacters(in: .whitespaces).isEmpty {
                 zeros["Debt - \(d.name)"] = 0.0
             }
         }
-
         do {
             try await postCosts(username: username, type: "monthly", costs: zeros)
             try await postCosts(username: username, type: "weekly",  costs: zeros)
             print("Costs reset to zeros for selected categories.")
-        } catch {
-            print("Failed to reset costs: \(error)")
-        }
+        } catch { print("Failed to reset costs: \(error)") }
     }
-
-    // MARK: - Location
+    
     func getLocation() {
         locationManager.requestLocation { cityName, stateName in
             self.city = cityName
@@ -522,6 +579,33 @@ struct BudgetQuizView: View {
     }
 }
 
+// ---------- Rows & helpers ----------
+private struct DebtRow: View {
+    @Binding var debt: DebtItem
+    var body: some View {
+        VStack(alignment: .leading, spacing: PLSpacing.sm) {
+            TextField("Name (e.g., Chase Credit Card)", text: $debt.name)
+                .textFieldStyle(.roundedBorder)
+            HStack(spacing: PLSpacing.sm) {
+                TextField("Remaining Balance ($)", text: $debt.principal)
+                    .keyboardType(.decimalPad)
+                    .textFieldStyle(.roundedBorder)
+                    .onChange(of: debt.principal) { v in debt.principal = v.filter { "0123456789.".contains($0) } }
+                TextField("APR (%)", text: $debt.apr)
+                    .keyboardType(.decimalPad)
+                    .textFieldStyle(.roundedBorder)
+                    .onChange(of: debt.apr) { v in debt.apr = v.filter { "0123456789.".contains($0) } }
+            }
+            TextField("Minimum Monthly Payment ($)", text: $debt.minPayment)
+                .keyboardType(.decimalPad)
+                .textFieldStyle(.roundedBorder)
+                .onChange(of: debt.minPayment) { v in debt.minPayment = v.filter { "0123456789.".contains($0) } }
+            DatePicker("Next Payment Due", selection: $debt.dueDate, displayedComponents: .date)
+        }
+    }
+}
+
+// ---------- Location plumbing (unchanged) ----------
 class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     private let manager = CLLocationManager()
     private var completion: ((String, String) -> Void)?
@@ -536,17 +620,14 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         manager.delegate = self
         
         let status = manager.authorizationStatus
-        
         if status == .denied || status == .restricted {
             print("Location access denied")
             self.completion?("Permission", "Denied")
             return
         }
-        
         manager.requestWhenInUseAuthorization()
         manager.requestLocation()
     }
-    
     
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let location = locations.first else { return }
@@ -554,23 +635,16 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
             if let place = placemarks?.first {
                 let city = place.locality ?? ""
                 let state = place.administrativeArea ?? ""
-                DispatchQueue.main.async {
-                    self.completion?(city, state)
-                }
+                DispatchQueue.main.async { self.completion?(city, state) }
             }
         }
     }
-    
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         print("Location error:", error)
     }
 }
-    
-   
 
-    
-    
-
+// ---------- Models ----------
 struct USState: Identifiable {
     let id = UUID()
     let name: String
@@ -579,15 +653,11 @@ struct USState: Identifiable {
 
 struct DebtItem: Identifiable, Codable {
     var id = UUID()
-    var name: String = ""            // e.g., “Chase Credit Card”
-    var principal: String = ""       // store as String for TextField; convert before sending
-    var apr: String = ""             // APR as percentage string, e.g., “22.99”
-    var minPayment: String = ""      // optional minimum payment per month
-    var dueDate: Date = Date()       // next payment due (or target payoff date)
+    var name: String = ""
+    var principal: String = ""
+    var apr: String = ""
+    var minPayment: String = ""
+    var dueDate: Date = Date()
 }
 
-
-
-#Preview {
-    BudgetQuizView()
-}
+#Preview { BudgetQuizView() }

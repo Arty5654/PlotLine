@@ -258,6 +258,57 @@ public class WeeklyMonthlyCostController {
         return "%04d-%02d".formatted(date.getYear(), date.getMonthValue());
     }
 
+    // ---------- GET for WEEKLY ----------
+    @GetMapping("/weekly/{username}")
+    public ResponseEntity<?> getWeeklyPeriod(
+            @PathVariable String username,
+            @RequestParam(name="week_start") String weekStart // YYYY-MM-DD (Sunday of that week)
+    ) {
+        try {
+            LocalDate start = LocalDate.parse(weekStart);
+            // normalize to the server’s concept of week, then build the key
+            WeekFields wf = WeekFields.SUNDAY_START;
+            String keyPart = weekKey(start);
+            String s3Key = "users/%s/costs/weekly/%s.json".formatted(username, keyPart);
+
+            Map<String,Object> period = loadJsonOrEmpty(s3Key);
+            // If empty, seed a minimal object so the client can render
+            period.putIfAbsent("periodKey", keyPart);
+            period.putIfAbsent("start", start.toString());
+            period.putIfAbsent("end", start.plusDays(6).toString());
+            period.putIfAbsent("days", new LinkedHashMap<String, Map<String, Double>>());
+            period.putIfAbsent("totals", new LinkedHashMap<String, Double>());
+
+            return ResponseEntity.ok(period);
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body("weekly fetch failed: " + e.getMessage());
+        }
+    }
+
+    // ---------- GET for MONTHLY (optional but handy) ----------
+    @GetMapping("/monthly/{username}")
+    public ResponseEntity<?> getMonthlyPeriod(
+            @PathVariable String username,
+            @RequestParam(name="month") String month // "YYYY-MM"
+    ) {
+        try {
+            YearMonth ym = YearMonth.parse(month);
+            String keyPart = String.format("%04d-%02d", ym.getYear(), ym.getMonthValue());
+            String s3Key = "users/%s/costs/monthly/%s.json".formatted(username, keyPart);
+
+            Map<String,Object> period = loadJsonOrEmpty(s3Key);
+            period.putIfAbsent("periodKey", keyPart);
+            period.putIfAbsent("start", ym.atDay(1).toString());
+            period.putIfAbsent("end", ym.atEndOfMonth().toString());
+            period.putIfAbsent("days", new LinkedHashMap<String, Map<String, Double>>());
+            period.putIfAbsent("totals", new LinkedHashMap<String, Double>());
+
+            return ResponseEntity.ok(period);
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body("monthly fetch failed: " + e.getMessage());
+        }
+    }
+
     @PostMapping("/merge-dated")
     public ResponseEntity<?> mergeDatedCosts(@RequestBody Map<String, Object> body) {
         try {
@@ -289,11 +340,22 @@ public class WeeklyMonthlyCostController {
             // merge
             for (var e : costs.entrySet()) {
                 String cat = e.getKey();
-                double add = e.getValue() == null ? 0.0 : e.getValue().doubleValue();
-                if (add == 0.0) continue;
-                dayCosts.put(cat, round2(dayCosts.getOrDefault(cat, 0.0) + add));
-                totals.put(cat, round2(totals.getOrDefault(cat, 0.0) + add));
+                double incoming = e.getValue() == null ? 0.0 : round2(e.getValue().doubleValue());
+                double prev = round2(dayCosts.getOrDefault(cat, 0.0));
+                double delta = round2(incoming - prev);
+
+                if (incoming == 0.0) {
+                    // treat zero as “clear this category for the day”
+                    if (prev != 0.0) {
+                        dayCosts.remove(cat);
+                        totals.put(cat, round2(totals.getOrDefault(cat, 0.0) - prev));
+                    }
+                } else {
+                    dayCosts.put(cat, incoming);
+                    totals.put(cat, round2(totals.getOrDefault(cat, 0.0) + delta));
+                }
             }
+
             days.put(dayKey, dayCosts);
 
             // Store start/end for weekly/monthly
@@ -338,4 +400,92 @@ public class WeeklyMonthlyCostController {
         return Math.round(v * 100.0) / 100.0;
     }
 
+    // Feedback
+    static record CatDelta(
+        String category,
+        double current,
+        double previous,
+        double delta,      // current - previous
+        Double pct         // null if previous==0
+    ) {}
+
+    static record MonthlyFeedback(
+        String month,              // "YYYY-MM"
+        String previousMonth,      // "YYYY-MM"
+        double totalCurrent,
+        double totalPrevious,
+        double totalDelta,         // current - previous
+        java.util.List<CatDelta> deltas
+    ) {}
+
+    /** Helper: parse "YYYY-MM" and return previous month as "YYYY-MM" */
+    private static String prevMonthKey(String month) {
+        YearMonth ym = YearMonth.parse(month);
+        YearMonth pm = ym.minusMonths(1);
+        return String.format("%04d-%02d", pm.getYear(), pm.getMonthValue());
+    }
+
+    /** Helper: sum the "totals" map from a monthly period file (if missing, returns empty map). */
+    @SuppressWarnings("unchecked")
+    private Map<String, Double> readMonthlyTotalsOrEmpty(String username, String monthKey) throws Exception {
+        String s3Key = "users/%s/costs/monthly/%s.json".formatted(username, monthKey);
+        Map<String,Object> period = loadJsonOrEmpty(s3Key);
+        Object totalsObj = period.get("totals");
+        if (totalsObj instanceof Map<?,?> raw) {
+            Map<String, Double> out = new LinkedHashMap<>();
+            for (var e : raw.entrySet()) {
+                String k = String.valueOf(e.getKey());
+                Object v = e.getValue();
+                if (v instanceof Number n) out.put(k, round2(n.doubleValue()));
+            }
+            return out;
+        }
+        return new LinkedHashMap<>();
+    }
+
+    /** GET /api/costs/feedback/{username}?month=YYYY-MM  */
+    @GetMapping("/feedback/{username}")
+    public ResponseEntity<?> getMonthlyFeedback(
+            @PathVariable String username,
+            @RequestParam(name = "month") String month // "YYYY-MM"
+    ) {
+        try {
+            String prev = prevMonthKey(month);
+
+            Map<String, Double> curTotals  = readMonthlyTotalsOrEmpty(username, month);
+            Map<String, Double> prevTotals = readMonthlyTotalsOrEmpty(username, prev);
+
+            // Union of categories
+            java.util.Set<String> cats = new java.util.TreeSet<>();
+            cats.addAll(curTotals.keySet());
+            cats.addAll(prevTotals.keySet());
+
+            java.util.List<CatDelta> deltas = new java.util.ArrayList<>();
+            double totalCur = 0.0, totalPrev = 0.0;
+
+            for (String c : cats) {
+                double cur  = round2(curTotals.getOrDefault(c, 0.0));
+                double pre  = round2(prevTotals.getOrDefault(c, 0.0));
+                double d    = round2(cur - pre);
+                Double pct  = (pre == 0.0) ? null : round2(d / pre);
+                deltas.add(new CatDelta(c, cur, pre, d, pct));
+                totalCur  += cur;
+                totalPrev += pre;
+            }
+            totalCur  = round2(totalCur);
+            totalPrev = round2(totalPrev);
+
+            MonthlyFeedback payload = new MonthlyFeedback(
+                month,
+                prev,
+                totalCur,
+                totalPrev,
+                round2(totalCur - totalPrev),
+                deltas
+            );
+            return ResponseEntity.ok(payload);
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+        }
+    }
 }

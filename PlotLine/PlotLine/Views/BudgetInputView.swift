@@ -1,40 +1,107 @@
 import SwiftUI
 import Foundation
 
+// ---------- Design tokens (match WeeklyMonthlyCostView) ----------
+private enum PLColor {
+    static let surface        = Color(.secondarySystemBackground)
+    static let cardBorder     = Color.black.opacity(0.06)
+    static let textPrimary    = Color.primary
+    static let textSecondary  = Color.secondary
+    static let accent         = Color.blue
+    static let success        = Color.green
+    static let danger         = Color.red
+    static let warning        = Color.orange
+}
+private enum PLSpacing {
+    static let xs: CGFloat = 6
+    static let sm: CGFloat = 10
+    static let md: CGFloat = 16
+    static let lg: CGFloat = 20
+}
+private enum PLRadius {
+    static let md: CGFloat = 12
+}
+
+private struct CardModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .padding(PLSpacing.md)
+            .background(PLColor.surface)
+            .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
+            .overlay(
+                RoundedRectangle(cornerRadius: PLRadius.md)
+                    .stroke(PLColor.cardBorder)
+            )
+    }
+}
+private extension View { func plCard() -> some View { modifier(CardModifier()) } }
+
+private struct PrimaryButton: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.headline)
+            .foregroundColor(.white)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .background(PLColor.accent.opacity(configuration.isPressed ? 0.85 : 1))
+            .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
+    }
+}
+private struct OutlinedButton: ButtonStyle {
+    let tint: Color
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.headline)
+            .foregroundColor(tint)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .overlay(
+                RoundedRectangle(cornerRadius: PLRadius.md)
+                    .stroke(tint.opacity(configuration.isPressed ? 0.6 : 1))
+            )
+            .background(Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
+    }
+}
+private struct DestructiveButton: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.headline)
+            .foregroundColor(.white)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .background(PLColor.danger.opacity(configuration.isPressed ? 0.85 : 1))
+            .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
+    }
+}
+
+// ---------- View ----------
 struct BudgetInputView: View {
-    // MARK: - State
+    // MARK: State
     @State private var selectedType: String =
         UserDefaults.standard.string(forKey: "selectedType") ?? "Weekly"
     
     @State private var budgetItems: [BudgetItem] = []
     @State private var newCategory: String = ""
     
-    // Single alert state: .saved or .cleared
     @State private var activeAlert2: ActiveAlert2? = nil
+    @State private var budgetingWarnings: String = ""
     
-    @State private var budgetingWarnings: String = "" // Stores warning message
-
-    // User's income and rent fetched from backend
     @State private var userIncome: Double = 0.0
     @State private var userRent: Double = 0.0
     
-    // Whether the user acknowledged warnings
     @State private var warningsAcknowledged: Bool = false
     
-    // Live totals
-    // Exclude 401k from tracker math
+    // Exclude from progress math (still visible as budget lines)
     private let trackerExclusions: Set<String> = ["401(k)", "401(k) Contribution"]
 
-    // Live totals (exclude 401k)
     private var totalEntered: Double {
         budgetItems
             .filter { !trackerExclusions.contains($0.category) }
             .compactMap { Double($0.amount) }
             .reduce(0, +)
     }
-
     private var totalAllowance: Double {
-        // Treat `userIncome` as monthly; Weekly view uses 1/4 of that.
         selectedType == "Monthly" ? userIncome : userIncome / 4.0
     }
     private var remaining: Double { totalAllowance - totalEntered }
@@ -43,14 +110,9 @@ struct BudgetInputView: View {
         return min(max(totalEntered / totalAllowance, 0), 1)
     }
 
-    
-    // MARK: - Constants / Defaults
     private let username: String = UserDefaults.standard.string(forKey: "loggedInUsername") ?? "UnknownUser"
-    
-    // For the Budget Quiz
     var prefilledBudget: [String: Double]? = nil
     
-    /// Default categories to show if none stored or none on backend
     private static let defaultBudgetCategories: [BudgetItem] = [
         BudgetItem(category: "Rent", amount: ""),
         BudgetItem(category: "Groceries", amount: ""),
@@ -68,178 +130,141 @@ struct BudgetInputView: View {
         BudgetItem(category: "Brokerage", amount: "")
     ]
     
-    // ("Weekly"/"Monthly") to backend param ("weekly"/"monthly")
-    private var backendType: String {
-        selectedType.lowercased()
-    }
+    private var backendType: String { selectedType.lowercased() }
     
-    // MARK: - Body
     var body: some View {
-        VStack(spacing: 15) {
-            Text("Create Your \(selectedType) Budget")
-                .font(.title2)
-                .bold()
-            
-            // Weekly/Monthly Picker
-            Picker("Type", selection: $selectedType) {
-                Text("Weekly").tag("Weekly")
-                Text("Monthly").tag("Monthly")
-            }
-            .pickerStyle(SegmentedPickerStyle())
-            .padding()
-            // When user changes between Weekly & Monthly, fetch from backend
-            .onChange(of: selectedType) { _ in
-                fetchBudgetData()
-                UserDefaults.standard.set(selectedType, forKey: "selectedType")
-            }
-            
-            // Live Budget Tracker
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    Text("Total Entered")
-                    Spacer()
-                    Text("$\(totalEntered, specifier: "%.2f")")
-                        .bold()
-                }
-                HStack {
-                    Text("Target (\(selectedType))")
-                    Spacer()
-                    if totalAllowance > 0 {
-                        Text("$\(totalAllowance, specifier: "%.2f")")
-                            .bold()
-                    } else {
-                        Text("—").foregroundColor(.secondary)
+        ScrollView {
+            VStack(spacing: PLSpacing.lg) {
+                
+                // Header + Segmented
+                VStack(alignment: .leading, spacing: PLSpacing.sm) {
+                    Text("Create Your \(selectedType) Budget")
+                        .font(.headline).bold()
+                    
+                    Picker("Type", selection: $selectedType) {
+                        Text("Weekly").tag("Weekly")
+                        Text("Monthly").tag("Monthly")
+                    }
+                    .pickerStyle(.segmented)
+                    .onChange(of: selectedType) { _ in
+                        fetchBudgetData()
+                        UserDefaults.standard.set(selectedType, forKey: "selectedType")
                     }
                 }
-                HStack {
-                    Text(remaining >= 0 ? "Remaining" : "Over by")
-                    Spacer()
-                    Text("$\(abs(remaining), specifier: "%.2f")")
-                        .bold()
-                        .foregroundColor(remaining >= 0 ? .green : .red)
-                }
-                if totalAllowance > 0 {
-                    ProgressView(value: progress)
-                        .tint(remaining >= 0 ? .green : .red)
-                }
-            }
-            .padding()
-            .background(Color(.systemGroupedBackground))
-            .cornerRadius(10)
-            .overlay(
-                RoundedRectangle(cornerRadius: 10)
-                    .stroke(Color.secondary.opacity(0.15), lineWidth: 1)
-            )
-            .padding(.horizontal)
-
-            
-            // Budget Input List
-            List {
-                ForEach($budgetItems) { $item in
+                .plCard()
+                
+                // Summary Card
+                VStack(alignment: .leading, spacing: PLSpacing.sm) {
                     HStack {
-                        Text(item.category)
-                            .frame(width: 120, alignment: .leading)
-                        TextField("Amount ($)", text: $item.amount)
-                            .keyboardType(.decimalPad)
-                            .textFieldStyle(RoundedBorderTextFieldStyle())
-                        
-                        // Remove row button
-                        Button {
-                            removeCategory(item: item)
-                        } label: {
-                            Image(systemName: "minus.circle.fill")
-                                .foregroundColor(.red)
+                        Text("Budget Summary")
+                            .font(.headline)
+                        Spacer()
+                        Text(totalAllowance > 0 ? "\(Int(progress * 100))%" : "—")
+                            .font(.subheadline)
+                            .foregroundColor(progress >= 1 ? PLColor.danger : PLColor.textSecondary)
+                    }
+                    HStack {
+                        VStack(alignment: .leading) {
+                            Text("Target (\(selectedType))")
+                                .font(.caption)
+                                .foregroundColor(PLColor.textSecondary)
+                            Text(totalAllowance > 0 ? "$\(totalAllowance, specifier: "%.2f")" : "—")
+                                .font(.headline)
+                        }
+                        Spacer()
+                        VStack(alignment: .trailing) {
+                            Text("Entered")
+                                .font(.caption)
+                                .foregroundColor(PLColor.textSecondary)
+                            Text("$\(totalEntered, specifier: "%.2f")")
+                                .font(.headline)
                         }
                     }
+                    ProgressView(value: progress)
+                    let over = remaining < 0
+                    Text(over
+                         ? "Over by $\(abs(remaining), specifier: "%.2f")"
+                         : "Left: $\(remaining, specifier: "%.2f")")
+                        .font(.subheadline)
+                        .foregroundColor(over ? PLColor.danger : PLColor.success)
                 }
-                .onDelete(perform: deleteItems)
-            }
-            .frame(height: 300)
-            
-            // Add a New Budget Category
-            HStack {
-                TextField("New Category", text: $newCategory)
-                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                Button {
-                    addCategory()
-                } label: {
-                    Image(systemName: "plus.circle.fill")
-                        .foregroundColor(.green)
-                }
-            }
-            .padding()
-            
-            // Save & Clear Buttons
-            HStack {
-                Button(action: attemptSaveBudget) {
-                    Text("Save Budget")
-                        .font(.headline)
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.blue)
-                        .cornerRadius(10)
-                }
+                .plCard()
                 
-                Button(action: {
-                    clearAllBudget()
-                }) {
-                    Text("Clear All")
+                // Budget rows (no List => consistent, non-zoomed)
+                VStack(alignment: .leading, spacing: PLSpacing.sm) {
+                    Text("Lines")
                         .font(.headline)
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.red)
-                        .cornerRadius(10)
+                    
+                    LazyVStack(spacing: PLSpacing.sm) {
+                        ForEach(budgetItems.indices, id: \.self) { i in
+                            BudgetRow(
+                                item: $budgetItems[i],
+                                onRemove: { removeCategory(item: budgetItems[i]) }
+                            )
+                        }
+                    }
+                    
+                    HStack(spacing: PLSpacing.sm) {
+                        TextField("New Category", text: $newCategory)
+                            .textFieldStyle(.roundedBorder)
+                        Button {
+                            addCategory()
+                        } label: {
+                            Label("Add", systemImage: "plus.circle.fill")
+                                .labelStyle(.titleAndIcon)
+                        }
+                        .tint(.green)
+                    }
                 }
-                Button(action: revertToOriginalBudget) {
-                    Text("Revert to LLM Budget")
-                        .font(.headline)
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.orange)
-                        .cornerRadius(10)
+                .plCard()
+                
+                // Buttons
+                VStack(spacing: PLSpacing.sm) {
+                    Button("Save Budget", action: attemptSaveBudget)
+                        .buttonStyle(PrimaryButton())
+                    HStack(spacing: PLSpacing.sm) {
+                        Button("Clear All", action: clearAllBudget)
+                            .buttonStyle(DestructiveButton())
+                        Button("Revert to LLM Budget", action: revertToOriginalBudget)
+                            .buttonStyle(OutlinedButton(tint: PLColor.warning))
+                    }
                 }
-                .padding(.horizontal)
             }
-            .padding()
+            .padding(.horizontal, PLSpacing.lg)
+            .padding(.vertical, PLSpacing.lg)
+            .scrollDismissesKeyboard(.interactively)
         }
-        .padding()
-        .navigationTitle("\(selectedType) Budget")
-        
-        // Alert that shows either "saved" or "cleared"
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Text("\(selectedType) Budget")
+                    .font(.headline)
+            }
+        }
+        .tint(PLColor.accent)
         .alert(item: $activeAlert2) { alertType in
             switch alertType {
             case .warning:
-                // Show warnings and let user proceed or cancel
                 return Alert(
                     title: Text("⚠️ Budgeting Warning"),
                     message: Text(budgetingWarnings),
-                    primaryButton: .default(Text("Proceed Anyway"), action: {
-                        // User acknowledges warning => do the actual save
-                        saveBudget()
-                    }),
+                    primaryButton: .default(Text("Proceed Anyway"), action: { saveBudget() }),
                     secondaryButton: .cancel()
                 )
-                
             case .saved:
                 return Alert(
                     title: Text("Budget Saved"),
                     message: Text("Your \(selectedType) budget was saved successfully."),
                     dismissButton: .default(Text("OK"))
                 )
-                
             case .cleared:
                 return Alert(
                     title: Text("Budget Cleared"),
-                    message: Text("Your \(selectedType) budget was cleared and default categories have been restored."),
+                    message: Text("Your \(selectedType) budget was cleared and defaults restored."),
                     dismissButton: .default(Text("OK"))
                 )
             }
         }
-        
-        // Fetch data on first appear
         .onAppear {
             if let prefilled = prefilledBudget {
                 self.budgetItems = prefilled.map { BudgetItem(category: $0.key, amount: String($0.value)) }
@@ -251,84 +276,76 @@ struct BudgetInputView: View {
     }
 }
 
-// MARK: - Methods
+// ---------- Row ----------
+private struct BudgetRow: View {
+    @Binding var item: BudgetItem
+    var onRemove: () -> Void
+    
+    var body: some View {
+        HStack(spacing: PLSpacing.sm) {
+            Text(item.category)
+                .frame(width: 130, alignment: .leading)
+            
+            TextField("Amount ($)", text: $item.amount)
+                .keyboardType(.decimalPad)
+                .textFieldStyle(.roundedBorder)
+            
+            Spacer(minLength: PLSpacing.sm)
+            Button(action: onRemove) {
+                Image(systemName: "minus.circle.fill")
+                    .foregroundColor(PLColor.danger)
+            }
+        }
+    }
+}
+
+// ---------- Logic (unchanged APIs, tidied a bit) ----------
 extension BudgetInputView {
-    
-    // Attempt to save budget (checks warnings first)
     private func attemptSaveBudget() {
-       generateBudgetingWarnings()  // sets `budgetingWarnings`
-       
-       if budgetingWarnings.isEmpty {
-           // No warnings? Save immediately
-           saveBudget()
-       } else {
-           // Warnings exist => show .warning alert
-           activeAlert2 = .warning
-       }
-   }
+        generateBudgetingWarnings()
+        if budgetingWarnings.isEmpty {
+            saveBudget()
+        } else {
+            activeAlert2 = .warning
+        }
+    }
     
-    // Add a new category row if it doesn't already exist
     private func addCategory() {
-        guard !newCategory.trimmingCharacters(in: .whitespaces).isEmpty else { return }
-        let lowerNew = newCategory.lowercased()
-        // Check if category already exists
-        if !budgetItems.contains(where: { $0.category.lowercased() == lowerNew }) {
-            budgetItems.append(BudgetItem(category: newCategory, amount: ""))
+        let trimmed = newCategory.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        if !budgetItems.contains(where: { $0.category.caseInsensitiveCompare(trimmed) == .orderedSame }) {
+            budgetItems.append(BudgetItem(category: trimmed, amount: ""))
         }
         newCategory = ""
     }
-    
-    // Remove a category from the list
     private func removeCategory(item: BudgetItem) {
         budgetItems.removeAll { $0.id == item.id }
     }
-    
-    // Delete using swipe
     private func deleteItems(at offsets: IndexSet) {
         budgetItems.remove(atOffsets: offsets)
     }
     
-    // Fetch user budget data from the backend for Weekly or Monthly
     private func fetchBudgetData() {
         let urlString = "http://localhost:8080/api/budget/\(username)/\(backendType)"
-        guard let url = URL(string: urlString) else {
-            print("❌ Invalid URL: \(urlString)")
-            return
-        }
-        
-        print("📡 Fetching \(selectedType) budget data for user: \(username)")
-        
-        URLSession.shared.dataTask(with: url) { data, response, error in
+        guard let url = URL(string: urlString) else { return }
+        URLSession.shared.dataTask(with: url) { data, _, error in
             if let error = error {
-                print("❌ Error fetching budget data:", error.localizedDescription)
-                // If error, revert to default categories
-                DispatchQueue.main.async {
-                    self.budgetItems = Self.defaultBudgetCategories
-                }
+                print("❌ fetch budget:", error.localizedDescription)
+                DispatchQueue.main.async { self.budgetItems = Self.defaultBudgetCategories }
                 return
             }
-            
             guard let data = data, !data.isEmpty else {
-                print("⚠️ No budget data found; using default categories.")
-                DispatchQueue.main.async {
-                    self.budgetItems = Self.defaultBudgetCategories
-                }
+                DispatchQueue.main.async { self.budgetItems = Self.defaultBudgetCategories }
                 return
             }
-            
             do {
-                let decodedResponse = try JSONDecoder().decode(BudgetResponse.self, from: data)
+                let decoded = try JSONDecoder().decode(BudgetResponse.self, from: data)
                 DispatchQueue.main.async {
-                    // Convert [String:Double] to [BudgetItem]
-                    self.budgetItems = decodedResponse.budget.map { (cat, val) in
-                        BudgetItem(category: cat, amount: String(val))
-                    }
+                    self.budgetItems = decoded.budget.map { BudgetItem(category: $0.key, amount: String($0.value)) }
                 }
             } catch {
-                print("❌ Failed to decode budget data:", error)
-                DispatchQueue.main.async {
-                    self.budgetItems = Self.defaultBudgetCategories
-                }
+                print("❌ decode budget:", error)
+                DispatchQueue.main.async { self.budgetItems = Self.defaultBudgetCategories }
             }
         }.resume()
     }
@@ -336,162 +353,78 @@ extension BudgetInputView {
     private func fetchIncomeData() {
         let urlString = "http://localhost:8080/api/income/\(username)"
         guard let url = URL(string: urlString) else { return }
-        
-        URLSession.shared.dataTask(with: url) { data, response, error in
-            if let error = error {
-                print("❌ Error fetching income data:", error.localizedDescription)
-                return
-            }
-            
-            guard let data = data, !data.isEmpty else {
-                print("⚠️ No income data found; defaulting to 0.")
-                return
-            }
-            
+        URLSession.shared.dataTask(with: url) { data, _, error in
+            if let error = error { print("❌ income:", error.localizedDescription); return }
+            guard let data = data, !data.isEmpty else { return }
             do {
-                let decodedResponse = try JSONDecoder().decode(IncomeResponse.self, from: data)
+                let decoded = try JSONDecoder().decode(IncomeResponse.self, from: data)
                 DispatchQueue.main.async {
-                    self.userIncome = decodedResponse.income
-                    self.userRent = decodedResponse.rent
+                    self.userIncome = decoded.income
+                    self.userRent = decoded.rent
                 }
-            } catch {
-                print("❌ Failed to decode income data:", error)
-            }
+            } catch { print("❌ decode income:", error) }
         }.resume()
     }
     
-    // Save user budget data to the backend
     private func saveBudget() {
-        generateBudgetingWarnings() // Generate warnings before saving
         let budgetDict = budgetItems.reduce(into: [String: Double]()) { result, item in
-            if let val = Double(item.amount) {
-                result[item.category] = val
-            }
+            if let val = Double(item.amount) { result[item.category] = val }
         }
-        
         let payload: [String: Any] = [
             "username": username,
-            "type": backendType, // "weekly" or "monthly"
+            "type": backendType,
             "budget": budgetDict
         ]
-        
-        guard let jsonData = try? JSONSerialization.data(withJSONObject: payload) else {
-            print("Could not serialize budget payload to JSON.")
-            return
-        }
-        
-        let urlString = "http://localhost:8080/api/budget"
-        guard let url = URL(string: urlString) else {
-            print("Invalid URL for saving budget data:", urlString)
-            return
-        }
-        
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"  // or PUT if your backend requires that
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = jsonData
-        
-        print("Saving \(selectedType) budget data to backend...")
-        
-        URLSession.shared.dataTask(with: request) { data, response, error in
-            if let error = error {
-                print("Error saving budget data:", error.localizedDescription)
-                return
-            }
-            print("Budget data successfully saved!")
-            
-            // Show "saved" alert on main thread
+        guard let json = try? JSONSerialization.data(withJSONObject: payload) else { return }
+        var req = URLRequest(url: URL(string: "http://localhost:8080/api/budget")!)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = json
+        URLSession.shared.dataTask(with: req) { _, resp, err in
+            guard err == nil else { return }
             DispatchQueue.main.async {
                 self.activeAlert2 = .saved
-                //self.generateBudgetingTips() // optional tip generation
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
             }
         }.resume()
     }
     
-    // Generate budgeting warnings dynamically
     private func generateBudgetingWarnings() {
         budgetingWarnings = ""
-
         let rent = Double(budgetItems.first(where: { $0.category == "Rent" })?.amount ?? "0") ?? 0
         let savings = Double(budgetItems.first(where: { $0.category == "Savings" })?.amount ?? "0") ?? 0
         let eatingOut = Double(budgetItems.first(where: { $0.category == "Eating Out" })?.amount ?? "0") ?? 0
-
+        
         if userIncome > 0 {
-            if rent > userIncome * 0.3 {
-                budgetingWarnings += "⚠️ Your rent exceeds 30% of your monthly income.\n"
-            }
-            if savings < userIncome * 0.1 {
-                budgetingWarnings += "⚠️ Consider increasing savings to at least 10% of monthly income.\n"
-            }
-            // NEW: total check (compare against monthly or weekly target)
+            if rent > userIncome * 0.3   { budgetingWarnings += "• Rent exceeds 30% of monthly income.\n" }
+            if savings < userIncome * 0.1 { budgetingWarnings += "• Savings are below 10% of income.\n" }
             if totalAllowance > 0 && totalEntered > totalAllowance {
-                budgetingWarnings += "⚠️ Your \(selectedType.lowercased()) budget is over by $\(String(format: "%.2f", totalEntered - totalAllowance)).\n"
+                budgetingWarnings += "• Your \(selectedType.lowercased()) budget is over by $\(String(format: "%.2f", totalEntered - totalAllowance)).\n"
             }
         }
-
-        if eatingOut > 200 {
-            budgetingWarnings += "⚠️ You’re spending a lot on eating out. Try cooking at home more often.\n"
-        }
-
-        if !budgetingWarnings.isEmpty {
-            activeAlert2 = .warning
-        }
+        if eatingOut > 200 { budgetingWarnings += "• High eating out cost—consider cooking at home.\n" }
     }
-
     
-    // Clear all budget data, update backend, then revert to default categories
     private func clearAllBudget() {
         let urlString = "http://localhost:8080/api/budget/\(username)/\(backendType)"
-        guard let url = URL(string: urlString) else {
-            print("Invalid URL for clearing budget data:", urlString)
-            return
-        }
-        
-        var request = URLRequest(url: url)
-        request.httpMethod = "DELETE"
-        
-        print("Clearing \(selectedType) budget data on backend...")
-        
-        URLSession.shared.dataTask(with: request) { data, response, error in
-            if let error = error {
-                print("Error clearing budget data on backend:", error.localizedDescription)
-                return
-            }
-            print("Successfully cleared \(self.selectedType) budget data on backend.")
-            
-            // Revert UI to default categories
+        guard let url = URL(string: urlString) else { return }
+        var req = URLRequest(url: url)
+        req.httpMethod = "DELETE"
+        URLSession.shared.dataTask(with: req) { _,_,_ in
             DispatchQueue.main.async {
                 self.budgetItems = Self.defaultBudgetCategories
                 self.activeAlert2 = .cleared
-                //self.budgetingTips.removeAll()
             }
         }.resume()
     }
     
     private func revertToOriginalBudget() {
         let urlString = "http://localhost:8080/api/llm/budget/revert/\(username)/\(backendType)"
-        guard let url = URL(string: urlString) else {
-            print("Invalid URL for reverting budget:", urlString)
-            return
-        }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-
-        print("Reverting \(selectedType) budget to LLM-generated original...")
-
-        URLSession.shared.dataTask(with: request) { data, response, error in
-            if let error = error {
-                print("Error reverting budget:", error.localizedDescription)
-                return
-            }
-
-            print("Budget successfully reverted to LLM version.")
-
-            // Re-fetch budget
-            DispatchQueue.main.async {
-                self.fetchBudgetData()
-            }
+        guard let url = URL(string: urlString) else { return }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        URLSession.shared.dataTask(with: req) { _,_,_ in
+            DispatchQueue.main.async { self.fetchBudgetData() }
         }.resume()
     }
     
@@ -505,53 +438,30 @@ extension BudgetInputView {
     }
     
     private func fetchTakeHomeFromLastQuiz() {
-        let urlString = "http://localhost:8080/api/llm/budget/last/\(username)"
-        guard let url = URL(string: urlString) else { return }
-
+        let url = URL(string: "http://localhost:8080/api/llm/budget/last/\(username)")!
         URLSession.shared.dataTask(with: url) { data, response, error in
-            if let error = error {
-                print("Error fetching last quiz:", error.localizedDescription)
-                self.fetchIncomeData() // fallback
-                return
-            }
-            guard let http = response as? HTTPURLResponse, http.statusCode == 200,
-                  let data = data, !data.isEmpty else {
-                self.fetchIncomeData() // no quiz yet -> fallback
-                return
+            if let error = error { print("quiz err:", error.localizedDescription); self.fetchIncomeData(); return }
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200, let data = data, !data.isEmpty else {
+                self.fetchIncomeData(); return
             }
             do {
-                if let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                    if let net = parseNumber(obj["monthlyNet"]) {
-                        DispatchQueue.main.async { self.userIncome = net }
-                        return
-                    }
-                    // soft fallback to yearlyIncome if monthlyNet missing (older files)
-//                    if let yearly = parseNumber(obj["yearlyIncome"]) {
-//                        DispatchQueue.main.async { self.userIncome = yearly / 12.0 }
-//                        return
-//                    }
+                if let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let net = parseNumber(obj["monthlyNet"]) {
+                    DispatchQueue.main.async { self.userIncome = net }
+                } else {
+                    self.fetchIncomeData()
                 }
-                self.fetchIncomeData()
             } catch {
-                print("Could not parse last quiz JSON:", error)
+                print("parse quiz json:", error)
                 self.fetchIncomeData()
             }
         }.resume()
     }
-
-
-
-    
-    
-    
 }
 
-// MARK: - ActiveAlert2 Enum
+// ---------- Alert enum (your existing model) ----------
 fileprivate enum ActiveAlert2: Identifiable {
-    case saved
-    case cleared
-    case warning
-    
+    case saved, cleared, warning
     var id: String {
         switch self {
         case .saved: return "saved"
@@ -566,17 +476,3 @@ struct IncomeResponse: Codable {
     let income: Double
     let rent: Double
 }
-
-// MARK: - Data Models
-//struct BudgetItem: Identifiable, Codable {
-//    var id = UUID()
-//    let category: String
-//    var amount: String
-//}
-//
-///// Example backend responses
-//struct BudgetResponse: Codable {
-//    let username: String
-//    let type: String
-//    let budget: [String: Double]
-//}

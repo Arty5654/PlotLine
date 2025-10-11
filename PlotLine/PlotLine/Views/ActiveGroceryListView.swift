@@ -7,6 +7,167 @@
 
 import SwiftUI
 
+// --- Lightweight tokens (scoped to this file only) ---
+private enum PLColor {
+    static let surface       = Color(.secondarySystemBackground)
+    static let cardBorder    = Color.black.opacity(0.06)
+    static let textPrimary   = Color.primary
+    static let textSecondary = Color.secondary
+    static let accent        = Color.blue
+    static let success       = Color.green
+}
+private enum PLSpacing {
+    static let xs: CGFloat = 6
+    static let sm: CGFloat = 10
+    static let md: CGFloat = 16
+    static let lg: CGFloat = 20
+}
+private enum PLRadius { static let md: CGFloat = 12 }
+
+private struct CardModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .padding(PLSpacing.md)
+            .background(PLColor.surface)
+            .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
+            .overlay(RoundedRectangle(cornerRadius: PLRadius.md).stroke(PLColor.cardBorder))
+    }
+}
+private extension View { func plCard() -> some View { modifier(CardModifier()) } }
+
+private struct PrimaryButton: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.headline)
+            .foregroundColor(.white)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .background(PLColor.accent.opacity(configuration.isPressed ? 0.85 : 1))
+            .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
+    }
+}
+private struct SecondaryButton: ButtonStyle {
+    let color: Color
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.headline)
+            .foregroundColor(.white)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .background(color.opacity(configuration.isPressed ? 0.85 : 1))
+            .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
+    }
+}
+
+// MARK: - Small subviews (pure UI)
+
+private struct GroceryActionBar: View {
+    var onCreateTapped: () -> Void
+    var onMealTapped: () -> Void
+    var onPrefsTapped: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: PLSpacing.md) {
+            Text("Grocery Lists")
+                .font(.title3).bold()
+
+            HStack(spacing: PLSpacing.sm) {
+                Button(action: onCreateTapped) {
+                    Label("New List", systemImage: "plus.circle.fill")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(SecondaryButton(color: PLColor.success))
+
+                Button(action: onMealTapped) {
+                    Label("From Meal", systemImage: "fork.knife")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(PrimaryButton())
+            }
+
+            Button(action: onPrefsTapped) {
+                HStack(spacing: 6) {
+                    Image(systemName: "slider.horizontal.3")
+                    Text("Preferences")
+                }
+                .font(.subheadline)
+                .foregroundColor(PLColor.accent)
+            }
+            .buttonStyle(.plain)
+        }
+        .plCard()
+    }
+}
+
+private struct GroceryLoadingState: View {
+    var body: some View {
+        VStack(spacing: PLSpacing.sm) {
+            ProgressView()
+            Text("Loading Active Lists…")
+                .foregroundColor(PLColor.textSecondary)
+                .font(.subheadline)
+        }
+        .frame(maxWidth: .infinity, minHeight: 220)
+        .plCard()
+    }
+}
+
+private struct GroceryEmptyState: View {
+    var body: some View {
+        VStack(spacing: PLSpacing.sm) {
+            Image(systemName: "cart")
+                .font(.largeTitle)
+                .foregroundColor(PLColor.textSecondary)
+            Text("No active grocery lists.")
+                .foregroundColor(PLColor.textSecondary)
+            Text("Create a new list or generate one from a meal.")
+                .font(.footnote)
+                .foregroundColor(PLColor.textSecondary)
+        }
+        .frame(maxWidth: .infinity, minHeight: 220)
+        .plCard()
+    }
+}
+
+private struct GroceryListRows: View {
+    let lists: [GroceryList]
+
+    var body: some View {
+        List {
+            ForEach(lists) { groceryList in
+                NavigationLink(destination: GroceryListDetailView(groceryList: groceryList)) {
+                    HStack(spacing: PLSpacing.md) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(groceryList.name)
+                                .font(.headline)
+                                .foregroundColor(PLColor.textPrimary)
+                                .lineLimit(1)
+                            if let mealName = groceryList.mealName, !mealName.isEmpty {
+                                Text(mealName)
+                                    .font(.caption)
+                                    .foregroundColor(PLColor.textSecondary)
+                                    .lineLimit(1)
+                            }
+                        }
+                        Spacer()
+                        if groceryList.isAI == true {
+                            Image(systemName: "sparkles")
+                                .foregroundColor(PLColor.accent)
+                        }
+                        Image(systemName: "chevron.right")
+                            .font(.footnote)
+                            .foregroundColor(PLColor.textSecondary)
+                    }
+                    .padding(.vertical, 6)
+                }
+            }
+        }
+        .listStyle(.insetGrouped)
+    }
+}
+
+// MARK: - Main View (logic unchanged)
+
 struct ActiveGroceryListView: View {
     @State private var groceryLists: [GroceryList] = []
     @State private var showingCreateGroceryList = false
@@ -20,76 +181,31 @@ struct ActiveGroceryListView: View {
     @State private var dietaryRestrictions: DietaryRestrictions?
 
     var body: some View {
-        VStack {
-            // Buttons pinned to the top
-            VStack(spacing: 20) {
-                // Create New Grocery List Button
-                Button(action: {
-                    showingCreateGroceryList.toggle()
-                }) {
-                    Text("Create New Grocery List")
-                        .font(.title)
-                        .foregroundColor(.white)
-                        .padding()
-                        .background(Color.green)
-                        .cornerRadius(10)
-                }
-                
-                // Generate from Meal Button
-                Button(action: {
-                    showingMealGenerator.toggle()
-                }) {
-                    HStack {
-                        Image(systemName: "fork.knife")
-                        Text("Generate List from Meal")
-                    }
-                    .font(.headline)
-                    .foregroundColor(.white)
-                    .padding()
-                    .background(Color.blue)
-                    .cornerRadius(10)
-                }
+        VStack(spacing: PLSpacing.lg) {
+            GroceryActionBar(
+                onCreateTapped: { showingCreateGroceryList.toggle() },
+                onMealTapped: { showingMealGenerator.toggle() },
+                onPrefsTapped: { navigateToPreferencesScreen() }
+            )
+            .padding(.horizontal, PLSpacing.lg)
+            .padding(.top, PLSpacing.sm)
 
-                // Preferences Button
-                Button(action: {
-                    navigateToPreferencesScreen()
-                }) {
-                    Text("Preferences")
-                        .foregroundColor(.green)
-                        .padding()
-                        .cornerRadius(5)
+            Group {
+                if isLoading {
+                    GroceryLoadingState()
+                        .padding(.horizontal, PLSpacing.lg)
+                } else if groceryLists.isEmpty {
+                    GroceryEmptyState()
+                        .padding(.horizontal, PLSpacing.lg)
+                } else {
+                    GroceryListRows(lists: groceryLists)
                 }
             }
-            .padding(.top) // Space between the top and buttons
-            
-            if isLoading {
-                ProgressView("Loading Active Lists...")
-                    .padding()
-            } else if groceryLists.isEmpty {
-                Spacer()  // Push content to the middle
-                Text("No active grocery lists available.")
-                    .font(.title2)
-                    .foregroundColor(.gray)
-                    .padding()
-                Spacer()  // Keep the message centered vertically
-            } else {
-                // Display the active grocery lists
-                List(groceryLists) { groceryList in
-                    NavigationLink(destination: GroceryListDetailView(groceryList: groceryList)) {
-                        HStack {
-                            Text(groceryList.name)
-                            
-                            if groceryList.isAI == true {
-                                Spacer()
-                                Image(systemName: "sparkles")
-                                    .foregroundColor(.blue)
-                            }
-                        }
-                    }
-                }
-            }
+            .animation(.easeInOut, value: isLoading)
+            .animation(.easeInOut, value: groceryLists.count)
         }
         .navigationTitle("Active Grocery Lists")
+        .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             Task {
                 await fetchGroceryListsAndWait()
@@ -100,53 +216,39 @@ struct ActiveGroceryListView: View {
             CreateGroceryListView(
                 newGroceryListName: $newGroceryListName,
                 onGroceryListCreated: {
-                    // After the list is created, fetch the updated grocery lists
-                    Task {
-                        await fetchGroceryListsAndWait()
-                    }
+                    Task { await fetchGroceryListsAndWait() }
                 }
             )
         }
         .sheet(isPresented: $showingMealGenerator) {
             GenerateFromMealView(
                 onGroceryListCreated: {
-                    // After the list is created, fetch the updated grocery lists
-                    Task {
-                        await fetchGroceryListsAndWait()
-                    }
+                    Task { await fetchGroceryListsAndWait() }
                 }
             )
         }
-        // Preferences Navigation
+        // Hidden navigation to preferences (same logic)
         .background(
             NavigationLink(
-                destination: DietaryPreferencesView(dietaryRestrictions: $dietaryRestrictions, onClose: {
-                    navigateToPreferences = false // Action to close the view
-                }),
+                destination: DietaryPreferencesView(
+                    dietaryRestrictions: $dietaryRestrictions,
+                    onClose: { navigateToPreferences = false }
+                ),
                 isActive: $navigateToPreferences
-            ) {
-                EmptyView()
-            }
+            ) { EmptyView() }
         )
     }
 
-    // Function to fire off the api to create a new list
-    private func createNewGroceryList() {
-        guard !newGroceryListName.isEmpty else {
-            return
-        }
+    // --- Logic below is unchanged ---
 
+    private func createNewGroceryList() {
+        guard !newGroceryListName.isEmpty else { return }
         Task {
             do {
-                // Create the new grocery list and get its ID
-                let newID = try await GroceryListAPI.createGroceryList(name: newGroceryListName)
-
-                // Fetch the grocery lists and wait until they are loaded
+                _ = try await GroceryListAPI.createGroceryList(name: newGroceryListName)
                 await fetchGroceryListsAndWait()
-
                 showingCreateGroceryList = false
                 newGroceryListName = ""
-
             } catch {
                 print("Failed to create grocery list: \(error)")
             }
@@ -155,7 +257,6 @@ struct ActiveGroceryListView: View {
 
     private func fetchGroceryListsAndWait() async {
         isLoading = true
-
         do {
             if let loggedInUsername = username {
                 let lists = try await GroceryListAPI.getGroceryLists(username: loggedInUsername)
@@ -163,24 +264,21 @@ struct ActiveGroceryListView: View {
             } else {
                 print("Username not found!")
             }
-
             isLoading = false
         } catch {
             print("Failed to load grocery lists: \(error)")
             isLoading = false
         }
     }
-    
+
     private func fetchDietaryPreferences() {
         Task {
             if let loggedInUsername = username {
                 DietaryRestrictionsAPI.shared.getDietaryRestrictions(username: loggedInUsername) { result in
                     switch result {
                     case .success(let restrictions):
-                        dietaryRestrictions = restrictions // Assign result here
-                    case .failure(let error):
-                        
-                        // If there is an error (e.g., no data), create a new object with defaults
+                        dietaryRestrictions = restrictions
+                    case .failure:
                         dietaryRestrictions = DietaryRestrictions(
                             username: loggedInUsername,
                             lactoseIntolerant: false,
@@ -200,18 +298,16 @@ struct ActiveGroceryListView: View {
     }
 
     private func navigateToPreferencesScreen() {
-        // Only navigate if dietaryRestrictions is not nil
         if dietaryRestrictions != nil {
             navigateToPreferences = true
         } else {
             print("Dietary restrictions not available.")
         }
     }
-    
+
     private func getLastCreatedGroceryList(listId: String) -> GroceryList? {
-        // Find the first grocery list with a matching id
-        let mostRecentList = groceryLists.first { $0.id == UUID(uuidString: listId)}
-        
+        let mostRecentList = groceryLists.first { $0.id == UUID(uuidString: listId) }
         return mostRecentList
     }
 }
+

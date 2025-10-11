@@ -1,32 +1,87 @@
 import SwiftUI
 import UIKit
 
+// MARK: - Local design tokens
+private enum PLColor {
+    static let surface       = Color(.secondarySystemBackground)
+    static let cardBorder    = Color.black.opacity(0.08)
+    static let textPrimary   = Color.primary
+    static let textSecondary = Color.secondary
+    static let accent        = Color.blue
+    static let success       = Color.green
+    static let danger        = Color.red
+    static let warning       = Color.orange
+}
+private enum PLSpacing {
+    static let xs: CGFloat = 6
+    static let sm: CGFloat = 10
+    static let md: CGFloat = 16
+    static let lg: CGFloat = 20
+}
+private enum PLRadius { static let md: CGFloat = 12 }
+
+private struct CardModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .padding(PLSpacing.md)
+            .background(PLColor.surface)
+            .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
+            .overlay(RoundedRectangle(cornerRadius: PLRadius.md).stroke(PLColor.cardBorder))
+    }
+}
+private extension View { func plCard() -> some View { modifier(CardModifier()) } }
+
+private struct PrimaryButton: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.headline)
+            .foregroundColor(.white)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .background(PLColor.accent.opacity(configuration.isPressed ? 0.85 : 1))
+            .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
+    }
+}
+private struct SecondaryButton: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.headline)
+            .foregroundColor(.white)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .background(PLColor.success.opacity(configuration.isPressed ? 0.85 : 1))
+            .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
+    }
+}
+
+// MARK: - View
 struct GroceryListDetailView: View {
     var groceryList: GroceryList
     
     @Environment(\.presentationMode) var presentationMode
 
-    @State private var items: [GroceryItem] = [] // Array to hold grocery items
-    @State private var newItemName: String = ""  // Name of the new item
-    @State private var newItemQuantity: Int = 1  // Quantity for the new item
+    @State private var items: [GroceryItem] = []
+    @State private var newItemName: String = ""
+    @State private var newItemQuantity: Int = 1
 
-    @State private var selectedItem: GroceryItem? = nil  // Track the item selected for editing
-    @State private var isEditPresented: Bool = false  // Flag to present the edit view
+    @State private var selectedItem: GroceryItem? = nil
+    @State private var isEditPresented: Bool = false
     
-    @State private var shareSuccess: Bool? = nil // Track if sharing was successful
-    @State private var canArchiveList: Bool = false // Track if the list can be archived
+    @State private var shareSuccess: Bool? = nil
+    @State private var canArchiveList: Bool = false
     @State private var archiveSuccess: Bool? = nil
 
-    // Helper variables for the running total
     private var totalItems: Int { items.count }
     private var purchasedItems: Int { items.filter { $0.checked }.count }
+    private var completionRatio: Double {
+        guard totalItems > 0 else { return 0 }
+        return Double(purchasedItems) / Double(totalItems)
+    }
     
-    // Grocery cost estimates
     @State private var showGroceryAddedAlert = false
     @State private var recentlyAddedGroceryAmount: Double? = nil
     @State private var canUndoGroceryAddition = false
     
-    // Meal generation states
     @State private var isGenerating: Bool = false
     @State private var errorMessage: String? = nil
     @State private var showError: Bool = false
@@ -39,184 +94,242 @@ struct GroceryListDetailView: View {
     
     @AppStorage private var savedEstimate: Double
     init(groceryList: GroceryList) {
-       self.groceryList = groceryList
-       // now we can interpolate the key
-       _savedEstimate = AppStorage(
-         wrappedValue: 0,
-         "estimate-\(groceryList.id.uuidString)"
-       )
-     }
-    
-    // Calculate item text based on totalItems
-    private var itemText: String {
-        return totalItems == 1 ? "Item" : "Items"
+        self.groceryList = groceryList
+        _savedEstimate = AppStorage(wrappedValue: 0, "estimate-\(groceryList.id.uuidString)")
     }
+    
+    private var itemText: String { totalItems == 1 ? "Item" : "Items" }
 
     var body: some View {
-        VStack {
+        VStack(spacing: PLSpacing.md) {
             ScrollView {
-                VStack(spacing: 16) {
-                    // Top section with List title and share button
-                    HStack {
-                        Text(groceryList.name)
-                            .font(.largeTitle)
-                            .fontWeight(.bold)
-                            .padding()
-
+                VStack(spacing: PLSpacing.lg) {
+                    // Header
+                    HStack(alignment: .center, spacing: PLSpacing.md) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(groceryList.name)
+                                .font(.title2).bold()
+                            if let mealName = groceryList.mealName {
+                                Text(mealName)
+                                    .font(.subheadline)
+                                    .foregroundColor(PLColor.textSecondary)
+                                    .lineLimit(1)
+                            } else {
+                                Text("No meal attached")
+                                    .font(.subheadline)
+                                    .foregroundColor(PLColor.textSecondary)
+                            }
+                        }
                         Spacer()
-                        
-                        // Show live budget
                         if let budget = groceryBudget {
                             let currentTotal = items.reduce(0.0) { $0 + ($1.price ?? 0.0) }
-                            Text("Estimated: $\(currentTotal, specifier: "%.2f") / Budget: $\(budget, specifier: "%.2f")")
-                                .foregroundColor(currentTotal > budget ? .red : .green)
-                                .font(.subheadline)
-                                .padding(.horizontal)
+                            HStack(spacing: 6) {
+                                Image(systemName: "dollarsign.circle")
+                                Text("\(currentTotal, specifier: "%.2f") / \(budget, specifier: "%.2f")")
+                            }
+                            .font(.caption)
+                            .padding(.vertical, 6)
+                            .padding(.horizontal, 10)
+                            .background((currentTotal > budget ? PLColor.danger.opacity(0.12) : PLColor.success.opacity(0.12)))
+                            .foregroundColor(currentTotal > budget ? PLColor.danger : PLColor.success)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
                         }
-                        
-                        Spacer()
-
-
-                        Button(action: {
+                        Button {
                             shareGroceryList()
                             shareSuccess = nil
-                        }) {
+                        } label: {
                             Image(systemName: "square.and.arrow.up")
-                                .imageScale(.medium)
+                                .font(.headline)
                         }
-                        .padding()
                     }
+                    .plCard()
                     
-                    if let mealName = groceryList.mealName {
-                        Text(mealName)
-                    } else {
-                        Text("No meal attached to list")
-                    }
-
-                    // Archive bar
-                    if !items.isEmpty {
-                        HStack {
-                            Text("\(totalItems) \(itemText) - \(purchasedItems) Checked Off")
-                                .foregroundColor(.gray)
-                                .padding(.leading)
-
-                            Spacer()
-
-                            Button(action: {
-                                archiveList()
-                            }) {
-                                Text("Archive")
-                                    .fontWeight(.bold)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 6)
-                                    .background(canArchiveList ? Color.green : Color.gray)
+                    // Progress / Archive bar
+                    if totalItems > 0 {
+                        VStack(alignment: .leading, spacing: PLSpacing.sm) {
+                            HStack {
+                                Text("\(totalItems) \(itemText) • \(purchasedItems) checked")
+                                    .foregroundColor(PLColor.textSecondary)
+                                Spacer()
+                                Button {
+                                    archiveList()
+                                } label: {
+                                    HStack(spacing: 6) {
+                                        Image(systemName: "archivebox.fill")
+                                        Text("Archive")
+                                            .fontWeight(.semibold)
+                                    }
                                     .foregroundColor(.white)
-                                    .cornerRadius(8)
-                            }
-                            .disabled(!canArchiveList)
-                            .padding(.trailing)
-                        }
-                    }
-
-                    // No items message
-                    if items.isEmpty {
-                        Spacer()
-                        Text("No items in this grocery list.")
-                            .font(.title2)
-                            .foregroundColor(.gray)
-                            .padding()
-                        Spacer()
-                    } else {
-                        VStack {
-                            ForEach(items) { item in
-                                HStack {
-                                    Image(systemName: item.checked ? "checkmark.square" : "square")
-                                        .foregroundColor(item.checked ? .green : .gray)
-                                        .onTapGesture {
-                                            toggleChecked(item: item)
-                                        }
-
-                                    Text(item.name)
-                                        .font(.body)
-                                        .strikethrough(item.checked, color: .green)
-                                        .foregroundColor(item.checked ? .gray : .primary)
-                                        .onTapGesture {
-                                            selectedItem = item
-                                            isEditPresented = true
-                                        }
-
-                                    Spacer()
-
-                                    Text("x \(item.quantity)")
-                                        .foregroundColor(.gray)
-
-                                    Image(systemName: "trash")
-                                        .foregroundColor(.red)
-                                        .onTapGesture {
-                                            deleteItem(item)
-                                        }
+                                    .padding(.vertical, 8)
+                                    .padding(.horizontal, 12)
+                                    .background((canArchiveList ? PLColor.success : Color.gray))
+                                    .clipShape(RoundedRectangle(cornerRadius: 10))
                                 }
-                                .padding(.horizontal)
+                                .disabled(!canArchiveList)
                             }
                             
-                            HStack {
-                                Button("Generate Meal") {
-                                    generateMealFromListView()
+                            ProgressView(value: completionRatio)
+                                .tint(canArchiveList ? PLColor.success : PLColor.accent)
+                        }
+                        .plCard()
+                    }
+                    
+                    // Items list
+                    if items.isEmpty {
+                        VStack(spacing: 8) {
+                            Text("No items in this grocery list.")
+                                .font(.headline)
+                                .foregroundColor(PLColor.textSecondary)
+                            Text("Add an item below to get started.")
+                                .font(.caption)
+                                .foregroundColor(PLColor.textSecondary)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 24)
+                        .plCard()
+                    } else {
+                        VStack(spacing: 8) {
+                            ForEach(items) { item in
+                                HStack(spacing: PLSpacing.md) {
+                                    Button {
+                                        toggleChecked(item: item)
+                                    } label: {
+                                        Image(systemName: item.checked ? "checkmark.square.fill" : "square")
+                                            .foregroundColor(item.checked ? PLColor.success : PLColor.textSecondary)
+                                            .font(.title3)
+                                    }
+                                    
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(item.name)
+                                            .font(.body)
+                                            .strikethrough(item.checked, color: PLColor.success)
+                                            .foregroundColor(item.checked ? PLColor.textSecondary : PLColor.textPrimary)
+                                            .onTapGesture {
+                                                selectedItem = item
+                                                isEditPresented = true
+                                            }
+                                        HStack(spacing: 10) {
+                                            Text("Qty: \(item.quantity)")
+                                                .foregroundColor(PLColor.textSecondary)
+                                                .font(.caption)
+                                            if let price = item.price, price > 0 {
+                                                Text("$\(price, specifier: "%.2f")")
+                                                    .font(.caption)
+                                                    .foregroundColor(PLColor.textSecondary)
+                                            }
+                                            if let store = item.store, !store.isEmpty {
+                                                Text(store)
+                                                    .font(.caption)
+                                                    .foregroundColor(PLColor.textSecondary)
+                                            }
+                                        }
+                                    }
+                                    Spacer()
+                                    Button {
+                                        deleteItem(item)
+                                    } label: {
+                                        Image(systemName: "trash")
+                                            .foregroundColor(PLColor.danger)
+                                    }
                                 }
-                                .padding()
-                                .background(Color.blue)
-                                .foregroundColor(.white)
-                                .cornerRadius(10)
-                                
-                                // Done shopping button
-                                Button("Done Shopping") {
-                                    checkallItems()
-                                    estimateGroceryCostAndUpdateBudget()
-                                }
-                                .padding()
-                                .background(Color.green)
-                                .foregroundColor(.white)
-                                .cornerRadius(10)
-                            }
-
-                            // Undo grocery cost
-                            if canUndoGroceryAddition, let undoAmount = recentlyAddedGroceryAmount {
-                                Button("Undo Grocery Cost (-$\(undoAmount, specifier: "%.2f"))") {
-                                    undoGroceryCost(username: UserDefaults.standard.string(forKey: "loggedInUsername") ?? "UnknownUser", amount: undoAmount)
-                                }
-                                .foregroundColor(.red)
+                                .padding(.vertical, 8)
+                                .padding(.horizontal, 8)
+                                .background(Color(.systemBackground))
+                                .clipShape(RoundedRectangle(cornerRadius: 10))
+                                .overlay(RoundedRectangle(cornerRadius: 10).stroke(PLColor.cardBorder))
                             }
                         }
+                        .plCard()
                     }
-
-                    // Add item input section
-                    HStack {
-                        TextField("Enter new item", text: $newItemName)
-                            .padding(12)
-                            .background(Color(.systemGray6))
-                            .cornerRadius(8)
-
-                        Button(action: {
+                    
+                    // Actions (Generate meal / Done shopping)
+                    if !items.isEmpty {
+                        HStack(spacing: PLSpacing.md) {
+                            Button {
+                                generateMealFromListView()
+                            } label: {
+                                HStack(spacing: 8) {
+                                    if isGenerating { ProgressView() }
+                                    Image(systemName: "sparkles")
+                                    Text(isGenerating ? "Generating…" : "Generate Meal")
+                                }
+                            }
+                            .buttonStyle(PrimaryButton())
+                            .disabled(isGenerating)
+                            .opacity(isGenerating ? 0.75 : 1)
+                            
+                            Button {
+                                checkallItems()
+                                estimateGroceryCostAndUpdateBudget()
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "checkmark.circle.fill")
+                                    Text("Done Shopping")
+                                }
+                            }
+                            .buttonStyle(SecondaryButton())
+                        }
+                        .plCard()
+                    }
+                    
+                    // Undo banner
+                    if canUndoGroceryAddition, let undoAmount = recentlyAddedGroceryAmount {
+                        HStack(spacing: PLSpacing.md) {
+                            Image(systemName: "arrow.uturn.backward.circle.fill")
+                                .foregroundColor(PLColor.warning)
+                            Text("Added $\(undoAmount, specifier: "%.2f") to Weekly Groceries")
+                                .font(.subheadline)
+                            Spacer()
+                            Button("Undo") {
+                                undoGroceryCost(
+                                    username: UserDefaults.standard.string(forKey: "loggedInUsername") ?? "UnknownUser",
+                                    amount: undoAmount
+                                )
+                            }
+                            .foregroundColor(PLColor.danger)
+                        }
+                        .padding(.horizontal, PLSpacing.md)
+                        .padding(.vertical, 10)
+                        .background(PLColor.warning.opacity(0.12))
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .padding(.horizontal, 2)
+                    }
+                    
+                    // Add item
+                    VStack(spacing: PLSpacing.sm) {
+                        Text("Add Item")
+                            .font(.headline)
+                        HStack(spacing: PLSpacing.sm) {
+                            TextField("e.g., Eggs", text: $newItemName)
+                                .textFieldStyle(.roundedBorder)
+                            Stepper(value: $newItemQuantity, in: 1...999) {
+                                Text("Qty \(newItemQuantity)")
+                                    .frame(minWidth: 70, alignment: .trailing)
+                            }
+                        }
+                        Button {
                             addItemToList()
-                        }) {
-                            Text("Add Item")
-                                .fontWeight(.bold)
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 10)
-                                .background(Color.blue)
-                                .foregroundColor(.white)
-                                .cornerRadius(10)
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: "plus.circle.fill")
+                                Text("Add to List")
+                                    .fontWeight(.semibold)
+                            }
+                            .frame(maxWidth: .infinity)
                         }
+                        .buttonStyle(PrimaryButton())
+                        .disabled(newItemName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .opacity(newItemName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.6 : 1)
                     }
-                    .padding()
+                    .plCard()
                 }
+                .padding(.horizontal, PLSpacing.lg)
+                .padding(.top, PLSpacing.lg)
             }
 
-            // Overlay edit view
+            // Overlay editor (unchanged behavior)
             if isEditPresented {
-                Color.black.opacity(0.5)
-                    .edgesIgnoringSafeArea(.all)
-
+                Color.black.opacity(0.45).ignoresSafeArea()
                 GroceryItemInfoView(item: $selectedItem, onClose: {
                     isEditPresented = false
                 })
@@ -224,11 +337,12 @@ struct GroceryListDetailView: View {
             
             if showDietaryInfo {
                 Text(dietaryMessage ?? "")
-                    .foregroundColor(.red)
-                    .padding()
+                    .foregroundColor(PLColor.danger)
+                    .padding(.bottom, PLSpacing.sm)
             }
         }
         .navigationTitle("Grocery List Details")
+        .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             fetchItems()
             fetchGroceryBudget()
@@ -236,6 +350,7 @@ struct GroceryListDetailView: View {
         .onChange(of: items) { _ in
             canArchiveList = isListCompleted()
         }
+        // Alerts (unchanged)
         .alert("Share Result", isPresented: .constant(shareSuccess != nil)) {
             Button("OK") { shareSuccess = nil }
         } message: {
@@ -263,6 +378,7 @@ struct GroceryListDetailView: View {
         }
     }
 
+    // MARK: - Your logic (UNTOUCHED)
     func fetchItems() {
         Task {
             do {
@@ -276,7 +392,6 @@ struct GroceryListDetailView: View {
     }
 
     func isListCompleted() -> Bool {
-        // Check if all items are checked off
         return !items.isEmpty && items.allSatisfy { $0.checked }
     }
 
@@ -292,8 +407,8 @@ struct GroceryListDetailView: View {
 
                 items.append(newItem)
                 estimateCostForNewItem(itemID: newItem.id, name: newItem.name, quantity: newItem.quantity)
-                newItemName = ""  // Reset name field
-                newItemQuantity = 1  // Reset quantity field
+                newItemName = ""
+                newItemQuantity = 1
             } catch {
                 print("Failed to add item: \(error)")
             }
@@ -330,21 +445,15 @@ struct GroceryListDetailView: View {
                     items[idx].price = estimatedCost
                     savedEstimate = items.reduce(0.0){ $0 + ($1.price ?? 0.0) }
                 }
-                    //showGroceryAddedAlert = true
-                    //recentlyAddedGroceryAmount = estimatedCost
-                    //canUndoGroceryAddition = true
-                }
-            }.resume()
-        }
-
-
+            }
+        }.resume()
+    }
 
     func deleteItem(_ item: GroceryItem) {
         Task {
             do {
                 let listIdString = groceryList.id.uuidString
                 try await GroceryListAPI.deleteItem(listId: listIdString, itemId: item.id.uuidString)
-
                 items.removeAll { $0.id == item.id }
             } catch {
                 print("Failed to delete item: \(error)")
@@ -357,9 +466,7 @@ struct GroceryListDetailView: View {
             do {
                 let listIdString = groceryList.id.uuidString
                 let updatedItem = GroceryItem(listId: groceryList.id, id: item.id, name: item.name, quantity: item.quantity, checked: !item.checked, price: item.price, store: item.store, notes: item.notes)
-
                 try await GroceryListAPI.toggleChecked(listId: listIdString, itemId: item.id.uuidString)
-
                 if let index = items.firstIndex(where: { $0.id == item.id }) {
                     items[index] = updatedItem
                 }
@@ -373,7 +480,6 @@ struct GroceryListDetailView: View {
         Task {
             do {
                 items.move(fromOffsets: indices, toOffset: newOffset)
-
                 try await GroceryListAPI.updateItemOrder(listId: groceryList.id.uuidString, reorderedItems: items)
             } catch {
                 print("Failed to reorder items: \(error)")
@@ -382,145 +488,72 @@ struct GroceryListDetailView: View {
     }
 
     func shareGroceryList() {
-        // Create the text to share
         let shareText = convertGroceryListToText(groceryList: groceryList)
-
-        // Create an ActivityViewController to share the text
         let activityViewController = UIActivityViewController(activityItems: [shareText], applicationActivities: nil)
-        
-        activityViewController.completionWithItemsHandler = { activity, completed, items, error in
-            // Update the state based on whether the share was successful or not
+        activityViewController.completionWithItemsHandler = { _, completed, _, _ in
             shareSuccess = completed
         }
-
-        // Get the relevant window scene
         if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
            let topController = windowScene.windows.first?.rootViewController {
             topController.present(activityViewController, animated: true, completion: nil)
         }
     }
 
-    // Function to convert GroceryList to a text message
     func convertGroceryListToText(groceryList: GroceryList) -> String {
         var result = "Grocery List: \(groceryList.name)\n\n"
-        
         for item in groceryList.items {
-            // Check if item has been checked off
-            if item.checked {
-                result += "(PURCHASED) "
-            }
-            
-            // Start with the quantity and name
+            if item.checked { result += "(PURCHASED) " }
             result += "\(item.quantity) x \(item.name)"
-            
-            // Handle price, store, and notes edge cases
-            if let price = item.price {
-                if price > 0 {
-                    result += " - $\(String(format: "%.2f", price))"
-                }
+            if let price = item.price, price > 0 {
+                result += " - $\(String(format: "%.2f", price))"
             }
-            
             if let store = item.store, !store.isEmpty {
                 result += " from \(store)"
             }
-            
             if let notes = item.notes, !notes.isEmpty {
                 result += " (\(notes))"
             }
-            
-            // Skip items where all optional fields are empty or zero
-            if (item.price == 0 || item.store == nil || item.store?.isEmpty == true) && (item.notes == nil || item.notes?.isEmpty == true) {
-                result += "\n"
-            } else {
-                result += "\n"
-            }
+            result += "\n"
         }
-        
         return result
     }
     
-    // Archive function
     func archiveList() {
         let username: String? = UserDefaults.standard.string(forKey: "loggedInUsername")
-        
         GroceryListAPI.archiveGroceryList(username: username ?? "", groceryList: groceryList) { result in
             switch result {
-            case .success(let message):
-                // Handle success
-                print("Grocery list archived successfully: \(message)")
-                archiveSuccess = true // Set success flag
-                
+            case .success:
+                archiveSuccess = true
             case .failure(let error):
-                // Handle failure
                 print("Failed to archive grocery list: \(error.localizedDescription)")
-                archiveSuccess = false // Set failure flag
+                archiveSuccess = false
             }
         }
     }
     
     func estimateGroceryCostAndUpdateBudget() {
         let username = UserDefaults.standard.string(forKey: "loggedInUsername") ?? "UnknownUser"
-        //let location = "Indiana" // Could be fetched from CoreLocation if available
-        
-        let totalToAdd = items.reduce(0.0) { partial, item in
-                partial + (item.price ?? 0.0)
-            }
-
-            // 2) remember it so undo works
-            recentlyAddedGroceryAmount = totalToAdd
-
-            // 3) push just that delta up to your weekly-costs endpoint
-            addCostToWeeklyGroceries(username: username, amount: totalToAdd)
-
-            // 4) fire your “Done Shopping” alert exactly once
-            showGroceryAddedAlert = true
-            canUndoGroceryAddition = true
-//        let groceryItems = items.map { ["name": $0.name, "quantity": $0.quantity] }
-//
-//        let payload: [String: Any] = [
-//            "location": location,
-//            "items": groceryItems
-//        ]
-//
-//        guard let jsonData = try? JSONSerialization.data(withJSONObject: payload) else { return }
-//
-//        var request = URLRequest(url: URL(string: "http://localhost:8080/api/groceryLists/estimate-grocery-cost")!)
-//        request.httpMethod = "POST"
-//        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-//        request.httpBody = jsonData
-//
-//        URLSession.shared.dataTask(with: request) { data, _, _ in
-//            guard let data = data, let cost = try? JSONDecoder().decode(Double.self, from: data) else { return }
-//
-//            DispatchQueue.main.async {
-//                recentlyAddedGroceryAmount = cost
-//                addCostToWeeklyGroceries(username: username, amount: cost)
-//                
-//                showGroceryAddedAlert = true
-//                canUndoGroceryAddition = true
-//            }
-//        }.resume()
+        let totalToAdd = items.reduce(0.0) { $0 + ($1.price ?? 0.0) }
+        recentlyAddedGroceryAmount = totalToAdd
+        addCostToWeeklyGroceries(username: username, amount: totalToAdd)
+        showGroceryAddedAlert = true
+        canUndoGroceryAddition = true
     }
 
     func addCostToWeeklyGroceries(username: String, amount: Double) {
-        // Fetch current weekly costs
         let getURL = URL(string: "http://localhost:8080/api/costs/\(username)/weekly")!
         URLSession.shared.dataTask(with: getURL) { data, _, _ in
             guard let data = data,
                   var decoded = try? JSONDecoder().decode(WeeklyMonthlyCostResponse.self, from: data) else { return }
-
-            // Add to groceries
             var current = decoded.costs["Groceries"] ?? 0.0
             current += amount
             decoded.costs["Groceries"] = current
 
-            // Re-upload
             let uploadPayload: [String: Any] = [
                 "username": username,
                 "type": "weekly",
                 "costs": decoded.costs
             ]
-
             guard let newJson = try? JSONSerialization.data(withJSONObject: uploadPayload) else { return }
 
             var uploadRequest = URLRequest(url: URL(string: "http://localhost:8080/api/costs")!)
@@ -542,10 +575,8 @@ struct GroceryListDetailView: View {
         URLSession.shared.dataTask(with: getURL) { data, _, _ in
             guard let data = data,
                   var decoded = try? JSONDecoder().decode(WeeklyMonthlyCostResponse.self, from: data) else { return }
-
-            // Subtract from groceries
             var current = decoded.costs["Groceries"] ?? 0.0
-            current = max(0.0, current - amount) // prevent negative cost
+            current = max(0.0, current - amount)
             decoded.costs["Groceries"] = current
 
             let uploadPayload: [String: Any] = [
@@ -553,7 +584,6 @@ struct GroceryListDetailView: View {
                 "type": "weekly",
                 "costs": decoded.costs
             ]
-
             guard let newJson = try? JSONSerialization.data(withJSONObject: uploadPayload) else { return }
 
             var uploadRequest = URLRequest(url: URL(string: "http://localhost:8080/api/costs")!)
@@ -573,22 +603,13 @@ struct GroceryListDetailView: View {
     func checkallItems() {
         Task {
             let uncheckedItems = items.filter { !$0.checked }
-            
-            if uncheckedItems.isEmpty {
-                return
-            }
-            
+            if uncheckedItems.isEmpty { return }
             for item in uncheckedItems {
                 do {
                     let listIdString = groceryList.id.uuidString
-                    
-                    // Call API to toggle the checked status
                     try await GroceryListAPI.toggleChecked(listId: listIdString, itemId: item.id.uuidString)
-                    
-                    // Update local state on the main thread
                     await MainActor.run {
                         if let index = items.firstIndex(where: { $0.id == item.id }) {
-                            // Create an updated version of the item
                             let updatedItem = GroceryItem(
                                 listId: groceryList.id,
                                 id: item.id,
@@ -602,9 +623,7 @@ struct GroceryListDetailView: View {
                             items[index] = updatedItem
                         }
                     }
-                    
-                    // Add a small delay between requests to avoid overwhelming the server
-                    try await Task.sleep(nanoseconds: 200_000_000) // 200ms delay
+                    try await Task.sleep(nanoseconds: 200_000_000)
                 } catch {
                     print("Failed to check off item \(item.name): \(error)")
                 }
@@ -615,58 +634,35 @@ struct GroceryListDetailView: View {
     func generateMealFromListView() -> [(name: String, quantity: Int)] {
         let listItems = items
         var items_short: [(name: String, quantity: Int)] = []
-        
-        listItems.forEach { item in
-            items_short.append((item.name, item.quantity))
-        }
-        
+        listItems.forEach { item in items_short.append((item.name, item.quantity)) }
         generateMealFromList(groceryListItems: items_short)
-        
         return items_short
     }
     
     func fetchGroceryBudget() {
         let username = UserDefaults.standard.string(forKey: "loggedInUsername") ?? "UnknownUser"
         let url = URL(string: "http://localhost:8080/api/budget/\(username)/monthly/groceries")!
-
         URLSession.shared.dataTask(with: url) { data, _, _ in
             guard let data = data,
                   let result = try? JSONSerialization.jsonObject(with: data) as? [String: Double],
                   let budget = result["Groceries"] else { return }
-
-            DispatchQueue.main.async {
-                groceryBudget = budget
-            }
+            DispatchQueue.main.async { groceryBudget = budget }
         }.resume()
     }
 
-    
     private func generateMealFromList(groceryListItems: [(name: String, quantity: Int)]) {
-        guard !groceryListItems.isEmpty else {
-            return
-        }
-        
-        // Mark the state to indicate that the meal generation is in progress
+        guard !groceryListItems.isEmpty else { return }
         isGenerating = true
-        
         Task {
             do {
-                // Construct the request body
                 let result = try await GroceryListAPI.generateMealFromList(listID: groceryList.id.uuidString, groceryListItems: groceryListItems)
-                
                 await MainActor.run {
-                    // Reset the state when meal generation is done
                     isGenerating = false
-                    
-                    // Check if the result starts with "INCOMPATIBLE:"
                     if let incompatiblePrefix = result.range(of: "INCOMPATIBLE:") {
-                        // Parse the JSON to extract the reason
                         let json = String(result[incompatiblePrefix.upperBound...])
-                        
                         if let data = json.data(using: .utf8),
                            let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                            let reason = dict["reason"] as? String {
-                            
                             dietaryMessage = "This meal cannot be made with your dietary restrictions: \n\n \(reason)"
                             showDietaryInfo = true
                             errorMessage = "Cannot create meal: \(reason)"
@@ -677,34 +673,23 @@ struct GroceryListDetailView: View {
                             errorMessage = "This meal is not compatible with your dietary restrictions."
                             showError = true
                         }
-                    }
-                    // Check if the result contains a modification message
-                    else if let modPrefix = result.range(of: "MODIFIED:") {
+                    } else if let modPrefix = result.range(of: "MODIFIED:") {
                         let json = String(result[modPrefix.upperBound...])
-                        
                         if let data = json.data(using: .utf8),
                            let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                            let modifications = dict["modifications"] as? String {
-                            
                             dietaryMessage = "We've adjusted this recipe to match your dietary preferences: \n\n \(modifications)"
                             showDietaryInfo = true
-                            
                             mealCreatedMessage = "A new meal has been created with adjustments to match your dietary preferences."
                             showMealCreatedAlert = true
                         } else {
-                            // If we couldn't parse the modification, still created the list
                             mealCreatedMessage = "A new meal has been created successfully!"
                             showMealCreatedAlert = true
                         }
-                        
                         onMealCreated?()
-                    }
-                    // Standard success case
-                    else {
-                        // Just created the meal successfully with no modifications
+                    } else {
                         mealCreatedMessage = "A new meal has been created successfully!"
                         showMealCreatedAlert = true
-                        
                         onMealCreated?()
                     }
                 }

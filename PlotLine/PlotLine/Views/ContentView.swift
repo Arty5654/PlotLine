@@ -8,106 +8,103 @@
 import SwiftUI
 import Charts
 
+// MARK: - Local tokens (scoped to this file)
+private enum PLColor {
+    static let surface        = Color(.secondarySystemBackground)
+    static let cardBorder     = Color.black.opacity(0.06)
+    static let textPrimary    = Color.primary
+    static let textSecondary  = Color.secondary
+    static let accent         = Color.blue
+    static let success        = Color.green
+    static let warning        = Color.orange
+    static let danger         = Color.red
+}
+private enum PLSpacing {
+    static let xs: CGFloat = 6
+    static let sm: CGFloat = 10
+    static let md: CGFloat = 16
+    static let lg: CGFloat = 20
+}
+private enum PLRadius { static let md: CGFloat = 12 }
+
+private struct CardModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .padding(PLSpacing.md)
+            .background(PLColor.surface)
+            .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
+            .overlay(RoundedRectangle(cornerRadius: PLRadius.md).stroke(PLColor.cardBorder))
+    }
+}
+private extension View { func plCard() -> some View { modifier(CardModifier()) } }
+
+// MARK: - Root
 struct ContentView: View {
-    
     @EnvironmentObject var session: AuthViewModel
     @EnvironmentObject var calendarVM: CalendarViewModel
     @EnvironmentObject var friendsVM: FriendsViewModel
     @EnvironmentObject var chatVM: ChatViewModel
-    
-    var username: String {
-        UserDefaults.standard.string(forKey: "loggedInUsername") ?? "Guest"
-    }
+
+    var username: String { UserDefaults.standard.string(forKey: "loggedInUsername") ?? "Guest" }
+
     @State private var isProfilePresented = false
     @State private var isFriendsPresented = false
-    
-    @State private var tasks: [TaskItem] = []
-    @State private var newTask: String = ""
-    @State private var newTaskPriority: Priority = .medium
-    @State private var newTaskDueDate = Date()
-    @State private var selectedPriorityFilter: Priority? = nil
-    @State private var notificationsEnabled = false
-    @State private var notificationType: String = "dueDate"
-    @State private var notificationTime = Date()
 
-
-    
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack() {
-                    
-                    //logo
-                    logoImage
-                        .padding(.bottom, 20)
-                    Spacer()
-                    
-                    // widgets
-                    VStack(spacing: 25) {
-                        
-                        // Today's Events Widget
+                VStack(spacing: PLSpacing.lg) {
+                    // Logo
+                    Image("PlotLineLogo")
+                        .resizable().scaledToFit()
+                        .frame(width: 88, height: 88)
+                        .padding(.top, PLSpacing.lg)
+
+                    // Widgets
+                    VStack(spacing: PLSpacing.lg) {
                         CalendarWidget()
                             .environmentObject(calendarVM)
                             .environmentObject(friendsVM)
-                            .padding(.horizontal)
-                        
-                        // Budget Preview Widget
-                        NavigationLink(destination: BudgetView().environmentObject(calendarVM)) {
-                            SpendingPreviewWidget()
-                        }
-                        .buttonStyle(PlainButtonStyle())
-                        .padding(.horizontal)
-                        
-                        // Grocery Widget
-                        NavigationLink(destination: TopGroceryListView()) {
-                            GroceryListWidget()
-                        }
-                        .buttonStyle(PlainButtonStyle())
-                        .padding(.horizontal)
+                            .plCard()
 
-                        // Goals Widget
-                        NavigationLink(destination: GoalsView().environmentObject(calendarVM)) {
-                            GoalsWidget()
-                                .environmentObject(calendarVM)
+                        NavigationLink { BudgetView().environmentObject(calendarVM) } label: {
+                            SpendingPreviewWidget() // line chart (current week)
+                                .plCard()
                         }
                         .buttonStyle(PlainButtonStyle())
-                        .padding(.horizontal)
-                        
-                        // Health Widget - Not going to include health
-//                        NavigationLink(destination: HealthView()) {
-//                            HealthWidget()
-//                        }
-//                        .buttonStyle(PlainButtonStyle())
-//                        .padding(.horizontal)
-                    }
-                    .padding([.horizontal, .bottom])
-                    
-                }
-                .padding()
-            }
-            .ignoresSafeArea(edges: .bottom)
-            
-            .navigationBarItems(
-                leading: friendPageButton,
-                trailing: profileButton
-            )
-            .navigationBarTitleDisplayMode(.inline)
-            .navigationTitle("My Dashboard")
-            .sheet(isPresented: $isProfilePresented) {
-                ProfileView().environmentObject(session)
-            }
-            .onChange(of: isProfilePresented) { oldValue, newValue in
-                if oldValue && !newValue {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                        if session.signOutPending {
-                            session.signOut()
-                            session.signOutPending = false
+
+                        NavigationLink { TopGroceryListView() } label: {
+                            GroceryListWidget().plCard()
                         }
+                        .buttonStyle(PlainButtonStyle())
+
+                        NavigationLink { GoalsView().environmentObject(calendarVM) } label: {
+                            GoalsWidget().environmentObject(calendarVM).plCard()
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                    }
+                    .padding(.horizontal, PLSpacing.lg)
+                    .padding(.bottom, PLSpacing.lg)
+                }
+            }
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Text("My Dashboard").font(.headline)
+                }
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button { isFriendsPresented = true } label: {
+                        Image(systemName: "person.2.fill").font(.title3).foregroundColor(PLColor.accent)
+                    }
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button { isProfilePresented = true } label: {
+                        Image(systemName: "person.circle.fill").font(.title3).foregroundColor(PLColor.accent)
                     }
                 }
             }
+            .sheet(isPresented: $isProfilePresented) { ProfileView().environmentObject(session) }
             .sheet(isPresented: $isFriendsPresented) {
-                //FriendsView().environmentObject(friendsVM)
                 SocialTabView()
                     .environmentObject(friendsVM)
                     .environmentObject(chatVM)
@@ -115,600 +112,342 @@ struct ContentView: View {
         }
         .task {
             calendarVM.fetchEvents()
-            await friendsVM.loadFriends(for: self.username)
+            await friendsVM.loadFriends(for: username)
         }
-    }
-    
-    private func fetchGoals() {
-        print("Fetch goals called!")
-    }
-    
-    private var profileButton: some View {
-            Button(action: {
-                isProfilePresented = true
-            }) {
-                Image(systemName: "person.circle.fill")
-                    .resizable()
-                    .frame(width: 28, height: 28)
-                    .foregroundColor(.blue)
-            }
-        }
-    
-    private var friendPageButton: some View {
-        Button(action: {
-            isFriendsPresented = true
-        }) {
-            Image(systemName: "person.2.fill")
-                .resizable()
-                .foregroundColor(.blue)
-        }
-    }
-
-    
-    private var logoImage: some View {
-        Image("PlotLineLogo")
-            .resizable()
-            .scaledToFit()
-            .frame(width: 100, height: 100)
     }
 }
 
-
+// MARK: - Calendar Widget
 struct CalendarWidget: View {
-    
     @EnvironmentObject var viewModel: CalendarViewModel
     @EnvironmentObject var friendVM: FriendsViewModel
 
     var body: some View {
-        NavigationLink(destination: CalendarView()
-                                    .environmentObject(viewModel)
-                                    .environmentObject(friendVM)) {
-                                        
-            VStack(alignment: .leading, spacing: 8) {
-                ZStack {
-                    Text("Today's Events")
-                        .font(.custom("AvenirNext-Bold", size: 18))
-                        .foregroundColor(.blue)
-                                    
-                    HStack {
-                        Spacer()
-                        Image(systemName: "calendar")
-                            .foregroundColor(.green)
-                            .font(.title3)
-                    }
+        NavigationLink {
+            CalendarView()
+                .environmentObject(viewModel)
+                .environmentObject(friendVM)
+        } label: {
+            VStack(alignment: .leading, spacing: PLSpacing.sm) {
+                HStack {
+                    Label("Today's Events", systemImage: "calendar")
+                        .labelStyle(.titleAndIcon)
+                        .font(.headline)
+                    Spacer()
                 }
-                                .padding(.horizontal)
+
                 let todayEvents = viewModel.eventsOnDay(Date())
 
                 if todayEvents.isEmpty {
-                    Text("No events today")
-                        .foregroundColor(.gray)
+                    Text("Nothing on the books today.")
+                        .foregroundColor(PLColor.textSecondary)
                         .italic()
                         .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.vertical, 8)
                 } else {
                     VStack(alignment: .leading, spacing: 6) {
                         ForEach(todayEvents) { event in
-                            HStack {
-                                // Bullet point and event title
-                                Text("• \(event.title)")
-                                    .font(.body)
-                                    .bold()
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                
-                                if (event.eventType == "rent") {
-                                    
-                                    Text("Due Today!")
-                                        .font(.subheadline)
-                                        .foregroundColor(.red)
-                                        .frame(alignment: .trailing)
-                                    
-                                } else if (event.eventType.lowercased().starts(with: "subscription")) {
-                                    Text("Billed Today!")
-                                        .font(.subheadline)
-                                        .foregroundColor(.orange)
-                                        .frame(alignment: .trailing)
-                                } else if (event.startDate != event.endDate) {
-                                    Text("Through \(formattedEndDate(event.endDate))")
-                                        .font(.subheadline)
-                                        .foregroundColor(.gray)
-                                        .frame(alignment: .trailing)
+                            HStack(spacing: 8) {
+                                Circle().frame(width: 6, height: 6).foregroundColor(PLColor.accent)
+                                Text(event.title).font(.body).lineLimit(1)
+                                Spacer()
+                                if event.eventType == "rent" {
+                                    Badge(text: "Due Today", color: PLColor.danger)
+                                } else if event.eventType.lowercased().hasPrefix("subscription") {
+                                    Badge(text: "Billed", color: PLColor.warning)
+                                } else if event.startDate != event.endDate {
+                                    Text("Thru \(formattedEndDate(event.endDate))")
+                                        .font(.caption).foregroundColor(PLColor.textSecondary)
                                 }
-                                
                             }
                         }
                     }
                 }
             }
-            .padding()
-            .background(Color(.systemGray6))
-            .cornerRadius(12)
-            .shadow(color: Color.black.opacity(0.2), radius: 6, x: 0, y: 3)
         }
         .buttonStyle(PlainButtonStyle())
     }
-    
+
     private func formattedEndDate(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMM dd"
-        return formatter.string(from: date)
+        let f = DateFormatter(); f.dateFormat = "MMM d"; return f.string(from: date)
+    }
+
+    private struct Badge: View {
+        let text: String; let color: Color
+        var body: some View {
+            Text(text)
+                .font(.caption).foregroundColor(color)
+                .padding(.horizontal, 8).padding(.vertical, 4)
+                .background(Color.white)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .overlay(RoundedRectangle(cornerRadius: 6).stroke(color.opacity(0.25)))
+        }
     }
 }
 
+// MARK: - Spending Preview (Line/Area chart for current week)
 struct SpendingPreviewWidget: View {
-    @State private var spendingData: [SpendingEntry] = []
-    let username = UserDefaults.standard.string(forKey: "loggedInUsername") ?? "UnknownUser"
-    
+    @State private var points: [DayPoint] = []
+    @State private var isLoading = false
+    @State private var errorText: String?
+
+    private var username: String { UserDefaults.standard.string(forKey: "loggedInUsername") ?? "UnknownUser" }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Weekly Spending Preview")
-                .font(.headline)
-            
-            Chart {
-                ForEach(spendingData, id: \.category) { entry in
-                    BarMark(
-                        x: .value("Category", entry.category),
-                        y: .value("Amount", entry.amount)
-                    )
-                    .foregroundStyle(.blue)
-                }
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Label("Weekly Spending (Sun–Sat)", systemImage: "chart.line.uptrend.xyaxis")
+                    .labelStyle(.titleAndIcon)
+                    .font(.headline)
+                Spacer()
             }
-            .frame(height: 120)
-            .onAppear {
-                fetchSpendingData()
+
+            if isLoading && points.isEmpty {
+                HStack(spacing: 8) { ProgressView(); Text("Loading…").foregroundColor(.secondary) }
+                    .frame(maxWidth: .infinity, alignment: .center)
+            } else if let errorText, points.isEmpty {
+                Text(errorText).foregroundColor(.red).font(.footnote)
+            } else {
+                Chart {
+                    // Area
+                    ForEach(points) { p in
+                        AreaMark(
+                            x: .value("Day", p.date),
+                            y: .value("Spent", p.total)
+                        )
+                        .interpolationMethod(.monotone)
+                        .foregroundStyle(Color.blue.opacity(0.18))
+                    }
+                    // Line
+                    ForEach(points) { p in
+                        LineMark(
+                            x: .value("Day", p.date),
+                            y: .value("Spent", p.total)
+                        )
+                        .interpolationMethod(.monotone)
+                        .lineStyle(StrokeStyle(lineWidth: 2))
+                        .foregroundStyle(.blue)
+                    }
+                    // Points
+                    ForEach(points) { p in
+                        PointMark(
+                            x: .value("Day", p.date),
+                            y: .value("Spent", p.total)
+                        )
+                        .foregroundStyle(.blue)
+                    }
+                }
+                .chartXAxis {
+                    AxisMarks(values: points.map(\.date)) { value in
+                        AxisGridLine()
+                        AxisValueLabel {
+                            if let date = value.as(Date.self) {
+                                Text(date, format: .dateTime.weekday(.narrow))
+                            }
+                        }
+                    }
+                }
+                .chartYAxis { AxisMarks(position: .leading) }
+                .frame(height: 180)
+                .animation(.easeInOut, value: points.count)   // <— no Equatable requirement
             }
         }
-        .padding()
-        .background(Color(.systemGray6))
-        .cornerRadius(12)
-        .shadow(radius: 4)
+        .task { await reloadWeek() }
     }
-    
-    private func fetchSpendingData() {
-        guard let url = URL(string: "http://localhost:8080/api/costs/\(username)/weekly") else { return }
-        
-        URLSession.shared.dataTask(with: url) { data, _, _ in
-            guard let data = data,
-                  let decoded = try? JSONDecoder().decode(WeeklyMonthlyCostResponse.self, from: data) else { return }
-            
-            DispatchQueue.main.async {
-                self.spendingData = decoded.costs.map { SpendingEntry(category: $0.key, amount: $0.value) }
+
+    private func reloadWeek() async {
+        await MainActor.run { isLoading = true; errorText = nil }
+        do {
+            let series = try await fetchCurrentWeekSeries()
+            await MainActor.run {
+                self.points = series
+                self.isLoading = false
             }
-        }.resume()
+        } catch {
+            await MainActor.run {
+                self.errorText = "Couldn’t load weekly spending."
+                self.points = []
+                self.isLoading = false
+            }
+        }
+    }
+
+    // GET /api/costs/weekly/{username}?week_start=YYYY-MM-DD
+    private func fetchCurrentWeekSeries() async throws -> [DayPoint] {
+        let cal = Calendar.current
+        let weekStart = cal.startOfWeek(for: Date())
+        let startStr = weekStart.ymd()
+
+        guard let url = URL(string: "http://localhost:8080/api/costs/weekly/\(username)?week_start=\(startStr)") else {
+            return []
+        }
+        let (data, _) = try await URLSession.shared.data(from: url)
+
+        struct Period: Decodable { let days: [String:[String:Double]]? }
+        let period = try JSONDecoder().decode(Period.self, from: data)
+
+        let days = (0..<7).compactMap { cal.date(byAdding: .day, value: $0, to: weekStart) }
+        let dayMap = period.days ?? [:]
+
+        return days.map { d in
+            let key = d.ymd()
+            let total = (dayMap[key] ?? [:]).values.reduce(0, +)
+            return DayPoint(date: d, total: total)
+        }
+    }
+
+    private struct DayPoint: Identifiable {
+        let id = UUID()
+        let date: Date
+        let total: Double
     }
 }
 
+
+// MARK: - Goals Widget (same data, modern card)
 struct GoalsWidget: View {
     @EnvironmentObject var calendarVM: CalendarViewModel
     @State private var tasks: [TaskItem] = []
     @State private var isLoading = true
     let username = UserDefaults.standard.string(forKey: "loggedInUsername") ?? "Guest"
-    @State private var newTask: String = ""
-    @State private var newTaskPriority: Priority = .medium
-    @State private var newTaskDueDate = Date()
-    @State private var selectedPriorityFilter: Priority? = nil
-    @State private var notificationsEnabled = false
-    @State private var notificationType: String = "dueDate"
-    @State private var notificationTime = Date()
-    
+
     var body: some View {
-        NavigationLink(destination: GoalsView().environmentObject(calendarVM)) {
-            VStack(alignment: .leading, spacing: 8) {
-                ZStack {
-                    Text("Goals")
-                        .font(.custom("AvenirNext-Bold", size: 18))
-                        .foregroundColor(.blue)
-                    
-                    HStack {
-                        Spacer()
-                        Image(systemName: "list.bullet.rectangle.fill")
-                            .foregroundColor(.green)
-                            .font(.title3)
-                    }
+        NavigationLink { GoalsView().environmentObject(calendarVM) } label: {
+            VStack(alignment: .leading, spacing: PLSpacing.sm) {
+                HStack {
+                    Label("Goals", systemImage: "list.bullet.rectangle.portrait")
+                        .labelStyle(.titleAndIcon)
+                        .font(.headline)
+                    Spacer()
                 }
-                .padding(.horizontal)
-                
+
                 if isLoading {
-                    HStack {
-                        Spacer()
-                        ProgressView()
-                        Spacer()
-                    }
-                    .padding(.vertical, 10)
+                    HStack { Spacer(); ProgressView(); Spacer() }.padding(.vertical, 6)
                 } else if tasks.isEmpty {
                     Text("No goals yet")
-                        .foregroundColor(.gray)
+                        .foregroundColor(PLColor.textSecondary)
                         .italic()
                         .frame(maxWidth: .infinity, alignment: .center)
-                        .padding(.vertical, 10)
+                        .padding(.vertical, 6)
                 } else {
-                    VStack(alignment: .leading, spacing: 4) {
-                        ForEach(Array(tasks.prefix(3)), id: \.id) { task in
-                            VStack(alignment: .leading) {
-                                Text(task.name)
-                                    .font(.body)
-                                Text("Due: \(formatDate(task.dueDate))")
-                                    .font(.caption)
-                                    .foregroundColor(.gray)
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(Array(tasks.prefix(3)), id: \.id) { t in
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(t.name).font(.body)
+                                Text("Due: \(formatDate(t.dueDate))")
+                                    .font(.caption).foregroundColor(PLColor.textSecondary)
                             }
                         }
                         if tasks.count > 3 {
-                            Text("+ \(tasks.count - 3) more goals")
-                                .font(.caption)
-                                .foregroundColor(.gray)
+                            Text("+ \(tasks.count - 3) more")
+                                .font(.caption).foregroundColor(PLColor.textSecondary)
                                 .padding(.top, 2)
                         }
                     }
                 }
             }
-            .padding()
-            .background(Color(.systemGray6))
-            .cornerRadius(12)
-            .shadow(color: Color.black.opacity(0.2), radius: 6, x: 0, y: 3)
         }
         .buttonStyle(PlainButtonStyle())
-        .onAppear {
-            fetchGoals()
-        }
+        .task { await fetchGoals() }
     }
 
-    private func fetchGoals() {
-        guard let url = URL(string: "http://localhost:8080/api/goals/\(username)") else {
-            print("❌ Invalid URL")
-            return
-        }
-        
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        
-        URLSession.shared.dataTask(with: request) { data, _, error in
-            guard let data = data, error == nil else {
-                print("❌ Error fetching goals: \(error?.localizedDescription ?? "Unknown error")")
-                return
-            }
+    private func formatDate(_ d: Date?) -> String {
+        guard let d else { return "—" }
+        let f = DateFormatter(); f.dateStyle = .medium; return f.string(from: d)
+    }
 
+    private func fetchGoals() async {
+        guard let url = URL(string: "http://localhost:8080/api/goals/\(username)") else { return }
+        var request = URLRequest(url: url); request.httpMethod = "GET"
+
+        do {
+            let (data, _) = try await URLSession.shared.data(for: request)
             let decoder = JSONDecoder()
-            let formatter = DateFormatter()
-            formatter.dateFormat = "yyyy-MM-dd" // match backend format
-            decoder.dateDecodingStrategy = .formatted(formatter)
+            let fmt = DateFormatter(); fmt.dateFormat = "yyyy-MM-dd"
+            decoder.dateDecodingStrategy = .formatted(fmt)
 
-            do {
-                let jsonObject = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-                if let weeklyGoals = jsonObject?["weeklyGoals"],
-                   let jsonData = try? JSONSerialization.data(withJSONObject: weeklyGoals) {
-                    let decodedTasks = try decoder.decode([TaskItem].self, from: jsonData)
-                    DispatchQueue.main.async {
-                        self.tasks = decodedTasks
-                        self.isLoading = false
-                    }
-                }
-            } catch {
-                print("❌ JSON Decoding error: \(error)")
-            }
-        }.resume()
-    }
-
-    private func formatDate(_ date: Date?) -> String {
-        guard let date = date else { return "No date" }
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        return formatter.string(from: date)
-    }
-}
-
-
-struct HealthWidget: View {
-    @State private var sleepData: SleepEntry?
-    @State private var sleepSchedule: SleepSchedule?
-    @State private var isLoading = true
-    @State private var error: String?
-    
-    private let healthAPI = HealthAPI()
-    private let sleepAPI = SleepAPI()
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ZStack {
-                Text("Health")
-                    .font(.custom("AvenirNext-Bold", size: 18))
-                    .foregroundColor(.blue)
-                            
-                HStack {
-                    Spacer()
-                    Image(systemName: "heart.fill")
-                        .foregroundColor(.green)
-                        .font(.title3)
-                }
-            }
-            .padding(.horizontal)
-            
-            if isLoading {
-                HStack {
-                    Spacer()
-                    ProgressView()
-                    Spacer()
-                }
-                .padding(.vertical, 20)
-            } else if let error = error {
-                Text(error)
-                    .foregroundColor(.gray)
-                    .italic()
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.vertical, 10)
-            } else if let schedule = sleepSchedule {
-                VStack(spacing: 12) {
-                    // Last night's sleep summary
-                    if let sleepData = sleepData {
-                        HStack {
-                            VStack(alignment: .leading) {
-                                Text("Last night")
-                                    .font(.subheadline)
-                                    .foregroundColor(.gray)
-                                
-                                Text("\(sleepData.hoursSlept) hours")
-                                    .font(.system(size: 20, weight: .bold))
-                                    .foregroundColor(sleepQualityColor(sleepData.hoursSlept, targetHours: calculateTargetSleepHours(wakeUpTime: schedule.wakeUpTime, sleepTime: schedule.sleepTime)))
-                            }
-                            
-                            Spacer()
-                            
-                            // Mood indicator
-                            VStack(alignment: .trailing) {
-                                Text("Mood")
-                                    .font(.subheadline)
-                                    .foregroundColor(.gray)
-                                
-                                Text(moodEmoji(sleepData.mood))
-                                    .font(.system(size: 24))
-                            }
-                        }
-                    } else {
-                        HStack {
-                            Text("No sleep entry for yesterday")
-                                .font(.subheadline)
-                                .foregroundColor(.gray)
-                                .italic()
-                        }
-                    }
-                    
-                    Divider()
-                    
-                    HStack {
-                        VStack(alignment: .leading) {
-                            Text("Tonight")
-                                .font(.subheadline)
-                                .foregroundColor(.gray)
-                            
-                            Text(formatTime(schedule.sleepTime))
-                                .font(.headline)
-                        }
-                        
-                        Spacer()
-                        
-                        VStack(alignment: .trailing) {
-                            Text("Wake up")
-                                .font(.subheadline)
-                                .foregroundColor(.gray)
-                            
-                            Text(formatTime(schedule.wakeUpTime))
-                                .font(.headline)
-                        }
-                    }
-                    
-                    HStack {
-                        Image(systemName: "bell.fill")
-                            .foregroundColor(.orange)
-                        
-                        Text("Reminder at \(formatTime(calculateReminderTime(from: schedule.sleepTime)))")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                }
-                .padding(.top, 4)
+            // response shape: { "weeklyGoals": [...] }
+            if let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let arr = root["weeklyGoals"],
+               let arrData = try? JSONSerialization.data(withJSONObject: arr) {
+                let decoded = try decoder.decode([TaskItem].self, from: arrData)
+                await MainActor.run { self.tasks = decoded; self.isLoading = false }
             } else {
-                Text("No sleep data available")
-                    .foregroundColor(.gray)
-                    .italic()
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.vertical, 10)
+                await MainActor.run { self.tasks = []; self.isLoading = false }
             }
+        } catch {
+            await MainActor.run { self.tasks = []; self.isLoading = false }
         }
-        .padding()
-        .background(Color(.systemGray6))
-        .cornerRadius(12)
-        .shadow(color: Color.black.opacity(0.2), radius: 6, x: 0, y: 3)
-        .onAppear {
-            loadSleepData()
-        }
-    }
-    
-    private func loadSleepData() {
-        isLoading = true
-        error = nil
-        
-        Task {
-            do {
-                let calendar = Calendar.current
-                let today = calendar.startOfDay(for: Date())
-                
-                guard let yesterday = calendar.date(byAdding: .day, value: -1, to: today) else {
-                    throw NSError(domain: "HealthWidget", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not calculate yesterday's date"])
-                }
-                
-                let schedule = try await sleepAPI.fetchSleepSchedule()
-                
-                let entries = try await healthAPI.fetchEntriesForWeek(containing: yesterday)
-                
-                let yesterdayEntry = entries.first { entry in
-                    calendar.isDate(entry.date, inSameDayAs: yesterday)
-                }
-
-                DispatchQueue.main.async {
-                    self.sleepSchedule = schedule
-                    
-                    if let entry = yesterdayEntry {
-                        self.sleepData = SleepEntry(hoursSlept: entry.hoursSlept, mood: entry.mood)
-                    } else {
-                        self.sleepData = nil
-                    }
-                    
-                    self.isLoading = false
-                }
-            } catch {
-                DispatchQueue.main.async {
-                    self.error = "Could not load sleep data"
-                    self.isLoading = false
-                }
-            }
-        }
-    }
-    
-    // Helper functions
-    private func formatTime(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "h:mm a"
-        return formatter.string(from: date)
-    }
-    
-    private func calculateReminderTime(from sleepTime: Date) -> Date {
-        let calendar = Calendar.current
-        return calendar.date(byAdding: .hour, value: -1, to: sleepTime) ?? sleepTime
-    }
-    
-    private func moodEmoji(_ mood: String) -> String {
-        switch mood.lowercased() {
-        case "bad":
-            return "😞"
-        case "okay":
-            return "😐"
-        case "good":
-            return "😊"
-        default:
-            return "❓"
-        }
-    }
-    
-    private func sleepQualityColor(_ hours: Int, targetHours: Double) -> Color {
-        if hours >= 8 {
-            return .green
-        } else if hours >= 6 {
-            return .orange
-        } else {
-            return .red
-        }
-    }
-    
-    private func calculateTargetSleepHours(wakeUpTime: Date, sleepTime: Date) -> Double {
-        let calendar = Calendar.current
-        
-        // Convert to minutes for easier calculation
-        let sleepComponents = calendar.dateComponents([.hour, .minute], from: sleepTime)
-        let wakeComponents = calendar.dateComponents([.hour, .minute], from: wakeUpTime)
-        
-        let sleepMinutes = (sleepComponents.hour ?? 0) * 60 + (sleepComponents.minute ?? 0)
-        let wakeMinutes = (wakeComponents.hour ?? 0) * 60 + (wakeComponents.minute ?? 0)
-        
-        // If sleep time is after wake time, it means sleep spans across midnight
-        let totalMinutes = sleepMinutes > wakeMinutes
-            ? (24 * 60 - sleepMinutes) + wakeMinutes
-            : wakeMinutes - sleepMinutes
-            
-        // Convert back to hours (with fraction)
-        return Double(totalMinutes) / 60.0
     }
 }
 
-
-struct SleepEntry {
-    let hoursSlept: Int
-    let mood: String
-}
-
+// MARK: - Grocery Widget (styling only)
 struct GroceryListWidget: View {
     @State private var groceryLists: [GroceryList] = []
-    @State private var isLoading: Bool = false
+    @State private var isLoading = false
     let username = UserDefaults.standard.string(forKey: "loggedInUsername") ?? "UnknownUser"
-    
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // Header with icon
-            ZStack {
-                Text("Meals & Grocery")
-                    .font(.custom("AvenirNext-Bold", size: 18))
-                    .foregroundColor(.blue)
-                            
-                HStack {
-                    Spacer()
-                    Image(systemName: "fork.knife")
-                        .foregroundColor(.green)
-                        .font(.title3)
-                }
+        VStack(alignment: .leading, spacing: PLSpacing.sm) {
+            HStack {
+                Label("Meals & Grocery", systemImage: "fork.knife")
+                    .labelStyle(.titleAndIcon)
+                    .font(.headline)
+                Spacer()
             }
-            .padding(.horizontal)
-            
+
             if isLoading {
-                HStack {
-                    Spacer()
-                    ProgressView()
-                    Spacer()
-                }
-                .padding(.vertical, 10)
+                HStack { Spacer(); ProgressView(); Spacer() }.padding(.vertical, 6)
             } else if groceryLists.isEmpty {
                 Text("No active grocery lists")
-                    .foregroundColor(.gray)
+                    .foregroundColor(PLColor.textSecondary)
                     .italic()
                     .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.vertical, 10)
+                    .padding(.vertical, 6)
             } else {
                 VStack(alignment: .leading, spacing: 6) {
-                    // Display up to 3 lists
-                    ForEach(Array(groceryLists.prefix(3).enumerated()), id: \.element.id) { index, list in
+                    ForEach(Array(groceryLists.prefix(3).enumerated()), id: \.element.id) { _, list in
                         HStack {
-                            Text("• \(list.name)")
-                                .font(.body)
-                                .frame(maxWidth: .infinity, alignment: .leading)
+                            Circle().frame(width: 6, height: 6).foregroundColor(PLColor.success)
+                            Text(list.name).font(.body)
+                            Spacer()
                         }
                     }
-                    
-                    // Show total count if more than 3 lists
                     if groceryLists.count > 3 {
-                        Text("+ \(groceryLists.count - 3) more lists")
-                            .font(.caption)
-                            .foregroundColor(.gray)
-                            .padding(.top, 4)
+                        Text("+ \(groceryLists.count - 3) more")
+                            .font(.caption).foregroundColor(PLColor.textSecondary)
+                            .padding(.top, 2)
                     }
                 }
             }
         }
-        .padding()
-        .background(Color(.systemGray6))
-        .cornerRadius(12)
-        .shadow(color: Color.black.opacity(0.2), radius: 6, x: 0, y: 3)
-        .onAppear {
-            fetchGroceryLists()
-        }
+        .task { await fetchGroceryLists() }
     }
-    
-    private func fetchGroceryLists() {
-        isLoading = true
-        
-        Task {
-            do {
-                let lists = try await GroceryListAPI.getGroceryLists(username: username)
-                DispatchQueue.main.async {
-                    self.groceryLists = lists
-                    self.isLoading = false
-                }
-            } catch {
-                DispatchQueue.main.async {
-                    self.isLoading = false
-                }
-            }
+
+    private func fetchGroceryLists() async {
+        await MainActor.run { isLoading = true }
+        do {
+            let lists = try await GroceryListAPI.getGroceryLists(username: username)
+            await MainActor.run { self.groceryLists = lists; self.isLoading = false }
+        } catch {
+            await MainActor.run { self.isLoading = false }
         }
     }
 }
 
+// MARK: - Small utilities
+
+private extension Date {
+    func asWeekdayShort() -> String {
+        let f = DateFormatter(); f.dateFormat = "E"; return f.string(from: self)
+    }
+}
+
+// MARK: - Preview
 #Preview {
     ContentView()
         .environmentObject(AuthViewModel())
         .environmentObject(CalendarViewModel())
+        .environmentObject(FriendsViewModel())
+        .environmentObject(ChatViewModel())
 }
