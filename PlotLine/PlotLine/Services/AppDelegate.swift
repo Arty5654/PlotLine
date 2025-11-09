@@ -1,6 +1,7 @@
 import UIKit
 import GoogleSignIn
 import UserNotifications
+//import LinkKit
 
 class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
     
@@ -24,6 +25,12 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         if handled {
             return true
         }
+        
+//        if Plaid.canHandleRedirectURL(url) {
+//            Plaid.handleRedirectURL(url)
+//            return true
+//        }
+
 
         return false
     }

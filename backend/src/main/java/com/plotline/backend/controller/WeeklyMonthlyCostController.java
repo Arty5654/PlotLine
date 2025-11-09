@@ -14,6 +14,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.http.MediaType;
 
 import java.io.ByteArrayInputStream;
 import java.io.File;
@@ -309,7 +310,11 @@ public class WeeklyMonthlyCostController {
         }
     }
 
-    @PostMapping("/merge-dated")
+    @PostMapping(
+    value = "/merge-dated",
+    consumes = MediaType.APPLICATION_JSON_VALUE,
+    produces = MediaType.APPLICATION_JSON_VALUE
+    )
     public ResponseEntity<?> mergeDatedCosts(@RequestBody Map<String, Object> body) {
         try {
             String username = String.valueOf(body.get("username"));

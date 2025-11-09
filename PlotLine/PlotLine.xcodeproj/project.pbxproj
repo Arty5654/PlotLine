@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		2AFC9F992E9A17F800B1496A /* LinkKit in Frameworks */ = {isa = PBXBuildFile; productRef = 2AFC9F982E9A17F800B1496A /* LinkKit */; };
 		4239F88C2D6946490036D707 /* Config.xcconfig in Resources */ = {isa = PBXBuildFile; fileRef = 4239F88B2D6946490036D707 /* Config.xcconfig */; };
 		CD06D2DE2D64C5D600838ECF /* .gitignore in Resources */ = {isa = PBXBuildFile; fileRef = CD06D2DD2D64C5CD00838ECF /* .gitignore */; };
 		CDC64D202D641D7300187584 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = CDC64D1F2D641D7300187584 /* GoogleSignIn */; };
@@ -87,6 +88,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				2AFC9F992E9A17F800B1496A /* LinkKit in Frameworks */,
 				CDC64D202D641D7300187584 /* GoogleSignIn in Frameworks */,
 				CDC64D222D641D7300187584 /* GoogleSignInSwift in Frameworks */,
 			);
@@ -154,6 +156,7 @@
 			packageProductDependencies = (
 				CDC64D1F2D641D7300187584 /* GoogleSignIn */,
 				CDC64D212D641D7300187584 /* GoogleSignInSwift */,
+				2AFC9F982E9A17F800B1496A /* LinkKit */,
 			);
 			productName = PlotLine;
 			productReference = CDA3CE612D5299930038ABC2 /* PlotLine.app */;
@@ -239,6 +242,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				CDC64D1E2D641D7300187584 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
+				2AFC9F972E9A17F800B1496A /* XCRemoteSwiftPackageReference "plaid-link-ios" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = CDA3CE622D5299930038ABC2 /* Products */;
@@ -611,6 +615,14 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		2AFC9F972E9A17F800B1496A /* XCRemoteSwiftPackageReference "plaid-link-ios" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/plaid/plaid-link-ios";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 6.4.1;
+			};
+		};
 		CDC64D1E2D641D7300187584 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/google/GoogleSignIn-iOS.git";
@@ -622,6 +634,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		2AFC9F982E9A17F800B1496A /* LinkKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 2AFC9F972E9A17F800B1496A /* XCRemoteSwiftPackageReference "plaid-link-ios" */;
+			productName = LinkKit;
+		};
 		CDC64D1F2D641D7300187584 /* GoogleSignIn */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = CDC64D1E2D641D7300187584 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;

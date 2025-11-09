@@ -146,6 +146,9 @@ struct BudgetSection: View {
                     ActionRow(title: "Input Spending for a Time Period", system: "calendar") {
                         SpendingPeriodView()
                     }
+                    ActionRow(title: "Track Credit Card Transactions Automatically", system: "creditcard") {
+                        PlaidView()
+                    }
                 }
             }
         }

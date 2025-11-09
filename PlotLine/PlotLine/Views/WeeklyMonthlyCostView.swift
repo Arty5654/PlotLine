@@ -64,9 +64,9 @@ struct WeeklyMonthlyCostView: View {
     @State private var budgetLimits: [String: Double] = [:]
     @State private var newCategory: String = ""
     
-//    @State private var showSuccessAlert: Bool = false
-//    @State private var showBudgetWarning: Bool = false
-      
+    //    @State private var showSuccessAlert: Bool = false
+    //    @State private var showBudgetWarning: Bool = false
+    
     @State private var budgetWarningMessage: String = ""
     
     // Subscription Tracking
@@ -86,7 +86,7 @@ struct WeeklyMonthlyCostView: View {
     @State private var selectedDay: Date = Date()
     @State private var weekDays: [Date] = []
     @State private var weeklyPeriod: WeeklyPeriod? = nil
-
+    
     // Totals
     private var budgetTotal: Double {
         let base = takeHomeMonthly > 0 ? takeHomeMonthly : budgetLimits.values.reduce(0, +)
@@ -113,6 +113,25 @@ struct WeeklyMonthlyCostView: View {
     
     // Feedback
     @State private var monthlyFeedback: MonthlyFeedback?
+    
+    // Sync flow UI state
+    @State private var showAccountPicker = false
+    @State private var selectableAccounts: [PlaidAccount] = []
+    @State private var selectedAccountIds: Set<String> = []
+    @State private var uncategorized: [UncategorizedTxn] = []
+    @State private var showCategorizer = false
+    @State private var showSyncDone = false
+    
+    // Add Categories after sync
+    @State private var pendingAssignments: [CategoryAssignment] = []
+    @State private var newCategoryName: String = ""
+    
+    // Build the choices list from UI state
+    private var existingCategories: [String] {
+        let fromLimits = budgetLimits.keys
+        let fromCosts  = costItems.map { $0.category }
+        return Array(Set(fromLimits).union(fromCosts)).sorted()
+    }
     
     @EnvironmentObject var calendarVM: CalendarViewModel
     
@@ -200,7 +219,7 @@ struct WeeklyMonthlyCostView: View {
                     MonthlyFeedbackCard(fb: fb)
                         .plCard()
                 }
-
+                
                 // Input list (custom rows instead of List to avoid nested scroll + zoomy look)
                 VStack(alignment: .leading, spacing: PLSpacing.sm) {
                     Text("Costs")
@@ -232,12 +251,31 @@ struct WeeklyMonthlyCostView: View {
                     }
                 }
                 .plCard()
-
+                
                 // Save Button
                 Button("Save Costs", action: saveCosts)
                     .buttonStyle(PrimaryButton())
                     .padding(.top, -PLSpacing.sm) // visually tighten spacing to card above
-
+                
+                // Sync
+                // Present the sheet when user taps "Sync Transactions"
+                Button {
+                    Task { await fetchAccountsForSelection() }
+                } label: {
+                    Label("Sync Transactions", systemImage: "arrow.triangle.2.circlepath")
+                }
+                .buttonStyle(.bordered)
+                .sheet(isPresented: $showAccountPicker) {
+                    AccountPickerSheet(
+                        accounts: $selectableAccounts,
+                        selectedAccountIds: $selectedAccountIds,
+                        isPresented: $showAccountPicker
+                    ) {
+                        Task { await syncSelectedAccounts() }
+                    }
+                }
+                
+                
                 // Subscriptions
                 VStack(alignment: .leading, spacing: PLSpacing.sm) {
                     Text("📅 Subscription Tracker")
@@ -283,7 +321,7 @@ struct WeeklyMonthlyCostView: View {
                             Image(systemName: "plus.circle.fill").foregroundColor(.green)
                         }
                     }
-
+                    
                     Button("Save Subscriptions", action: saveSubscriptions)
                         .buttonStyle(PrimaryButton())
                 }
@@ -309,20 +347,93 @@ struct WeeklyMonthlyCostView: View {
                 dismissButton: .default(Text("OK"))
             )
         }
+        
+        .sheet(isPresented: $showCategorizer, onDismiss: {
+            pendingAssignments = []
+        }) {
+            NavigationView {
+                VStack(spacing: 12) {
+                    if pendingAssignments.isEmpty {
+                        Text("Loading…").padding()
+                    } else {
+                        List {
+                            Section("Uncategorized transactions") {
+                                ForEach($pendingAssignments) { $a in
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        Text("\(a.date)  •  $\(a.amount, specifier: "%.2f")")
+                                            .font(.subheadline)
+                                            .foregroundColor(.secondary)
+                                        Picker("Category", selection: $a.category) {
+                                            ForEach(existingCategories, id: \.self) { c in
+                                                Text(c).tag(c)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            Section("Create new category") {
+                                HStack {
+                                    TextField("e.g. Baby Supplies", text: $newCategoryName)
+                                        .textFieldStyle(.roundedBorder)
+                                    Button("Add") {
+                                        let name = newCategoryName.trimmingCharacters(in: .whitespacesAndNewlines)
+                                        guard !name.isEmpty else { return }
+                                        // Add to current set and apply to last edited row as convenience
+                                        self.costItems.append(BudgetItem(category: name, amount: ""))
+                                        if !existingCategories.contains(name) {
+                                            // existingCategories is computed; just set on selected rows
+                                        }
+                                        // Assign the new category to any rows currently selected by user (optional)
+                                        if let idx = pendingAssignments.indices.last {
+                                            pendingAssignments[idx].category = name
+                                        }
+                                        newCategoryName = ""
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                .navigationTitle("Categorize")
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Close") { showCategorizer = false }
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") { Task { await submitAssignments() } }
+                            .disabled(pendingAssignments.isEmpty)
+                    }
+                }
+                .onAppear(perform: openCategorizer)
+            }
+        }
+        
+        // Final confirmation popup
+        .alert("Sync complete", isPresented: $showSyncDone) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Your transactions have been synced and categorized.")
+        }
         .onAppear {
             rebuildWeek(for: Date())
             selectedDay = Date()
-            loadWeeklyPeriod(for: selectedDay)
             loadBudgetLimits()
-            loadSavedData()
             fetchMonthlyFeedback(for: selectedDay)
             fetchSubscriptions()
             checkForUpcomingSubscriptions()
             requestNotificationPermission()
             fetchTakeHomeMonthly()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .plaidSynced)) { _ in
+            // after backend wrote to weekly/monthly, just fetch again
+            rebuildWeek(for: selectedDay)
+            loadWeeklyPeriod(for: selectedDay)
+            if selectedType == "Monthly" {
+                fetchMonthlyFeedback(for: selectedDay)
+            }
+        }
     }
-
+    
     // MARK: - Cost Functions
     private func addCategory() {
         let trimmed = newCategory.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -335,7 +446,7 @@ struct WeeklyMonthlyCostView: View {
     private func removeCategory(item: BudgetItem) {
         costItems.removeAll { $0.id == item.id }
     }
-
+    
     private func postMerge(type: String, date: Date, values: [String: Double], completion: @escaping (Bool)->Void) {
         let payload: [String: Any] = [
             "username": username,
@@ -344,18 +455,18 @@ struct WeeklyMonthlyCostView: View {
             "costs": values
         ]
         guard let data = try? JSONSerialization.data(withJSONObject: payload) else { completion(false); return }
-
+        
         var req = URLRequest(url: URL(string: "http://localhost:8080/api/costs/merge-dated")!)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = data
-
+        
         URLSession.shared.dataTask(with: req) { _, response, error in
             let code = (response as? HTTPURLResponse)?.statusCode ?? -1
             completion(error == nil && (200...299).contains(code))
         }.resume()
     }
-
+    
     private func saveCosts() {
         // build payload excluding tracker exclusions and zeroes
         let values = costItems.reduce(into: [String: Double]()) { acc, item in
@@ -363,17 +474,17 @@ struct WeeklyMonthlyCostView: View {
                   let v = Double(item.amount), v != 0 else { return }
             acc[item.category] = v
         }
-
+        
         let day = selectedDay
         let group = DispatchGroup()
         var okW = false, okM = false
-
+        
         group.enter()
         postMerge(type: "weekly", date: day, values: values) { ok in okW = ok; group.leave() }
-
+        
         group.enter()
         postMerge(type: "monthly", date: day, values: values) { ok in okM = ok; group.leave() }
-
+        
         group.notify(queue: .main) {
             if !(okW && okM) {
                 print("Merge failed weekly:\(okW), monthly:\(okM)")
@@ -390,14 +501,14 @@ struct WeeklyMonthlyCostView: View {
                 self.fetchMonthlyFeedback(for: self.selectedDay)
             }
         }
-
+        
     }
-
+    
     // MARK: - Budget Limits + Costs
     private func loadBudgetLimits() {
         let urlString = "http://localhost:8080/api/budget/\(username)/\(selectedType.lowercased())"
         guard let url = URL(string: urlString) else { return }
-
+        
         URLSession.shared.dataTask(with: url) { data, _, error in
             if let error = error {
                 print("Error fetching budget:", error.localizedDescription)
@@ -409,24 +520,32 @@ struct WeeklyMonthlyCostView: View {
                 DispatchQueue.main.async {
                     // exclude 401k-like lines from limit visual
                     self.budgetLimits = decoded.budget.filter { !trackerExclusions.contains($0.key) }
+                    
+                    if self.selectedType == "Weekly" {
+                        self.rebuildWeek(for: self.selectedDay)
+                        self.loadWeeklyPeriod(for: self.selectedDay)
+                    } else {
+                        self.loadSavedData()
+                        self.fetchMonthlyFeedback(for: self.selectedDay)
+                    }
                 }
             } catch {
                 print("Failed to decode budget data:", error)
             }
         }.resume()
     }
-
+    
     private func loadSavedData() {
         if selectedType == "Weekly" {
             loadCostsForSelectedDay() // uses weeklyPeriod already loaded
             return
         }
-
+        
         // MONTHLY: read the period file and show totals
         let monthStr = monthYYYYMM(from: selectedDay)
         let urlString = "http://localhost:8080/api/costs/monthly/\(username)?month=\(monthStr)"
         guard let url = URL(string: urlString) else { return }
-
+        
         URLSession.shared.dataTask(with: url) { data, _, error in
             if let error = error { print("Monthly fetch error:", error); return }
             guard let data = data else { return }
@@ -442,15 +561,15 @@ struct WeeklyMonthlyCostView: View {
             }
         }.resume()
     }
-
+    
     private func monthYYYYMM(from date: Date) -> String {
         let f = DateFormatter()
         f.calendar = Calendar(identifier: .gregorian)
         f.dateFormat = "yyyy-MM"
         return f.string(from: date)
     }
-
-
+    
+    
     private func setDefaultCategories() {
         self.costItems = [
             BudgetItem(category: "Rent", amount: ""),
@@ -468,7 +587,7 @@ struct WeeklyMonthlyCostView: View {
             BudgetItem(category: "Brokerage", amount: "")
         ]
     }
-
+    
     private func checkBudgetWarnings() {
         budgetWarningMessage = ""
         for item in costItems {
@@ -483,7 +602,7 @@ struct WeeklyMonthlyCostView: View {
             activeAlert = AppAlert(title: "⚠️ Budget Warning", message: budgetWarningMessage)
         }
     }
-
+    
     // MARK: - Subscriptions
     private func addSubscription() {
         guard !newSubscriptionName.isEmpty, !newSubscriptionCost.isEmpty else { return }
@@ -493,11 +612,11 @@ struct WeeklyMonthlyCostView: View {
         newSubscriptionCost = ""
         newSubscriptionDueDate = Date()
     }
-
+    
     private func fetchSubscriptions() {
         let urlString = "http://localhost:8080/api/subscriptions/\(username)"
         guard let url = URL(string: urlString) else { return }
-
+        
         URLSession.shared.dataTask(with: url) { data, _, error in
             if let error = error {
                 print("Error fetching subscription data:", error.localizedDescription)
@@ -523,7 +642,7 @@ struct WeeklyMonthlyCostView: View {
             }
         }.resume()
     }
-
+    
     private func deleteSubscription(subscription: SubscriptionItem) {
         let urlString = "http://localhost:8080/api/subscriptions/\(username)/\(subscription.name)"
         guard let url = URL(string: urlString) else { return }
@@ -535,7 +654,7 @@ struct WeeklyMonthlyCostView: View {
         }
         URLSession.shared.dataTask(with: request).resume()
     }
-
+    
     private func saveSubscriptions() {
         var dict = [String: SubscriptionData]()
         for sub in subscriptions {
@@ -554,7 +673,7 @@ struct WeeklyMonthlyCostView: View {
         }
         let payload = SubscriptionUpload(username: username, subscriptions: dict)
         guard let json = try? JSONEncoder().encode(payload) else { return }
-
+        
         var request = URLRequest(url: URL(string: "http://localhost:8080/api/subscriptions")!)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -564,9 +683,9 @@ struct WeeklyMonthlyCostView: View {
         DispatchQueue.main.async {
             self.activeAlert = AppAlert(title: "Success", message: "Your subscriptions have been saved.")
         }
-
+        
     }
-
+    
     private func checkForUpcomingSubscriptions() {
         for sub in subscriptions {
             let days = Calendar.current.dateComponents([.day], from: Date(), to: sub.dueDate).day ?? 0
@@ -620,7 +739,7 @@ struct WeeklyMonthlyCostView: View {
         let start = Calendar.current.startOfWeek(for: date)
         weekDays = (0..<7).map { start.addingDays($0) }
     }
-
+    
     private var weekHeader: some View {
         HStack(spacing: PLSpacing.sm) {
             Button {
@@ -632,9 +751,9 @@ struct WeeklyMonthlyCostView: View {
                     .frame(width: 28, height: 28)
                     .contentShape(Rectangle())
             }
-
+            
             Spacer(minLength: PLSpacing.sm)
-
+            
             ForEach(weekDays, id: \.self) { d in
                 let isSelected = Calendar.current.isDate(d, inSameDayAs: selectedDay)
                 VStack(spacing: 1) {
@@ -643,7 +762,7 @@ struct WeeklyMonthlyCostView: View {
                         .foregroundColor(PLColor.textSecondary)
                     Text(d.monthDay())
                         .font(.caption2)
-                        .bold()
+                    //.bold()
                         .foregroundColor(PLColor.textPrimary)
                 }
                 .frame(width: 26, height: 26)
@@ -657,9 +776,9 @@ struct WeeklyMonthlyCostView: View {
                     loadCostsForSelectedDay()
                 }
             }
-
+            
             Spacer(minLength: PLSpacing.sm)
-
+            
             Button {
                 selectedDay = selectedDay.addingDays(+7)
                 rebuildWeek(for: selectedDay)
@@ -676,7 +795,7 @@ struct WeeklyMonthlyCostView: View {
         let weekStart = Calendar.current.startOfWeek(for: anyDate).ymd()
         let urlStr = "http://localhost:8080/api/costs/weekly/\(username)?week_start=\(weekStart)"
         guard let url = URL(string: urlStr) else { return }
-
+        
         URLSession.shared.dataTask(with: url) { data, _, error in
             guard let data = data, error == nil,
                   let period = try? JSONDecoder().decode(WeeklyPeriod.self, from: data) else {
@@ -692,7 +811,7 @@ struct WeeklyMonthlyCostView: View {
             }
         }.resume()
     }
-
+    
     private func loadCostsForSelectedDay() {
         let dayKey = selectedDay.ymd()
         let dayMap = weeklyPeriod?.days[dayKey] ?? [:]
@@ -708,13 +827,137 @@ struct WeeklyMonthlyCostView: View {
         let monthStr = monthYYYYMM(from: date)
         guard let url = URL(string: "http://localhost:8080/api/costs/feedback/\(username)?month=\(monthStr)")
         else { return }
-
+        
         URLSession.shared.dataTask(with: url) { data, _, _ in
             guard let data = data,
                   let decoded = try? JSONDecoder().decode(MonthlyFeedback.self, from: data)
             else { DispatchQueue.main.async { self.monthlyFeedback = nil }; return }
             DispatchQueue.main.async { self.monthlyFeedback = decoded }
         }.resume()
+    }
+    
+    // Fetch accounts (grouped across items) the user can pick from
+    private func fetchAccountsForSelection() async {
+        await MainActor.run {
+            // Show the sheet right away with a loading state
+            self.selectableAccounts = []
+            self.selectedAccountIds = []
+            self.showAccountPicker = true
+        }
+        
+        guard let url = URL(string: "http://localhost:8080/api/plaid/accounts?username=\(username)") else { return }
+        do {
+            let (data, resp) = try await URLSession.shared.data(from: url)
+            if let http = resp as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+                let body = String(decoding: data, as: UTF8.self)
+                print("accounts HTTP \(http.statusCode): \(body)")
+                throw URLError(.badServerResponse)
+            }
+            let list = try JSONDecoder().decode([PlaidAccount].self, from: data)
+            print("decoded accounts:", list.map { "\($0.name) [\($0.id)]" })
+            await MainActor.run {
+                self.selectableAccounts = list           // sheet updates in place
+            }
+        } catch {
+            print("accounts fetch error:", error)
+            await MainActor.run {
+                self.activeAlert = AppAlert(
+                    title: "Couldn’t load accounts",
+                    message: "Please relink your bank or try again."
+                )
+                // keep the sheet up; user can Cancel
+            }
+        }
+    }
+    
+    // user_transactions_dynamic
+    
+    // Call sync with selected accounts
+    private func syncSelectedAccounts() async {
+        guard let url = URL(string: "http://localhost:8080/api/plaid/sync") else { return }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        let body = SyncRequest(username: username, account_ids: Array(selectedAccountIds))
+        guard let data = try? JSONEncoder().encode(body) else { return }
+        req.httpBody = data
+        
+        do {
+            let (respData, _) = try await URLSession.shared.data(for: req)
+            let syncResp = try JSONDecoder().decode(SyncResponse.self, from: respData)
+            await MainActor.run {
+                self.uncategorized = syncResp.uncategorized
+                if uncategorized.isEmpty {
+                    self.showSyncDone = true
+                    // refresh UI
+                    self.rebuildWeek(for: self.selectedDay)
+                    self.loadWeeklyPeriod(for: self.selectedDay)
+                    if self.selectedType == "Monthly" { self.fetchMonthlyFeedback(for: self.selectedDay) }
+                } else {
+                    self.showCategorizer = true
+                }
+            }
+        } catch {
+            print("sync error:", error)
+        }
+    }
+    
+    private func openCategorizer() {
+        pendingAssignments = uncategorized.map {
+            CategoryAssignment(txnId: $0.id, date: $0.date, category: existingCategories.first ?? "Miscellaneous", amount: $0.amount)
+        }
+    }
+    
+    private func parseYMD(_ s: String) -> Date? {
+        let f = DateFormatter()
+        f.calendar = .init(identifier: .gregorian)
+        f.timeZone = TimeZone(secondsFromGMT: 0)
+        f.dateFormat = "yyyy-MM-dd"
+        return f.date(from: s)
+    }
+    
+    // Send assignments to backend
+    private func submitAssignments() async {
+        guard let url = URL(string: "http://localhost:8080/api/costs/assign") else { return }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        let payload = AssignPayload(username: username, assignments: pendingAssignments)
+        guard let data = try? JSONEncoder().encode(payload) else { return }
+        req.httpBody = data
+        
+        do {
+            let (respData, resp) = try await URLSession.shared.data(for: req)
+            if let http = resp as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+                let body = String(decoding: respData, as: UTF8.self)
+                print("assign HTTP \(http.statusCode): \(body)")
+                await MainActor.run {
+                    self.activeAlert = AppAlert(title: "Save Error", message: "Server error \(http.statusCode). Try again.")
+                }
+                return
+            }
+            
+            // pick a date to jump to (if exactly one day was assigned)
+            let days = Array(Set(pendingAssignments.map { $0.date })).sorted()
+            await MainActor.run {
+                self.showCategorizer = false
+                self.showSyncDone = true
+                if days.count == 1, let d = parseYMD(days[0]) {
+                    self.selectedDay = d
+                }
+                self.rebuildWeek(for: self.selectedDay)
+                self.loadWeeklyPeriod(for: self.selectedDay)
+                if self.selectedType == "Monthly" { self.fetchMonthlyFeedback(for: self.selectedDay) }
+                NotificationCenter.default.post(name: .plaidSynced, object: nil)
+            }
+        } catch {
+            print("assign error:", error)
+            await MainActor.run {
+                self.activeAlert = AppAlert(title: "Save Error", message: "We couldn't save your categories. Please try again.")
+            }
+        }
     }
 }
 
@@ -1017,4 +1260,127 @@ private struct MonthlyFeedbackCard: View {
     }
 }
 
+// Models that match backend JSON
+struct PlaidAccount: Identifiable, Codable, Hashable {
+    let id: String           // account_id
+    let name: String
+    let mask: String?
+    let type: String?
+    let subtype: String?
+    let itemId: String       // parent item id
+
+    // UI-only computed helpers are fine (not encoded/decoded)
+    var display: String { "\(name)\(mask.map { " ••\($0)" } ?? "")" }
+
+    // Only decode the fields the backend actually returns:
+    private enum CodingKeys: String, CodingKey {
+        case id, name, mask, type, subtype, itemId
+    }
+}
+
+struct UncategorizedTxn: Identifiable, Codable {
+    let id: String      // transaction_id
+    let date: String    // "YYYY-MM-DD"
+    let name: String
+    let amount: Double
+    let accountId: String
+
+    private enum CodingKeys: String, CodingKey {
+        case id, date, name, amount, accountId
+    }
+}
+
+struct SyncRequest: Codable {
+    let username: String
+    let account_ids: [String]
+}
+
+struct SyncResponse: Codable {
+    let added: Int
+    let modified: Int
+    let removed: Int
+    let daysUpdated: Int
+    let uncategorized: [UncategorizedTxn]
+
+    private enum CodingKeys: String, CodingKey {
+        case added, modified, removed, daysUpdated, uncategorized
+    }
+}
+
+struct CategoryAssignment: Identifiable, Codable {
+    var id: String { txnId }
+    let txnId: String
+    let date: String
+    var category: String
+    let amount: Double
+
+    private enum CodingKeys: String, CodingKey {
+        case txnId, date, category, amount
+    }
+}
+
+struct AssignPayload: Codable {
+    let username: String
+    let assignments: [CategoryAssignment]
+}
+
+private struct AccountPickerSheet: View {
+    @Binding var accounts: [PlaidAccount]
+    @Binding var selectedAccountIds: Set<String>
+    @Binding var isPresented: Bool
+    let onConfirm: () -> Void
+
+    var body: some View {
+        NavigationView {
+            Group {
+                if accounts.isEmpty {
+                    VStack(spacing: 12) {
+                        Image(systemName: "tray")
+                           Text("No accounts found")
+                               .font(.subheadline)
+                               .foregroundColor(.secondary)
+                           Text("Try linking again from the Plaid screen.")
+                               .font(.caption)
+                               .foregroundColor(.secondary)
+                       }
+                       .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    List(accounts) { acct in
+                        HStack {
+                            Text(acct.display)
+                            Spacer()
+                            if selectedAccountIds.contains(acct.id) {
+                                Image(systemName: "checkmark.circle.fill")
+                            }
+                        }
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            if selectedAccountIds.contains(acct.id) {
+                                selectedAccountIds.remove(acct.id)
+                            } else {
+                                selectedAccountIds.insert(acct.id)
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Choose accounts")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { isPresented = false }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Sync") {
+                        isPresented = false
+                        onConfirm()
+                    }
+                    .disabled(selectedAccountIds.isEmpty)
+                }
+            }
+        }
+        .onAppear {
+            print("AccountPickerSheet appeared; accounts.count = \(accounts.count)")
+        }
+    }
+}
 
