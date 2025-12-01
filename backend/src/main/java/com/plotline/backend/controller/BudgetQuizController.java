@@ -70,6 +70,12 @@ public class BudgetQuizController {
             String state = (String) quizData.get("state");
             int dependents = Integer.parseInt(quizData.get("dependents").toString());
             String spendingStyle = (String) quizData.get("spendingStyle");
+            String primaryGoal        = String.valueOf(quizData.getOrDefault("primaryGoal", ""));
+            String savingsPriority    = String.valueOf(quizData.getOrDefault("savingsPriority", ""));
+            String housingSituation   = String.valueOf(quizData.getOrDefault("housingSituation", ""));
+            String carOwnership       = String.valueOf(quizData.getOrDefault("carOwnership", ""));
+            String eatingOutFrequency = String.valueOf(quizData.getOrDefault("eatingOutFrequency", ""));
+
             //List<String> categories = (List<String>) quizData.get("categories");
             List<String> categories = ((List<?>) quizData.getOrDefault("categories", List.of()))
                 .stream()
@@ -158,55 +164,6 @@ public class BudgetQuizController {
             System.out.printf("[TAX] %s - Fed: %.2f  State(%s): %.2f  Local: %.2f fica %.2f, Net: %.2f%n",
                     username, federalTax, state, stateTax, localTax, fica, afterTaxYearly);
 
-
-
-            // Dont think I need this, but just in case
-            // if (categories == null || categories.isEmpty()) {
-            //   categories = Arrays.asList("Rent", "Groceries", "Subscriptions", "Savings", "Investments", "Entertainment", "Eating Out", "Utilities", "Other");
-            // }
-
-            // String rules;
-            // switch (spendingStyle.toLowerCase()) {
-            //     case "low":
-            //         rules = """
-            //             - Limit rent to 25%% of monthly income.
-            //             - Save and invest at least 30%% of monthly income.
-            //             - Groceries should stay around 10%%.
-            //             - Keep entertainment and eating out under 5%% each.
-            //             - Transportation (including gas, public transit, etc.) should be under 5%%.
-            //             - Insurance (health, auto, etc.) around 8-10%%.
-            //             - Subscriptions should not exceed 2%%.
-            //             - Miscellaneous should be capped at 3%%.
-            //             """;
-            //         break;
-            //     case "medium":
-            //         rules = """
-            //             - Allocate up to 30%% of monthly income to rent.
-            //             - Save and invest up to 20-25%% combined.
-            //             - Groceries up to 12-15%%.
-            //             - Entertainment and eating out can be up to 10%% each.
-            //             - Transportation (gas, rideshare, car payments) can be up to 8%%.
-            //             - Insurance (health, auto, etc.) up to 10-12%%.
-            //             - Subscriptions should stay under 4%%.
-            //             - Miscellaneous spending should be under 5%%.
-            //             """;
-            //         break;
-            //     case "high":
-            //         rules = """
-            //             - Allow up to 35%% of monthly income for rent.
-            //             - Save and invest 10-15%% combined.
-            //             - Groceries can be up to 15%%.
-            //             - Entertainment and eating out may go up to 15%% each.
-            //             - Transportation (car ownership, fuel, etc.) up to 10%%.
-            //             - Insurance costs may be up to 15%%.
-            //             - Subscriptions can be up to 5%%.
-            //             - Miscellaneous spending up to 8%%.
-            //             """;
-            //         break;
-            //     default:
-            //         rules = "";
-            // }
-
             double monthlyIncome = grossYearlyIncome / 12;
             double budgetCap;
 
@@ -230,7 +187,14 @@ public class BudgetQuizController {
             You are a financial assistant helping generate a realistic monthly budget.
 
             Generate a JSON object for a monthly budget for someone living in %s, %s,
-            earning $%.2f **after Traditional 401(k) contriubtion, federal, state, local/municipal, and FICA (Social Security + Medicare) tax** yearly, supporting %d dependents, with a %s spending style.
+            earning $%.2f **after Traditional 401(k) contriubtion, federal, state, local/municipal, and FICA (Social Security + Medicare) tax** yearly,
+            supporting %d dependents, with a %s spending style.
+
+            Their primary financial goal is: %s.
+            Their savings priority is: %s.
+            Housing situation: %s.
+            Car ownership: %s.
+            Eating-out frequency: %s.
 
             Use ONLY these categories: %s.
 
@@ -241,13 +205,19 @@ public class BudgetQuizController {
             %s
             (Use the debt categories exactly as "Debt - <Name>" when allocating.)
 
-            IMPORANT: **Do NOT include a '401k Contribution' category in your output.** The server will append a fixed line for this.
+            IMPORTANT BEHAVIOR:
+            - If the primary goal is "Emergency Fund" or "Pay Down Debt", prioritize Savings and debt categories before lifestyle (Entertainment, Eating Out, Miscellaneous).
+            - If the primary goal is "Maximize Investing", prioritize investment categories ("Brokerage", "Roth IRA") while still funding essentials.
+            - If savings priority is "High", push more money into "Savings" and investments; if "Low", allow more lifestyle/discretionary spending.
+            - Use housingSituation to tune Rent / Housing: e.g., "Renting" → normal rent; "Live with Others" → keep rent lower; "Own with Mortgage" → allow higher housing cost but keep other lifestyle categories modest.
+            - Use carOwnership to adjust "Transportation" (and "Car Insurance"): "Multiple Cars" → more, "No Car" → less.
+            - Use eatingOutFrequency to balance "Eating Out" vs "Groceries": "Often" → higher Eating Out but do not let it dominate the budget; "Rarely" → keep Eating Out low and shift more to Groceries.
+
+            IMPORTANT: **Do NOT include a '401k Contribution' category in your output.** The server will append a fixed line for this.
 
             Use your judgment to adjust based on cost of living, dependents, and the user's chosen categories.
-            
-            You **must allocate money to all user-provided categories**, even if they are not mentioned in the rules (e.g., hobbies like "Tennis"). Make sure each category has a reasonable allocation unless it clearly shouldn't apply.
 
-           
+            You **must allocate money to all user-provided categories**, even if they are not mentioned in the rules (e.g., hobbies like "Tennis"). Make sure each category has a reasonable allocation unless it clearly shouldn't apply.
 
             Output format:
             {
@@ -256,12 +226,27 @@ public class BudgetQuizController {
                 ...
             }
 
-            Try to keep the total budget around $%.2f (%.0f%% of take-home monthly income), but this is a recommendation — the **only hard rule is that the total must not exceed the user's monthly income** ($%.2f). Round each category to whole dollars.
+            Try to keep the total budget around $%.2f (%.0f%%%% of take-home monthly income), but this is a recommendation — the **only hard rule is that the total must not exceed the user's monthly income** ($%.2f). Round each category to whole dollars.
 
-            Ensure that savings and investments are separated, and combined they should follow the range based on spending style.
-            """, city, state, afterTaxYearly, dependents, spendingStyle, categoriesList, knownAllocations, debtsSection, budgetCap, (budgetCap / monthlyNet) * 100, monthlyNet);
-
-            
+            Ensure that savings and investments are separated, and combined they should follow the range based on spending style and savings priority.
+            """,
+                city,
+                state,
+                afterTaxYearly,
+                dependents,
+                spendingStyle,
+                primaryGoal,
+                savingsPriority,
+                housingSituation,
+                carOwnership,
+                eatingOutFrequency,
+                categoriesList,
+                knownAllocations,
+                debtsSection,
+                budgetCap,
+                (budgetCap / monthlyNet) * 100,
+                monthlyNet
+            );
 
             // Get LLM output
             String rawResponse = openAIService.generateBudget(prompt);

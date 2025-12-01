@@ -92,6 +92,9 @@ struct GroceryListDetailView: View {
     
     @State private var groceryBudget: Double? = nil
     
+    // Want to update budeget?
+    @State private var showUpdateWeeklyDialog: Bool = false
+    
     @AppStorage private var savedEstimate: Double
     init(groceryList: GroceryList) {
         self.groceryList = groceryList
@@ -260,7 +263,7 @@ struct GroceryListDetailView: View {
                             
                             Button {
                                 checkallItems()
-                                estimateGroceryCostAndUpdateBudget()
+                                showUpdateWeeklyDialog = true
                             } label: {
                                 HStack(spacing: 8) {
                                     Image(systemName: "checkmark.circle.fill")
@@ -375,6 +378,19 @@ struct GroceryListDetailView: View {
             Button("OK") { }
         } message: {
             Text(errorMessage ?? "An unknown error occurred.")
+        }
+        .confirmationDialog(
+            "Update Weekly Groceries?",
+            isPresented: $showUpdateWeeklyDialog,
+            titleVisibility: .visible
+        ) {
+            Button("Yes, add to Weekly Groceries") {
+                estimateGroceryCostAndUpdateBudget()
+            }
+            Button("No, just mark list as done", role: .cancel) { }
+        } message: {
+            let total = items.reduce(0.0) { $0 + ($1.price ?? 0.0) }
+            Text("We estimated this trip at $\(total, specifier: "%.2f"). Do you want to add this to your Weekly Groceries costs?")
         }
     }
 

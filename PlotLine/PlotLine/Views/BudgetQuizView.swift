@@ -122,6 +122,14 @@ struct BudgetQuizView: View {
     @State private var retirementTip = false
     @State private var numberOfDependents = ""
     
+    @State private var primaryGoal = "Balanced"
+    @State private var savingsPriority = "Medium"
+    @State private var housingSituation = ""
+    @State private var carOwnership = "One Car"
+    @State private var eatingOutFrequency = "Sometimes"
+
+
+    
     // Debt
     @State private var hasDebt = false
     @State private var debts: [DebtItem] = []
@@ -162,19 +170,28 @@ struct BudgetQuizView: View {
         UserDefaults.standard.string(forKey: "loggedInUsername") ?? "UnknownUser"
     }
     
+    private func optionRow(_ title: String, isSelected: Bool) -> some View {
+        HStack {
+            Text(title)
+                .foregroundColor(.primary)
+            Spacer()
+        }
+        .contentShape(Rectangle())
+    }
+    
     var body: some View {
         ScrollView {
             VStack(spacing: PLSpacing.lg) {
                 
                 // Header
-                VStack(alignment: .leading, spacing: PLSpacing.sm) {
-                    Text("Budget Quiz")
-                        .font(.headline).bold()
-                    Text("Tell us a bit about you so we can generate a smart starting budget.")
-                        .font(.subheadline)
-                        .foregroundColor(PLColor.textSecondary)
-                }
-                .plCard()
+//                VStack(alignment: .leading, spacing: PLSpacing.sm) {
+//                    Text("Budget Quiz")
+//                        .font(.headline).bold()
+//                    Text("Tell us a bit about you so we can generate a smart starting budget.")
+//                        .font(.subheadline)
+//                        .foregroundColor(PLColor.textSecondary)
+//                }
+//                .plCard()
                 
                 // Income & household
                 VStack(alignment: .leading, spacing: PLSpacing.sm) {
@@ -257,6 +274,45 @@ struct BudgetQuizView: View {
                 }
                 .plCard()
                 
+                // Goals & Priorities
+                VStack(alignment: .leading, spacing: PLSpacing.sm) {
+                    Text("Goals & Priorities")
+                        .font(.headline)
+
+                    Picker(selection: $primaryGoal) {
+                        optionRow("Build an emergency fund", isSelected: primaryGoal == "Emergency Fund").tag("Emergency Fund")
+                        optionRow("Pay down debt", isSelected: primaryGoal == "Pay Down Debt").tag("Pay Down Debt")
+                        optionRow("Save for a big purchase", isSelected: primaryGoal == "Big Purchase").tag("Big Purchase")
+                        optionRow("Maximize investing", isSelected: primaryGoal == "Maximize Investing").tag("Maximize Investing")
+                        optionRow("Balance everything", isSelected: primaryGoal == "Balanced").tag("Balanced")
+                    } label: {
+                        HStack {
+                            Text("Select Goal")
+                                .foregroundColor(.primary)
+                            Spacer()
+                        }
+                        Image(systemName: "chevron.right")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundColor(PLColor.accent)
+                    }
+                    .pickerStyle(.navigationLink)
+
+                    Text("Savings Priority")
+                        .font(.headline)
+
+                    Picker("", selection: $savingsPriority) {
+                        Text("Low").tag("Low")
+                        Text("Medium").tag("Medium")
+                        Text("High").tag("High")
+                    }
+                    .pickerStyle(.segmented)
+                }
+                .plCard()
+
+
+
+
+                
                 // Location
                 VStack(alignment: .leading, spacing: PLSpacing.sm) {
                     Text("Location")
@@ -284,6 +340,70 @@ struct BudgetQuizView: View {
                     }
                 }
                 .plCard()
+                
+                // Lifestyle details
+                VStack(alignment: .leading, spacing: PLSpacing.sm) {
+                    Text("Lifestyle Details")
+                        .font(.headline)
+
+                    Picker(selection: $housingSituation) {
+                        optionRow("Renting", isSelected: housingSituation == "Renting").tag("Renting")
+                        optionRow("Own with mortgage", isSelected: housingSituation == "Own with Mortgage").tag("Own with Mortgage")
+                        optionRow("Own free and clear", isSelected: housingSituation == "Own Free and Clear").tag("Own Free and Clear")
+                        optionRow("Live with parents / roommates", isSelected: housingSituation == "Live with Others").tag("Live with Others")
+                        optionRow("Other", isSelected: housingSituation == "Other").tag("Other")
+                    } label: {
+                        HStack {
+                            Text("Select Housing")
+                                .foregroundColor(.primary)
+                            Spacer()
+                        }
+                        Image(systemName: "chevron.right")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundColor(PLColor.accent)
+                    }
+                    .pickerStyle(.navigationLink)
+                        
+                    
+
+
+                    Picker(selection: $carOwnership) {
+                        optionRow("No car", isSelected: carOwnership == "No Car").tag("No Car")
+                        optionRow("One car", isSelected: carOwnership == "One Car").tag("One Car")
+                        optionRow("Multiple cars", isSelected: carOwnership == "Multiple Cars").tag("Multiple Cars")
+                    } label: {
+                        HStack {
+                            Text("Select Transportation")
+                                .foregroundColor(.primary)
+                            Spacer()
+                        }
+                        Image(systemName: "chevron.right")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundColor(PLColor.accent)
+                    }
+                    .pickerStyle(.navigationLink)
+
+
+
+                    Picker(selection: $eatingOutFrequency) {
+                        optionRow("Rarely", isSelected: eatingOutFrequency == "Rarely").tag("Rarely")
+                        optionRow("Sometimes", isSelected: eatingOutFrequency == "Sometimes").tag("Sometimes")
+                        optionRow("Often", isSelected: eatingOutFrequency == "Often").tag("Often")
+                    } label: {
+                        HStack {
+                            Text("Select Eating Out Frequency")
+                                .foregroundColor(.primary)
+                            Spacer()
+                        }
+                        Image(systemName: "chevron.right")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundColor(PLColor.accent)
+                    }
+                    .pickerStyle(.navigationLink)
+                    
+                }
+                .plCard()
+
                 
                 // Known monthly costs (optional)
                 VStack(alignment: .leading, spacing: PLSpacing.sm) {
@@ -347,6 +467,7 @@ struct BudgetQuizView: View {
                     .disabled(
                         isLoading ||
                         yearlyIncome.isEmpty || retirement.isEmpty || numberOfDependents.isEmpty ||
+                        primaryGoal.isEmpty || savingsPriority.isEmpty ||
                         (useDeviceLocation ? (city.isEmpty || state.isEmpty) : (manualCity.isEmpty || manualState.isEmpty)) ||
                         !debtEntriesValid
                     )
@@ -411,12 +532,18 @@ struct BudgetQuizView: View {
             "city": finalCity,
             "state": finalState,
             "spendingStyle": spendingStyle,
+            "primaryGoal": primaryGoal,
+            "savingsPriority": savingsPriority,
+            "housingSituation": housingSituation,
+            "carOwnership": carOwnership,
+            "eatingOutFrequency": eatingOutFrequency,
             "useDeviceLocation": useDeviceLocation,
             "categories": Array(selectedCategories.subtracting(trackerExclusions).sorted()),
             "knownCosts": knownCosts.compactMapValues { Double($0) },
             "hasDebt": hasDebt,
             "debts": debtsPayload
         ]
+
         
         guard let jsonData = try? JSONSerialization.data(withJSONObject: payload) else { return }
         
@@ -531,6 +658,22 @@ struct BudgetQuizView: View {
                                                 minPayment: minStr,
                                                 dueDate: due)
                             }
+                        }
+                        
+                        if let goal = dict["primaryGoal"] as? String, !goal.isEmpty, primaryGoal == "Balanced" {
+                            primaryGoal = goal
+                        }
+                        if let priority = dict["savingsPriority"] as? String, !priority.isEmpty, savingsPriority == "Medium" {
+                            savingsPriority = priority
+                        }
+                        if let housing = dict["housingSituation"] as? String, !housing.isEmpty, housingSituation.isEmpty {
+                            housingSituation = housing
+                        }
+                        if let car = dict["carOwnership"] as? String, !car.isEmpty, carOwnership == "One Car" {
+                            carOwnership = car
+                        }
+                        if let eating = dict["eatingOutFrequency"] as? String, !eating.isEmpty, eatingOutFrequency == "Sometimes" {
+                            eatingOutFrequency = eating
                         }
                     }
                 }

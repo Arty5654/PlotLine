@@ -8,6 +8,52 @@
 import SwiftUI
 import Foundation
 
+private enum PLColor {
+    static let surface        = Color(.secondarySystemBackground)
+    static let cardBorder     = Color.black.opacity(0.06)
+    static let textPrimary    = Color.primary
+    static let textSecondary  = Color.secondary
+    static let accent         = Color.blue
+    static let danger         = Color.red
+    static let warning        = Color.orange
+}
+private enum PLSpacing {
+    static let xs: CGFloat = 6
+    static let sm: CGFloat = 10
+    static let md: CGFloat = 16
+    static let lg: CGFloat = 20
+}
+private enum PLRadius {
+    static let md: CGFloat = 12
+}
+private struct CardModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .padding(PLSpacing.md)
+            .background(PLColor.surface)
+            .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
+            .overlay(
+                RoundedRectangle(cornerRadius: PLRadius.md)
+                    .stroke(PLColor.cardBorder)
+            )
+    }
+}
+private extension View { func plCard() -> some View { modifier(CardModifier()) } }
+
+private struct PrimaryButton: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.headline)
+            .foregroundColor(.white)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .background(PLColor.accent.opacity(configuration.isPressed ? 0.85 : 1))
+            .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
+    }
+}
+
+
+
 struct InvestmentQuizView: View {
     enum InvestmentAccount: String, CaseIterable, Identifiable {
         case brokerage = "Brokerage"
@@ -21,6 +67,9 @@ struct InvestmentQuizView: View {
     @State private var goals = ""
     @State private var riskTolerance = ""
     @State private var investingExperience = ""
+    @State private var timeHorizon = ""
+    @State private var taxPriority = ""
+    @State private var withdrawalFlexibility = ""
     @State private var age = ""
     @State private var quizCompleted = false
     @State private var llmRecommendation: String? = nil
@@ -40,6 +89,31 @@ struct InvestmentQuizView: View {
     
     // For Calander
     @EnvironmentObject var calendarViewModel: CalendarViewModel
+    
+    private func optionRow(_ title: String, isSelected: Bool) -> some View {
+        HStack {
+            Text(title)
+                .foregroundColor(.primary)
+            Spacer()
+        }
+        .contentShape(Rectangle())
+    }
+    
+    private func pickerLabel(title: String, value: String, placeholder: String) -> some View {
+        HStack(spacing: PLSpacing.sm) {
+            Text(title)
+                .foregroundColor(.primary)
+            
+            Spacer()
+            
+            Text(value.isEmpty ? placeholder : value)
+                .foregroundColor(.primary)
+            
+            Image(systemName: "chevron.right")
+                .font(.footnote.weight(.semibold))
+                .foregroundColor(PLColor.accent)
+        }
+    }
 
     var body: some View {
         VStack {
@@ -66,75 +140,205 @@ struct InvestmentQuizView: View {
                         await generatePortfolioFromLLM()
                     }
             } else {
-                Form {
-                    Section(header: Text("Account")) {
-                        Picker("Account", selection: $selectedAccount) {
-                            ForEach(InvestmentAccount.allCases) { acct in
-                                Text(acct.rawValue).tag(acct)
+                ScrollView {
+                    VStack(spacing: PLSpacing.lg) {
+                        VStack(alignment: .leading, spacing: PLSpacing.sm) {
+                            Text("Account")
+                                .font(.headline)
+                            
+                            Picker("Account", selection: $selectedAccount) {
+                                ForEach(InvestmentAccount.allCases) { acct in
+                                    Text(acct.rawValue).tag(acct)
+                                }
                             }
-                        }
-                        .pickerStyle(.segmented)
+                            .pickerStyle(.segmented)
 
-                        if selectedAccount == .rothIRA {
-                            Text("We’ll create a Roth IRA portfolio. The monthly amount will be taken from your **Budget → “Roth IRA”** line if available; otherwise we’ll fall back to your income.")
+                            Text(selectedAccount == .rothIRA ?
+                                 "We’ll create a Roth IRA portfolio. The monthly amount will be taken from your Budget → “Roth IRA” line if available; otherwise we’ll fall back to your income." :
+                                    "We’ll create a standard brokerage portfolio. The monthly amount will be taken from Budget → “Other Investments” if available; otherwise we’ll fall back to your income.")
+                            .font(.footnote)
+                            .foregroundColor(PLColor.textSecondary)
+                        }
+                        .plCard()
+
+                        VStack(alignment: .leading, spacing: PLSpacing.sm) {
+                            Text("Investment Goals")
+                                .font(.headline)
+                            
+                            Picker(selection: $goals) {
+                                optionRow("Retirement", isSelected: goals == "Retirement").tag("Retirement")
+                                optionRow("Wealth Growth", isSelected: goals == "Wealth Growth").tag("Wealth Growth")
+                                optionRow("Education", isSelected: goals == "Education").tag("Education")
+                                optionRow("Buying a Home", isSelected: goals == "Buying a Home").tag("Buying a Home")
+                            } label: {
+                                HStack {
+                                    Text("Select Goal")
+                                        .foregroundColor(.primary)
+                                    Spacer()
+                                }
+                                Image(systemName: "chevron.right")
+                                    .font(.footnote.weight(.semibold))
+                                    .foregroundColor(PLColor.accent)
+                            }
+                            .pickerStyle(.navigationLink)
+                        }
+                        .plCard()
+
+                        VStack(alignment: .leading, spacing: PLSpacing.sm) {
+                            Text("Risk Tolerance")
+                                .font(.headline)
+                            Text("How comfortable are you with big ups and downs in your investments?")
+                                .font(.subheadline)
+                                .foregroundColor(PLColor.textSecondary)
+
+                            Picker("", selection: $riskTolerance) {
+                                Text("Low").tag("Low")
+                                Text("Medium").tag("Medium")
+                                Text("High").tag("High")
+                            }
+                            .pickerStyle(.segmented)
+                        }
+                        .plCard()
+
+                        VStack(alignment: .leading, spacing: PLSpacing.sm) {
+                            Text("Investing Experience")
+                                .font(.headline)
+                            Text("How would you describe your investing experience?")
+                                .font(.subheadline)
+                                .foregroundColor(PLColor.textSecondary)
+
+                            Picker("", selection: $investingExperience) {
+                                Text("Beginner").tag("Beginner")
+                                Text("Intermediate").tag("Intermediate")
+                                Text("Advanced").tag("Advanced")
+                            }
+                            .pickerStyle(.segmented)
+                        }
+                        .plCard()
+
+                        VStack(alignment: .leading, spacing: PLSpacing.sm) {
+                            Text("Time Horizon")
+                                .font(.headline)
+                            Text("Roughly how long until you expect to use this money?")
+                                .font(.subheadline)
+                                .foregroundColor(PLColor.textSecondary)
+
+                            Picker("", selection: $timeHorizon) {
+                                Text("0–5 years").tag("0–5 years")
+                                Text("5–15 years").tag("5–15 years")
+                                Text("15+ years").tag("15+ years")
+                            }
+                            .pickerStyle(.segmented)
+
+                            Text("Roth IRAs are generally best for long-term retirement money, while brokerage accounts can work for shorter goals.")
                                 .font(.footnote)
-                                .foregroundColor(.secondary)
-                        } else {
-                            Text("We’ll create a standard brokerage portfolio. The monthly amount will be taken from **Budget → “Other Investments”** if available; otherwise we’ll fall back to your income.")
+                                .foregroundColor(PLColor.textSecondary)
+                        }
+                        .plCard()
+
+                        VStack(alignment: .leading, spacing: PLSpacing.sm) {
+                            Text("Tax vs. Flexibility")
+                                .font(.headline)
+                            Text("What matters more to you?")
+                                .font(.subheadline)
+                                .foregroundColor(PLColor.textSecondary)
+                            
+                            Picker(selection: $taxPriority) {
+                                optionRow("Minimize taxes, even if money is locked up", isSelected: taxPriority == "Tax Efficiency").tag("Tax Efficiency")
+                                optionRow("Max flexibility, even if I pay more taxes", isSelected: taxPriority == "Flexibility").tag("Flexibility")
+                                optionRow("Balanced between taxes and flexibility", isSelected: taxPriority == "Balanced").tag("Balanced")
+                            } label: {
+                                HStack {
+                                    Text("Select Preference")
+                                        .foregroundColor(.primary)
+                                    Spacer()
+                                }
+                                Image(systemName: "chevron.right")
+                                    .font(.footnote.weight(.semibold))
+                                    .foregroundColor(PLColor.accent)
+                            }
+                            .pickerStyle(.navigationLink)
+                        }
+                        .plCard()
+
+                        VStack(alignment: .leading, spacing: PLSpacing.sm) {
+                            Text("Withdrawal Flexibility")
+                                .font(.headline)
+                            Text("How likely are you to need this money before retirement?")
+                                .font(.subheadline)
+                                .foregroundColor(PLColor.textSecondary)
+                            
+                            Picker(selection: $withdrawalFlexibility) {
+                                optionRow("Very unlikely – this is long-term", isSelected: withdrawalFlexibility == "Very Unlikely").tag("Very Unlikely")
+                                optionRow("Possibly – I might need some", isSelected: withdrawalFlexibility == "Possible").tag("Possible")
+                                optionRow("Likely – I may tap this within a few years", isSelected: withdrawalFlexibility == "Likely").tag("Likely")
+                            } label: {
+                                HStack {
+                                    Text("Select Preference")
+                                        .foregroundColor(.primary)
+                                    Spacer()
+                                }
+                                Image(systemName: "chevron.right")
+                                    .font(.footnote.weight(.semibold))
+                                    .foregroundColor(PLColor.accent)
+                            }
+                            .pickerStyle(.navigationLink)
+                            
+                            Text("Roth IRAs have a withdrawal penalty of 10% if money is taken before age 59.5 or the account is less than five years old.")
                                 .font(.footnote)
-                                .foregroundColor(.secondary)
+                                .foregroundColor(PLColor.textSecondary)
+                        }
+                        .plCard()
+
+                        VStack(alignment: .leading, spacing: PLSpacing.sm) {
+                            Text("Age")
+                                .font(.headline)
+                            TextField("Enter your age", text: $age)
+                                .keyboardType(.numberPad)
+                                .textFieldStyle(.roundedBorder)
+                        }
+                        .plCard()
+
+                        VStack(spacing: PLSpacing.sm) {
+                            Button("Submit Quiz") {
+                                Task {
+                                    let ok = await precheckBudgetLine()
+                                    if ok {
+                                        await MainActor.run { quizCompleted = true }
+                                    }
+                                }
+                            }
+                            .buttonStyle(PrimaryButton())
+                            .disabled(
+                                goals.isEmpty ||
+                                riskTolerance.isEmpty ||
+                                investingExperience.isEmpty ||
+                                age.isEmpty ||
+                                timeHorizon.isEmpty ||
+                                taxPriority.isEmpty ||
+                                withdrawalFlexibility.isEmpty
+                            )
                         }
                     }
-
-                    Section(header: Text("Investment Goals")) {
-                        Picker("Goal", selection: $goals) {
-                            Text("Retirement").tag("Retirement")
-                            Text("Wealth Growth").tag("Wealth Growth")
-                            Text("Education").tag("Education")
-                            Text("Buying a Home").tag("Buying a Home")
-                        }
-                        .pickerStyle(.inline)
-                    }
-
-                    Section(header: Text("Risk Tolerance")) {
-                        Picker("Risk Tolerance", selection: $riskTolerance) {
-                            Text("Low").tag("Low")
-                            Text("Medium").tag("Medium")
-                            Text("High").tag("High")
-                        }
-                        .pickerStyle(.segmented)
-                    }
-
-                    Section(header: Text("Investing Experience")) {
-                        Picker("Experience", selection: $investingExperience) {
-                            Text("Beginner").tag("Beginner")
-                            Text("Intermediate").tag("Intermediate")
-                            Text("Advanced").tag("Advanced")
-                        }
-                        .pickerStyle(.inline)
-                    }
-
-                    Section(header: Text("Age")) {
-                        TextField("Enter your age", text: $age)
-                            .keyboardType(.numberPad)
-                    }
-
-                    Button("Submit Quiz") {
-                        quizCompleted = true
-                    }
-                    .disabled(goals.isEmpty || riskTolerance.isEmpty || investingExperience.isEmpty || age.isEmpty)
+                    .padding(.horizontal, PLSpacing.lg)
+                    .padding(.vertical, PLSpacing.lg)
                 }
+                .scrollDismissesKeyboard(.interactively)
             }
         }
-        .padding()
-        .navigationTitle("Investor Quiz")
-        // Pop an alert if user has no budget for investments
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Text("Investor Quiz").font(.headline)
+            }
+        }
+        .tint(PLColor.accent)
         .alert("Add to Budget First", isPresented: $showBudgetMissingAlert) {
             Button("OK", role: .cancel) {}
         } message: {
             Text(budgetMissingMessage)
         }
-}
+    }
     
     // Verify budget contains the required category with a positive amount
     private func precheckBudgetLine() async -> Bool {
@@ -196,6 +400,9 @@ struct InvestmentQuizView: View {
             "riskTolerance": riskTolerance,
             "experience": investingExperience,
             "age": age,
+            "timeHorizon": timeHorizon,
+            "taxPriority": taxPriority,
+            "withdrawalFlexibility": withdrawalFlexibility,
             "account": selectedAccount.apiValue
         ]
         print("Username: " + username)

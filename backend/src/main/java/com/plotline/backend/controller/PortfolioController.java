@@ -107,8 +107,7 @@ public class PortfolioController {
                 System.out.println("No Budget For Investments");
             }
 
-            
-            // Different prompt for Roth IRA
+             // Different prompt for Roth IRA
             String accountHint = (accountType == AccountType.ROTH_IRA)
                 ? """
                     You are constructing a portfolio **for a Roth IRA** (tax-free qualified withdrawals, contributions limited annually).
@@ -119,18 +118,33 @@ public class PortfolioController {
                     Prefer tax efficiency (e.g., broad index ETFs; avoid unnecessary turnover).
                     """;
 
-            // Create prompt
+            
+            // Different prompt for Roth IRA
             String prompt = String.format("""
             Based on the following quiz:
             - Goal: %s
             - Risk Tolerance: %s
             - Experience: %s
             - Age: %s
+            - Time Horizon: %s
+            - Tax vs Flexibility: %s
+            - Withdrawal Flexibility: %s
             - Suggested Monthly Investment: %s
 
             %s
 
-            Recommend a diversified investment portfolio. 
+            Recommend a diversified investment portfolio tailored to the account type and answers above.
+
+            For a Roth IRA:
+            - Assume the money is for long-term retirement (unless the time horizon / withdrawal answers say otherwise).
+            - It's okay to emphasize growth assets and tax-inefficient holdings, since qualified withdrawals are tax-free.
+            - You can tilt more toward stocks for longer horizons and higher risk tolerance.
+
+            For a taxable brokerage account:
+            - Prioritize tax efficiency (broad index ETFs, fewer distributions, avoid unnecessary turnover).
+            - If the user cares more about flexibility or has a short time horizon, keep the allocation more conservative and liquid.
+
+            Use the tax vs flexibility answers to decide how aggressive you are about tax efficiency vs liquidity, and use withdrawal flexibility to determine how much should be in safer / less volatile assets.
 
             IMPORTANT FORMAT REQUIREMENT:  
             Follow **this exact format** for each asset so the app can parse it:
@@ -146,14 +160,16 @@ public class PortfolioController {
 
             Use 4-5 ETFs or stocks max. Do not include full fund names or vary the bullet format. Make it beginner-friendly.
             """,
-            quizData.get("goals"),
-            quizData.get("riskTolerance"),
-            quizData.get("experience"),
-            quizData.get("age"),
-            amountBasis,
-            accountHint
+                quizData.get("goals"),
+                quizData.get("riskTolerance"),
+                quizData.get("experience"),
+                quizData.get("age"),
+                quizData.get("timeHorizon"),
+                quizData.get("taxPriorty"),
+                quizData.get("withdrawalFlexibility"),
+                amountBasis,
+                accountHint
             );
-
 
             String response = openAIService.generateResponsePortfolio(prompt);
 

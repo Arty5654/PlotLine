@@ -143,9 +143,9 @@ struct BudgetSection: View {
                     ActionRow(title: "Create Weekly/Monthly Budget", system: "list.bullet.rectangle.portrait") {
                         BudgetInputView()
                     }
-                    ActionRow(title: "Input Spending for a Time Period", system: "calendar") {
-                        SpendingPeriodView()
-                    }
+//                    ActionRow(title: "Input Spending for a Time Period", system: "calendar") {
+//                        SpendingPeriodView()
+//                    }
                     ActionRow(title: "Track Credit Card Transactions Automatically", system: "creditcard") {
                         PlaidView()
                     }
