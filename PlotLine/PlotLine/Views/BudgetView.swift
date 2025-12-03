@@ -8,6 +8,7 @@
 import SwiftUI
 import Charts
 import Foundation
+import LinkKit
 
 // MARK: - Local tokens (scoped to this file)
 private enum PLColor {
@@ -92,6 +93,7 @@ struct BudgetView: View {
 struct BudgetSection: View {
     @EnvironmentObject var calendarVM: CalendarViewModel
     @State private var chartType = "Weekly" // or "Monthly"
+    @StateObject private var plaidCoordinator = PlaidLinkCoordinator()
 
     private var quizCompleted: Bool {
         UserDefaults.standard.bool(forKey: "budgetQuizCompleted")
@@ -143,15 +145,61 @@ struct BudgetSection: View {
                     ActionRow(title: "Create Weekly/Monthly Budget", system: "list.bullet.rectangle.portrait") {
                         BudgetInputView()
                     }
-//                    ActionRow(title: "Input Spending for a Time Period", system: "calendar") {
-//                        SpendingPeriodView()
-//                    }
-                    ActionRow(title: "Track Credit Card Transactions Automatically", system: "creditcard") {
-                        PlaidView()
+                    Button {
+                        Task { await startPlaidLink() }
+                    } label: {
+                        HStack(spacing: PLSpacing.md) {
+                            Image(systemName: "creditcard").frame(width: 20)
+                            Text("Track Credit Card Transactions Automatically")
+                                .font(.headline)
+                                .foregroundColor(.primary)
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.footnote)
+                                .foregroundColor(PLColor.textSecondary)
+                        }
+                        .padding(.vertical, 10)
+                        .padding(.horizontal, PLSpacing.md)
+                        .background(PLColor.surface)
+                        .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
+                        .overlay(RoundedRectangle(cornerRadius: PLRadius.md).stroke(PLColor.cardBorder))
                     }
                 }
             }
         }
+    }
+    
+    private func startPlaidLink() async {
+        guard let url = URL(string: "http://localhost:8080/api/plaid/link_token?username=\(currentUsername())"),
+              let (data, _) = try? await URLSession.shared.data(from: url),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let linkToken = obj["link_token"] as? String
+        else { print("Failed to fetch link_token"); return }
+
+        await presentPlaidLink(linkToken: linkToken, coordinator: plaidCoordinator) { publicToken, accountIds in
+            Task { await exchange(publicToken: publicToken, selectedAccountIds: accountIds) }
+        }
+    }
+    
+    private func exchange(publicToken: String, selectedAccountIds: [String]) async {
+        guard let url = URL(string: "http://localhost:8080/api/plaid/exchange") else { return }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let payload: [String: Any] = [
+            "username": currentUsername(),
+            "public_token": publicToken,
+            "account_ids": selectedAccountIds
+        ]
+        req.httpBody = try? JSONSerialization.data(withJSONObject: payload)
+        _ = try? await URLSession.shared.data(for: req)
+
+        await MainActor.run { plaidCoordinator.handler = nil }
+    }
+    
+    private func currentUsername() -> String {
+        UserDefaults.standard.string(forKey: "loggedInUsername") ?? "UnknownUser"
     }
 }
 

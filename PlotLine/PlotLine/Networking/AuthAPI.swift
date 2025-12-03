@@ -10,13 +10,13 @@ struct AuthAPI {
 
     static let baseURL = "http://localhost:8080" // replace with localhost
     
-    static func signUp(phone: String, username: String, password: String) async throws -> AuthResponse {
+    static func signUp(phone: String, email: String, username: String, password: String) async throws -> AuthResponse {
         guard let url = URL(string: "\(baseURL)/auth/signup") else {
             throw AuthError.invalidURL
         }
 
         // encode sign up request
-        let requestBody = SignUpRequest(phone: phone, username: username, password: password)
+        let requestBody = SignUpRequest(phone: phone, email: email, username: username, password: password)
         let jsonData = try JSONEncoder().encode(requestBody)
 
         var request = URLRequest(url: url)
@@ -68,12 +68,12 @@ struct AuthAPI {
         return authResponse
     }
     
-    static func googleSignIn(idToken: String, username: String) async throws -> AuthResponse {
+    static func googleSignIn(idToken: String, username: String, email: String) async throws -> AuthResponse {
         guard let url = URL(string: "\(baseURL)/auth/google-signin") else {
             throw AuthError.invalidURL
         }
 
-        let requestBody = GoogleSignInRequest(idToken: idToken, username: username)
+        let requestBody = GoogleSignInRequest(idToken: idToken, username: username, email: email)
         let jsonData = try JSONEncoder().encode(requestBody)
 
         var request = URLRequest(url: url)

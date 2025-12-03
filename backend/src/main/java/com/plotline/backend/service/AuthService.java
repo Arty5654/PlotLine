@@ -4,6 +4,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.bcrypt.BCrypt;
@@ -34,6 +35,7 @@ public class AuthService {
     private final ObjectMapper objectMapper;
     Dotenv dotenv = Dotenv.load();
     private String jwt_secret = dotenv.get("JWT_SECRET_KEY");
+    private static final String EMAIL_INDEX_KEY = "email-index.json";
 
  
     
@@ -48,6 +50,14 @@ public class AuthService {
 
     // check if user exists for username uniqueness and login functions
     public boolean userExists(String username) {
+        return userExistsAnyCase(username);
+    }
+
+    public boolean emailExists(String email) {
+        return emailExistsAnyCase(email);
+    }
+
+    private boolean userExistsStrict(String username) {
         String key = userAccKey(username);
         try {
             s3Client.getObject(GetObjectRequest.builder().bucket(bucketName).key(key).build());
@@ -56,10 +66,18 @@ public class AuthService {
             return false;
         }
     }
+    
+    private boolean userExistsAnyCase(String username) {
+        String norm = normalizeUsername(username);
+        if (userExistsStrict(norm)) return true;
+        if (!norm.equals(username) && userExistsStrict(username)) return true;
+        return false;
+    }
 
     //returns TRUE if user is a google user
     public boolean googleUser(String username) {
-        String key = userAccKey(username);
+        String norm = normalizeUsername(username);
+        String key = userAccKey(norm);
         try {
 
             // Fetch user record from S3
@@ -76,35 +94,48 @@ public class AuthService {
 
             return userRecord.getIsGoogle();
 
-        } catch (Exception e) {
-            return false;
+        } catch (Exception e) { /* fall through to legacy casing */ }
+
+        if (!norm.equals(username)) {
+            try {
+                GetObjectRequest getRequest = GetObjectRequest.builder()
+                        .bucket(bucketName)
+                        .key(userAccKey(username))
+                        .build();
+                ResponseBytes<GetObjectResponse> objectBytes = s3Client.getObjectAsBytes(getRequest);
+                String userJson = new String(objectBytes.asByteArray(), StandardCharsets.UTF_8);
+                S3UserRecord userRecord = objectMapper.readValue(userJson, S3UserRecord.class);
+                return userRecord.getIsGoogle();
+            } catch (Exception ignored) { }
         }
+        return false;
     }
 
     // create new user in s3 bucket
-    public boolean createUser(String phone, String username, String rawPassword, Boolean isGoogle) {
+    public boolean createUser(String phone, String email, String username, String rawPassword, Boolean isGoogle) {
+        String norm = normalizeUsername(username);
+        String normEmail = normalizeEmail(email);
+        if (norm.isBlank() || normEmail.isBlank()) return false;
 
-        if (userExists(username)) {
-            return false;
-        }
+        if (userExistsAnyCase(norm)) return false;
+        if (emailExistsAnyCase(normEmail)) return false;
 
         try {
-            
-
             String hashedPassword = BCrypt.hashpw(rawPassword, BCrypt.gensalt());
 
-            S3UserRecord userRecord = new S3UserRecord(username, phone, hashedPassword, isGoogle, false);
+            S3UserRecord userRecord = new S3UserRecord(norm, phone, normEmail, hashedPassword, isGoogle, false);
             String userJson = objectMapper.writeValueAsString(userRecord);
 
             PutObjectRequest putRequest = PutObjectRequest.builder().
                                         bucket(bucketName).
-                                        key(userAccKey(username)).
+                                        key(userAccKey(norm)).
                                         contentType("application/json").
                                         build();
 
             s3Client.putObject(putRequest, RequestBody.fromString(userJson));
 
-            updateAllUsersList(username);
+            updateAllUsersList(norm);
+            updateEmailIndex(normEmail, norm);
 
             return true;
 
@@ -115,8 +146,14 @@ public class AuthService {
     }
 
     public String userLogin(String username, String rawPassword) {
+        String norm = normalizeUsername(username);
 
-        if (!userExists(username)) {
+        String keyToUse;
+        if (userExists(norm)) {
+            keyToUse = norm;
+        } else if (userExists(username)) {
+            keyToUse = username; // legacy casing
+        } else {
             return "Given username does not exist";
         }
 
@@ -124,7 +161,7 @@ public class AuthService {
             // Fetch user record from S3
             GetObjectRequest getRequest = GetObjectRequest.builder()
                     .bucket(bucketName)
-                    .key(userAccKey(username))
+                    .key(userAccKey(keyToUse))
                     .build();
 
             ResponseBytes<GetObjectResponse> objectBytes = s3Client.getObjectAsBytes(getRequest);
@@ -144,7 +181,7 @@ public class AuthService {
             } else {
                 //incorrect password or google account
 
-                if (googleUser(username)) {
+                if (googleUser(keyToUse)) {
                     return "Please sign in with Google!";
                 }
 
@@ -159,7 +196,13 @@ public class AuthService {
     }
 
     public String changeUserPassword(String username, String oldPassword, String newPassword, String code) {
-        if (!userExists(username)) {
+        String norm = normalizeUsername(username);
+        String keyToUse;
+        if (userExistsStrict(norm)) {
+            keyToUse = norm;
+        } else if (userExistsStrict(username)) {
+            keyToUse = username;
+        } else {
             return "User does not exist";
         }
     
@@ -167,7 +210,7 @@ public class AuthService {
 
             GetObjectRequest getRequest = GetObjectRequest.builder()
                 .bucket(bucketName)
-                .key(userAccKey(username))
+                .key(userAccKey(keyToUse))
                 .build();
     
             ResponseBytes<GetObjectResponse> objectBytes = s3Client.getObjectAsBytes(getRequest);
@@ -217,7 +260,7 @@ public class AuthService {
 
         return JWT.create()
                 .withIssuer("PlotLineApp")
-                .withClaim("username", username)
+                .withClaim("username", normalizeUsername(username))
                 .withIssuedAt(new java.util.Date(currentTime))
                 .withExpiresAt(new java.util.Date(currentTime + jwt_expiry))
                 .sign(com.auth0.jwt.algorithms.Algorithm.HMAC256(jwt_secret));
@@ -258,7 +301,8 @@ public class AuthService {
         }
 
         // append (with dedupe)
-        if (!allUsers.contains(username)) {
+        boolean exists = allUsers.stream().anyMatch(u -> u.equalsIgnoreCase(username));
+        if (!exists) {
             allUsers.add(username);
         }
 
@@ -298,6 +342,78 @@ public class AuthService {
             }
             throw e;
         }
+    }
+
+    public String normalizeUsername(String username) {
+        return username == null ? "" : username.trim().toLowerCase();
+    }
+
+    public String normalizeEmail(String email) {
+        return email == null ? "" : email.trim().toLowerCase();
+    }
+
+    private Map<String, String> loadEmailIndex() throws Exception {
+        try {
+            GetObjectRequest getReq = GetObjectRequest.builder()
+                .bucket(bucketName)
+                .key(EMAIL_INDEX_KEY)
+                .build();
+
+            ResponseInputStream<GetObjectResponse> resp =
+                s3Client.getObject(getReq);
+
+            return objectMapper.readValue(
+                resp,
+                new TypeReference<Map<String, String>>() {}
+            );
+        } catch (S3Exception e) {
+            if (e.statusCode() == 404) {
+                return new java.util.HashMap<>();
+            }
+            throw e;
+        }
+    }
+
+    private void saveEmailIndex(Map<String, String> map) throws Exception {
+        String json = objectMapper.writeValueAsString(map);
+        PutObjectRequest putReq = PutObjectRequest.builder()
+            .bucket(bucketName)
+            .key(EMAIL_INDEX_KEY)
+            .contentType("application/json")
+            .build();
+        s3Client.putObject(putReq, RequestBody.fromString(json));
+    }
+
+    private boolean emailExistsAnyCase(String email) {
+        String norm = normalizeEmail(email);
+        if (norm.isBlank()) return false;
+        try {
+            Map<String, String> index = loadEmailIndex();
+            return index.keySet().stream().anyMatch(e -> e.equalsIgnoreCase(norm));
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private void updateEmailIndex(String email, String username) throws Exception {
+        String normEmail = normalizeEmail(email);
+        Map<String, String> index = loadEmailIndex();
+        index.put(normEmail, username);
+        saveEmailIndex(index);
+    }
+
+    public String usernameForEmail(String email) {
+        String norm = normalizeEmail(email);
+        if (norm.isBlank()) return null;
+        try {
+            Map<String, String> index = loadEmailIndex();
+            for (var e : index.entrySet()) {
+                if (e.getKey().equalsIgnoreCase(norm)) {
+                    return e.getValue();
+                }
+            }
+        } catch (Exception ignored) { }
+        return null;
     }
   
 }

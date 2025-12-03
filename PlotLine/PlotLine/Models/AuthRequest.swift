@@ -8,6 +8,7 @@ import Foundation
 
 struct SignUpRequest: Codable {
     let phone: String
+    let email: String
     let username: String
     let password: String
 }
@@ -38,4 +39,3 @@ struct OTPPasswordRequest: Codable {
     let newPassword: String
     let code: String
 }
-

@@ -3,6 +3,7 @@ package com.plotline.backend.dto;
 public class S3UserRecord {
     private String username;
     private String phone;
+    private String email;
     private String password;
     private Boolean isGoogle;
     private Boolean isVerified;
@@ -10,9 +11,10 @@ public class S3UserRecord {
     public S3UserRecord() {
     }
     
-    public S3UserRecord(String username, String phone, String password, Boolean isGoogle, Boolean isVerified) {
+    public S3UserRecord(String username, String phone, String email, String password, Boolean isGoogle, Boolean isVerified) {
         this.username = username;
         this.phone = phone;
+        this.email = email;
         this.password = password;
         this.isGoogle = isGoogle;
         this.isVerified = isVerified;
@@ -32,6 +34,14 @@ public class S3UserRecord {
     
     public void setPhone(String phone) {
         this.phone = phone;
+    }
+
+    public String getEmail() {
+        return email;
+    }
+
+    public void setEmail(String email) {
+        this.email = email;
     }
     
     public String getPassword() {

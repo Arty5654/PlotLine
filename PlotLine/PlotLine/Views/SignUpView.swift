@@ -80,6 +80,7 @@ struct SignUpView: View {
 
     // State
     @State private var username: String = ""
+    @State private var email: String = ""
     @State private var rawPhone: String = ""        
     @State private var password: String = ""
     @State private var confPassword: String = ""
@@ -108,6 +109,15 @@ struct SignUpView: View {
             ? nil
             : "Enter a valid 10-digit US phone number."
     }
+    
+    private var emailError: String? {
+        guard !email.isEmpty else { return nil }
+        let pattern = #"^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$"#
+        let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
+        let range = NSRange(location: 0, length: email.utf16.count)
+        let match = regex?.firstMatch(in: email, options: [], range: range)
+        return match != nil ? nil : "Enter a valid email address."
+    }
 
     private var passwordError: String? {
         guard !password.isEmpty else { return nil }
@@ -123,10 +133,11 @@ struct SignUpView: View {
     }
     private var canSubmit: Bool {
         phoneError == nil &&
+        emailError == nil &&
         usernameError == nil &&
         passwordError == nil &&
         matchError == nil &&
-        !username.isEmpty && !password.isEmpty && !confPassword.isEmpty
+        !username.isEmpty && !email.isEmpty && !password.isEmpty && !confPassword.isEmpty
     }
 
     var body: some View {
@@ -175,6 +186,18 @@ struct SignUpView: View {
                                 .onSubmit { focusedField = .password }
                         }
                         if let err = usernameError {
+                            FieldError(text: err)
+                        }
+                        
+                        // Email
+                        LabeledField(title: "Email", systemImage: "envelope") {
+                            TextField("you@example.com", text: $email)
+                                .textInputAutocapitalization(.none)
+                                .autocorrectionDisabled()
+                                .keyboardType(.emailAddress)
+                                .submitLabel(.next)
+                        }
+                        if let err = emailError {
                             FieldError(text: err)
                         }
 
@@ -249,6 +272,7 @@ struct SignUpView: View {
                         Button {
                             session.signUp(
                                 phone: rawPhone,
+                                email: email.trimmingCharacters(in: .whitespaces),
                                 username: username.trimmingCharacters(in: .whitespaces),
                                 password: password,
                                 confPassword: confPassword
@@ -306,6 +330,7 @@ struct SignUpView: View {
         if canSubmit {
             session.signUp(
                 phone: rawPhone,
+                email: email.trimmingCharacters(in: .whitespaces),
                 username: username.trimmingCharacters(in: .whitespaces),
                 password: password,
                 confPassword: confPassword

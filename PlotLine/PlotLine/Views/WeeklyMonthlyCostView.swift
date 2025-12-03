@@ -216,7 +216,7 @@ struct WeeklyMonthlyCostView: View {
                 
                 // Monthly Feedback (only when in Monthly mode and we have data)
                 if selectedType == "Monthly", let fb = monthlyFeedback {
-                    MonthlyFeedbackCard(fb: fb)
+                    MonthlyFeedbackCard(fb: fb, budgetHint: budgetTotal)
                         .plCard()
                 }
                 
@@ -1133,6 +1133,9 @@ private struct MonthlyFeedback: Codable {
     let totalPrevious: Double
     let totalDelta: Double
     let deltas: [CategoryDelta]
+    let overBudget: Bool?
+    let monthlyBudget: Double?
+    let cutbacks: [CategoryDelta]?
 }
 
 private struct FeedbackRow: View {
@@ -1152,9 +1155,39 @@ private struct FeedbackRow: View {
 
 private struct MonthlyFeedbackCard: View {
     let fb: MonthlyFeedback
+    let budgetHint: Double?
 
     private var verdictText: String { fb.totalDelta <= 0 ? "You spent less 🎉" : "You spent more" }
     private var verdictColor: Color { fb.totalDelta <= 0 ? PLColor.success : PLColor.danger }
+
+    private var resolvedBudget: Double? {
+        if let b = fb.monthlyBudget { return b }
+        return budgetHint
+    }
+
+    private var overBudgetFlag: Bool? {
+        if let flag = fb.overBudget { return flag }
+        if let budget = resolvedBudget { return fb.totalCurrent > budget }
+        return nil
+    }
+
+    private var overageText: String? {
+        guard overBudgetFlag == true,
+              let budget = resolvedBudget,
+              fb.totalCurrent > budget else { return nil }
+        let over = fb.totalCurrent - budget
+        let saveNext = over / 2.0
+        return "Over budget by \(currency(over)). Aim to save \(currency(saveNext)) next month to get back on pace."
+    }
+
+    private var kudosText: String? {
+        guard overBudgetFlag == false,
+              let budget = resolvedBudget else { return nil }
+        let cushion = max(0, budget - fb.totalCurrent)
+        return cushion > 0
+        ? "Nice work staying on track! You could invest/save an extra \(currency(cushion * 0.4)) next month."
+        : "Nice work staying on track! Consider investing a little extra next month."
+    }
 
     private var currentTotalText: String { String(format: "$%.2f", fb.totalCurrent) }
     private var previousTotalText: String { String(format: "$%.2f", fb.totalPrevious) }
@@ -1190,6 +1223,10 @@ private struct MonthlyFeedbackCard: View {
         let amt = String(format: "$%.0f", abs(eatOut.delta))
         return "👏 Great job eating out less by \(amt)."
     }
+    
+    private var cutbacks: [CategoryDelta] {
+        fb.cutbacks ?? []
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: PLSpacing.sm) {
@@ -1218,6 +1255,29 @@ private struct MonthlyFeedbackCard: View {
                         .foregroundColor(PLColor.textSecondary)
                     Text(previousTotalText)
                         .font(.headline)
+                }
+            }
+
+            if let overageText {
+                Text(overageText)
+                    .font(.subheadline)
+                    .foregroundColor(PLColor.danger)
+            } else if let kudosText {
+                Text(kudosText)
+                    .font(.subheadline)
+                    .foregroundColor(PLColor.success)
+            }
+            
+            if !cutbacks.isEmpty {
+                Divider().padding(.vertical, 2)
+                Text("Suggested cutbacks to catch up:")
+                    .font(.subheadline)
+                ForEach(cutbacks, id: \.category) { d in
+                    FeedbackRow(
+                        label: d.category,
+                        deltaText: "Cut \(currency(d.delta))",
+                        color: PLColor.danger
+                    )
                 }
             }
 
@@ -1257,6 +1317,10 @@ private struct MonthlyFeedbackCard: View {
                     .padding(.top, 4)
             }
         }
+    }
+    
+    private func currency(_ v: Double) -> String {
+        String(format: "$%.0f", v)
     }
 }
 
@@ -1383,4 +1447,3 @@ private struct AccountPickerSheet: View {
         }
     }
 }
-

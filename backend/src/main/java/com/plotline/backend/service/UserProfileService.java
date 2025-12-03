@@ -64,8 +64,14 @@ public class UserProfileService {
     new Trophy("monthly-budget-met", "Monthly Budgetor", "Under monthly budget limit!", 
     0, 0, new int[]{1, 3, 6, 12}, ZonedDateTime.now(ZoneOffset.UTC).format(formatter)),
 
+    new Trophy("budget-pacer", "Budget Pacer", "Kept spending at least 5% under budget for the month!", 
+    0, 0, new int[]{1, 3, 6, 12}, ZonedDateTime.now(ZoneOffset.UTC).format(formatter)),
+
     new Trophy("investing-simple", "Stock Spender", "Invested into the stock market!", 
     0, 0, new int[]{1, 5, 20, 50}, ZonedDateTime.now(ZoneOffset.UTC).format(formatter)),
+
+    new Trophy("investing-streak", "Investor Streak", "Kept investing consistently!", 
+    0, 0, new int[]{2, 4, 8, 12}, ZonedDateTime.now(ZoneOffset.UTC).format(formatter)),
 
     new Trophy("monthly-spending-tracker", "Spending Tracker", "Input Spending data!", 
     0, 0, new int[]{10, 20, 50, 100}, ZonedDateTime.now(ZoneOffset.UTC).format(formatter)),
@@ -76,6 +82,9 @@ public class UserProfileService {
 
     new Trophy("subcription-spender", "Subscription Maxxer", "Has a lot of subscriptions!", 
     0, 0, new int[]{5, 7, 10, 12}, ZonedDateTime.now(ZoneOffset.UTC).format(formatter)),
+
+    new Trophy("healthy-eater", "Healthy Eater", "Shifted spend toward groceries and away from eating out!", 
+    0, 0, new int[]{1, 3, 6, 12}, ZonedDateTime.now(ZoneOffset.UTC).format(formatter)),
 
     new Trophy("watchlist-adder", "Watchful Eye", "Added stocks to the Watchlist!", 
     0, 0, new int[]{3, 10, 20, 50}, ZonedDateTime.now(ZoneOffset.UTC).format(formatter)),

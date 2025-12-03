@@ -3,13 +3,15 @@ package com.plotline.backend.dto;
 public class GoogleSigninRequest {
     private String idToken;
     private String username;
+    private String email;
 
     public GoogleSigninRequest() {
     }
 
-    public GoogleSigninRequest(String idToken, String username) {
+    public GoogleSigninRequest(String idToken, String username, String email) {
         this.idToken = idToken;
         this.username = username;
+        this.email = email;
     }
 
     public String getIdToken() {
@@ -26,5 +28,13 @@ public class GoogleSigninRequest {
 
     public void setUsername(String username) {
         this.username = username;
+    }
+
+    public String getEmail() {
+        return email;
+    }
+
+    public void setEmail(String email) {
+        this.email = email;
     }
 }

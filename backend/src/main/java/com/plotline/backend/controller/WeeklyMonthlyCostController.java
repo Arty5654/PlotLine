@@ -46,6 +46,9 @@ public class WeeklyMonthlyCostController {
     @Autowired
     private OpenAIService openAIService;
 
+    @Autowired
+    private com.plotline.backend.service.UserProfileService userProfileService;
+
     @PostMapping
     public ResponseEntity<String> saveWeeklyMonthlyCosts(@RequestBody WeeklyMonthlyCostRequest request) {
         try {
@@ -420,7 +423,10 @@ public class WeeklyMonthlyCostController {
         double totalCurrent,
         double totalPrevious,
         double totalDelta,         // current - previous
-        java.util.List<CatDelta> deltas
+        java.util.List<CatDelta> deltas,
+        boolean overBudget,
+        Double monthlyBudget,
+        java.util.List<CatDelta> cutbacks
     ) {}
 
     /** Helper: parse "YYYY-MM" and return previous month as "YYYY-MM" */
@@ -480,14 +486,54 @@ public class WeeklyMonthlyCostController {
             totalCur  = round2(totalCur);
             totalPrev = round2(totalPrev);
 
+            double monthlyBudget = totalPrev; // fallback: last month spend as soft budget
+            boolean overBudget = totalCur > monthlyBudget && monthlyBudget > 0;
+
+            // Build cutback suggestions: top overspenders until we cover overage
+            double overAmount = overBudget ? round2(totalCur - monthlyBudget) : 0.0;
+            java.util.List<CatDelta> cutbacks = new java.util.ArrayList<>();
+            if (overBudget && overAmount > 0) {
+                java.util.List<CatDelta> overs = deltas.stream()
+                        .filter(d -> d.delta > 0)
+                        .sorted((a, b) -> Double.compare(b.delta, a.delta))
+                        .toList();
+                double remaining = overAmount;
+                for (CatDelta d : overs) {
+                    double take = Math.min(d.delta, remaining);
+                    cutbacks.add(new CatDelta(d.category, d.current, d.previous, round2(take), d.pct));
+                    remaining = round2(remaining - take);
+                    if (remaining <= 0) break;
+                }
+            }
+
             MonthlyFeedback payload = new MonthlyFeedback(
                 month,
                 prev,
                 totalCur,
                 totalPrev,
                 round2(totalCur - totalPrev),
-                deltas
+                deltas,
+                overBudget,
+                monthlyBudget > 0 ? monthlyBudget : null,
+                cutbacks
             );
+
+            // Trophy hooks: under-budget streak + budget pacing + healthy eating shift
+            try {
+                if (!overBudget && monthlyBudget > 0) {
+                    userProfileService.incrementTrophy(username, "monthly-budget-met", 1);
+                    if (totalCur <= monthlyBudget * 0.95) {
+                        userProfileService.incrementTrophy(username, "budget-pacer", 1);
+                    }
+                }
+                // Healthy eating: eating out down and groceries up versus last month
+                CatDelta eatOut = deltas.stream().filter(d -> d.category.toLowerCase().contains("eat")).findFirst().orElse(null);
+                CatDelta groceries = deltas.stream().filter(d -> d.category.toLowerCase().contains("groc")).findFirst().orElse(null);
+                if (eatOut != null && eatOut.delta < 0 && (groceries == null || groceries.delta >= 0)) {
+                    userProfileService.incrementTrophy(username, "healthy-eater", 1);
+                }
+            } catch (Exception ignore) { /* non-fatal */ }
+
             return ResponseEntity.ok(payload);
         } catch (Exception e) {
             return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));

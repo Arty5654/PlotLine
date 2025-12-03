@@ -37,6 +37,16 @@ public class AuthController {
  
     @PostMapping("/signup")
     public ResponseEntity<AuthResponse> signUp(@RequestBody SignUpRequest request) {
+        String normalized = authService.normalizeUsername(request.getUsername());
+        String normalizedEmail = authService.normalizeEmail(request.getEmail());
+        if (normalized.isBlank()) {
+            return ResponseEntity.ok(new AuthResponse(false, null, "Invalid username"));
+        }
+        if (normalizedEmail.isBlank()) {
+            return ResponseEntity.ok(new AuthResponse(false, null, "Invalid email"));
+        }
+        request.setUsername(normalized);
+        request.setEmail(normalizedEmail);
 
         // if user already exists, return error
 
@@ -48,9 +58,15 @@ public class AuthController {
             AuthResponse response = new AuthResponse(false, null, "User already exists");
             return ResponseEntity.ok(response);
         }
+
+        if (authService.emailExists(request.getEmail())) {
+            AuthResponse response = new AuthResponse(false, null, "Email already exists");
+            return ResponseEntity.ok(response);
+        }
         
         // add user to db
         boolean created = authService.createUser(request.getPhone(), 
+                                                 request.getEmail(),
                                                  request.getUsername(), 
                                                  request.getPassword(),
                                                  false);
@@ -67,6 +83,8 @@ public class AuthController {
 
     @PostMapping("/signin")
     public ResponseEntity<AuthResponse> signIn(@RequestBody SignInRequest request) {
+        String normalized = authService.normalizeUsername(request.getUsername());
+        request.setUsername(normalized);
 
         // if user already exists, return error
         if (!authService.userExists(request.getUsername())) {
@@ -97,7 +115,7 @@ public class AuthController {
     @PostMapping("/google-signin")
     public ResponseEntity<AuthResponse> googleSignIn(@RequestBody GoogleSigninRequest request) {
 
-        String username = request.getUsername();
+        String username = authService.normalizeUsername(request.getUsername());
         String tokenID = request.getIdToken();
 
         try {
@@ -118,15 +136,25 @@ public class AuthController {
 
             GoogleIdToken.Payload payload = idToken.getPayload();
             String googleUserId = payload.getSubject(); // Unique Google User ID
+            String emailFromToken = payload.getEmail();
+            String normalizedEmail = authService.normalizeEmail(emailFromToken);
+            if (normalizedEmail == null || normalizedEmail.isBlank()) {
+                return ResponseEntity.ok(new AuthResponse(false, null, "Email not available from Google"));
+            }
 
             String loginResult = "";
 
             if (!authService.userExists(username)) {
 
+                String owner = authService.usernameForEmail(normalizedEmail);
+                if (owner != null && !owner.equals(username)) {
+                    return ResponseEntity.ok(new AuthResponse(false, null, "Email already exists"));
+                }
+
                 // username does not exist, create new account for google user
                 // using google token as password, encrypting for database
     
-                boolean created = authService.createUser("", username, googleUserId, true);
+                boolean created = authService.createUser("", normalizedEmail, username, googleUserId, true);
                 if (!created) {
                     return ResponseEntity.ok(new AuthResponse(false, null, "Could not create user"));
                 }
@@ -138,6 +166,10 @@ public class AuthController {
     
             } else {
                 // username exists already, try signing the google user back in
+                String owner = authService.usernameForEmail(normalizedEmail);
+                if (owner != null && !owner.equals(username)) {
+                    return ResponseEntity.ok(new AuthResponse(false, null, "Email already exists"));
+                }
     
                 // check if the existing user for this username is google
                 // if not, append a few numbers to username to make it unique

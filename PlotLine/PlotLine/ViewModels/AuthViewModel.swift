@@ -39,13 +39,18 @@ class AuthViewModel: ObservableObject {
         }
     }
     
-    func signUp(phone: String, username: String, password: String, confPassword: String) {
+    func signUp(phone: String, email: String, username: String, password: String, confPassword: String) {
         // clear prev error
         self.signupErrorMessage = nil
         
         // null error checks
-        guard !phone.isEmpty, !username.isEmpty, !password.isEmpty, !confPassword.isEmpty else {
+        guard !phone.isEmpty, !email.isEmpty, !username.isEmpty, !password.isEmpty, !confPassword.isEmpty else {
             self.signupErrorMessage = "Please fill out all fields."
+            return
+        }
+        
+        guard isValidEmail(email) else {
+            self.signupErrorMessage = "Enter a valid email."
             return
         }
         
@@ -74,6 +79,7 @@ class AuthViewModel: ObservableObject {
             do {
                 let response = try await AuthAPI.signUp(
                     phone: phone,
+                    email: email,
                     username: username,
                     password: password
                 )
@@ -161,7 +167,7 @@ class AuthViewModel: ObservableObject {
             
             Task {
                 do {
-                    let response = try await AuthAPI.googleSignIn(idToken: idToken, username: username!)
+                    let response = try await AuthAPI.googleSignIn(idToken: idToken, username: username!, email: email!)
                     //TODO make this use username instead of email
                     
                     if let token = response.token {
@@ -335,6 +341,11 @@ class AuthViewModel: ObservableObject {
         return NSPredicate(format: "SELF MATCHES %@", regex).evaluate(with: username)
     }
     
+    func isValidEmail(_ email: String) -> Bool {
+        let regex = "^[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}$"
+        return NSPredicate(format: "SELF MATCHES[c] %@", regex).evaluate(with: email)
+    }
+    
     //fetch trophies
     func loadTrophies(for username: String) async {
         do {
@@ -346,4 +357,3 @@ class AuthViewModel: ObservableObject {
     }
 
 }
-

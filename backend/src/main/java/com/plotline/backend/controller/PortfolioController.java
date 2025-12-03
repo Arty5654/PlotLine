@@ -185,6 +185,7 @@ public class PortfolioController {
 
             // save trophy progress for making portfolio
             userProfileService.incrementTrophy(username, "llm-investor", 1);
+            userProfileService.incrementTrophy(username, "investing-streak", 1);
 
             return ResponseEntity.ok(response);
 
@@ -298,4 +299,3 @@ public class PortfolioController {
     
 
 }
-
