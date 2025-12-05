@@ -225,6 +225,21 @@ struct ProfileView: View {
                         .foregroundColor(.primary)
                         .clipShape(Capsule())
                     }
+                    
+                    // PAYMENTS
+                    NavigationLink(destination: PaymentView()) {
+                        HStack {
+                            Image(systemName: "creditcard.fill")
+                            Text("Membership & Billing")
+                                .fontWeight(.semibold)
+                        }
+                        .padding(.vertical, 12)
+                        .frame(maxWidth: 300)
+                        .background(Color.blue.opacity(0.15))
+                        .foregroundColor(.blue)
+                        .clipShape(Capsule())
+                    }
+
 
                     // SIGN OUT
                     Button(action: {

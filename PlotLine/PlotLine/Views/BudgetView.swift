@@ -145,6 +145,9 @@ struct BudgetSection: View {
                     ActionRow(title: "Create Weekly/Monthly Budget", system: "list.bullet.rectangle.portrait") {
                         BudgetInputView()
                     }
+                    ActionRow(title: "Compare New Income/Location Budget", system: "arrow.2.squarepath") {
+                        BudgetCompareView()
+                    }
                     Button {
                         Task { await startPlaidLink() }
                     } label: {
