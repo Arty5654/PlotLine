@@ -6,4 +6,6 @@ struct SubscriptionStatus: Codable {
     let trialEndsAt: String?
     let autoRenews: Bool
     let message: String?
+    let graceEndsAt: String?
+    let cancelled: Bool?
 }

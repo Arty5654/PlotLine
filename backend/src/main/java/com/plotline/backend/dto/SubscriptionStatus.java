@@ -6,6 +6,8 @@ public class SubscriptionStatus {
     private String trialEndsAt;   // ISO yyyy-MM-dd, null for lifetime/paid
     private boolean autoRenews;   // true if will convert to paid
     private String message;       // helper copy
+    private String graceEndsAt;   // ISO date for initial free month
+    private boolean cancelled;    // user cancelled auto-renew/plan
 
     public SubscriptionStatus() {}
 
@@ -15,6 +17,16 @@ public class SubscriptionStatus {
         this.trialEndsAt = trialEndsAt;
         this.autoRenews = autoRenews;
         this.message = message;
+    }
+
+    public SubscriptionStatus(String plan, double monthlyPrice, String trialEndsAt, boolean autoRenews, String message, String graceEndsAt, boolean cancelled) {
+        this.plan = plan;
+        this.monthlyPrice = monthlyPrice;
+        this.trialEndsAt = trialEndsAt;
+        this.autoRenews = autoRenews;
+        this.message = message;
+        this.graceEndsAt = graceEndsAt;
+        this.cancelled = cancelled;
     }
 
     public String getPlan() { return plan; }
@@ -31,4 +43,10 @@ public class SubscriptionStatus {
 
     public String getMessage() { return message; }
     public void setMessage(String message) { this.message = message; }
+
+    public String getGraceEndsAt() { return graceEndsAt; }
+    public void setGraceEndsAt(String graceEndsAt) { this.graceEndsAt = graceEndsAt; }
+
+    public boolean isCancelled() { return cancelled; }
+    public void setCancelled(boolean cancelled) { this.cancelled = cancelled; }
 }
