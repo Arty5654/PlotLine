@@ -164,7 +164,7 @@ struct SpendingPeriodView: View {
 
         guard let jsonData = try? JSONSerialization.data(withJSONObject: spendingData) else { return }
 
-        let url = URL(string: "http://localhost:8080/api/spending")!
+        let url = URL(string: "\(BackendConfig.baseURLString)/api/spending")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -184,7 +184,7 @@ struct SpendingPeriodView: View {
 
     // 📡 Fetch Spending Data or Set Default
     private func loadSpendingData() {
-        guard let url = URL(string: "http://localhost:8080/api/spending/\(username)/\(formatDate(startDate))/\(formatDate(endDate))") else {
+        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/spending/\(username)/\(formatDate(startDate))/\(formatDate(endDate))") else {
             print("Invalid URL for spending data")
             return
         }
@@ -233,7 +233,7 @@ struct SpendingPeriodView: View {
 
     // 🗑 Clear Spending & Reset Defaults
     private func clearSpending() {
-        guard let url = URL(string: "http://localhost:8080/api/spending/\(username)/\(formatDate(startDate))/\(formatDate(endDate))") else {
+        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/spending/\(username)/\(formatDate(startDate))/\(formatDate(endDate))") else {
             print("❌ Invalid URL for deleting spending")
             return
         }

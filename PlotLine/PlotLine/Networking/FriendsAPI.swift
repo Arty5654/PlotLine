@@ -9,7 +9,7 @@ import Foundation
 import SwiftUI
 
 struct FriendsAPI {
-    static let baseURL = "http://localhost:8080"
+    static let baseURL = "\(BackendConfig.baseURLString)"
     
     static func createOrUpdateFriendRequest(senderUsername: String, receiverUsername: String, status: String) async throws -> String {
         
@@ -132,6 +132,23 @@ struct FriendsAPI {
 
         // empty fallback
         return []
+    }
+    
+    static func removeFriend(username: String, friendUsername: String) async throws {
+        guard let url = URL(string: "\(baseURL)/friends/remove") else {
+            throw URLError(.badURL)
+        }
+        let payload = FriendRequest(senderUsername: username, receiverUsername: friendUsername, status: "REMOVE")
+        let data = try JSONEncoder().encode(payload)
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.httpBody = data
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let (_, response) = try await URLSession.shared.data(for: req)
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            throw AuthError.serverError
+        }
     }
     
     

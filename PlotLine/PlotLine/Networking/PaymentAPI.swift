@@ -7,7 +7,7 @@ enum PaymentAPIError: Error {
 }
 
 enum PaymentAPI {
-    private static let baseURL = "http://localhost:8080"
+    private static let baseURL = "\(BackendConfig.baseURLString)"
 
     static func fetchStatus(username: String) async throws -> SubscriptionStatus {
         guard let url = URL(string: "\(baseURL)/api/payments/status/\(username)") else {

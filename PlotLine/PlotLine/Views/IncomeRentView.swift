@@ -83,7 +83,7 @@ struct IncomeRentView: View {
     
     // MARK: - Fetch Income & Rent from Database
     private func fetchIncomeData() {
-        guard let url = URL(string: "http://localhost:8080/api/income/\(username)") else {
+        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/income/\(username)") else {
             print("❌ Invalid URL")
             return
         }
@@ -167,7 +167,7 @@ struct IncomeRentView: View {
         
         guard let jsonData = try? JSONSerialization.data(withJSONObject: userIncomeData) else { return }
         
-        let url = URL(string: "http://localhost:8080/api/income")!
+        let url = URL(string: "\(BackendConfig.baseURLString)/api/income")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")

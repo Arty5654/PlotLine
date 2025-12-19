@@ -57,5 +57,15 @@ public class FriendsController {
             return ResponseEntity.status(500).body(null);
         }
     }
-}
 
+    @PostMapping("/remove")
+    public ResponseEntity<String> removeFriend(@RequestBody FriendRequest friendRequest) {
+        try {
+            friendsService.removeFriend(friendRequest.getSenderUsername(), friendRequest.getReceiverUsername());
+            return ResponseEntity.ok("Removed friend");
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.status(500).body("Error removing friend");
+        }
+    }
+}

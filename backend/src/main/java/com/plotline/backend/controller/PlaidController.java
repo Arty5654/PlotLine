@@ -25,7 +25,7 @@ import java.util.Map;
   public Map<String, Object> createLinkToken(@RequestParam String username) throws Exception {
     var user = new LinkTokenCreateRequestUser().clientUserId(username);
 
-    Dotenv dotenv = Dotenv.load();
+    Dotenv dotenv = Dotenv.configure().ignoreIfMissing().load();
     String redirectUri = dotenv.get("PLAID_REDIRECT_URI");
 
     var req = new LinkTokenCreateRequest()
@@ -96,4 +96,3 @@ import java.util.Map;
   }
 
 }
-

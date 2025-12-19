@@ -38,9 +38,14 @@ public class GroceryListService {
         this.userProfileService = userProfileService;
     }
 
+    private String normalize(String username) {
+        return username == null ? "" : username.trim().toLowerCase();
+    }
+
     // Helper function to construct the S3 path for the grocery list items
     private String getS3Path(String username, String listId) {
-        return "users/" + username + "/grocery/lists/" + listId.toUpperCase() + ".json";
+        String normUser = normalize(username);
+        return "users/" + normUser + "/grocery/lists/" + listId.toUpperCase() + ".json";
     }
 
     // Method to fetch a grocery list from S3
@@ -67,8 +72,9 @@ public class GroceryListService {
 
     // Method to check if a grocery list already exists for the user (based on name)
     public boolean doesGroceryListExist(String username, String groceryListName) {
+        String normUser = normalize(username);
         // Construct the S3 key path to check for the existence of the grocery list
-        String s3Path = "users/" + username + "/grocery/lists/";
+        String s3Path = "users/" + normUser + "/grocery/lists/";
 
         // List all objects in the grocery lists folder for the user
         ListObjectsV2Request listObjectsV2Request = ListObjectsV2Request.builder()
@@ -106,8 +112,9 @@ public class GroceryListService {
         ObjectMapper objectMapper = new ObjectMapper();
         String jsonString = objectMapper.writeValueAsString(groceryList);
 
+        String normUser = normalize(username);
         // Use the new path structure
-        String s3Key = "users/" + username + "/grocery/lists/" + groceryListID + ".json";
+        String s3Key = "users/" + normUser + "/grocery/lists/" + groceryListID + ".json";
 
         // Create a PutObjectRequest with the bucket name, S3 key, and content
         PutObjectRequest putObjectRequest = PutObjectRequest.builder()
@@ -117,7 +124,7 @@ public class GroceryListService {
         s3Client.putObject(putObjectRequest, RequestBody.fromBytes(jsonString.getBytes()));
 
         // Update the user's trophy progress for creating a grocery list
-        userProfileService.incrementTrophy(username, "grocery-lists", 1);
+        userProfileService.incrementTrophy(normUser, "grocery-lists", 1);
 
         return groceryListID;  // Return the key of the uploaded object (i.e., the S3 file path)
     }
@@ -126,8 +133,9 @@ public class GroceryListService {
     public List<GroceryList> getGroceryListsForUser(String username) throws IOException {
         List<GroceryList> groceryLists = new ArrayList<>();
 
+        String normUser = normalize(username);
         // Construct the S3 key path to list all grocery lists for the user
-        String s3Path = "users/" + username + "/grocery/lists/";
+        String s3Path = "users/" + normUser + "/grocery/lists/";
 
         // List all objects in the grocery lists folder for the user
         ListObjectsV2Request listObjectsV2Request = ListObjectsV2Request.builder()
@@ -156,8 +164,9 @@ public class GroceryListService {
 
     public List<GroceryItem> getItems(String username, String listId) {
     try {
+        String normUser = normalize(username);
         // Construct the exact S3 key path
-        String s3Path = getS3Path(username, listId);
+        String s3Path = getS3Path(normUser, listId);
 
         // Get the grocery list from S3
         GetObjectRequest getObjectRequest = GetObjectRequest.builder()
@@ -183,8 +192,9 @@ public class GroceryListService {
     // Add an item to the grocery list in S3
     public boolean addItem(String username, String listId, GroceryItem item) {
         try {
+            String normUser = normalize(username);
             // Get the existing grocery list from S3
-            GroceryList groceryList = getGroceryList(username, listId);
+            GroceryList groceryList = getGroceryList(normUser, listId);
 
             if (groceryList == null) {
                 return false;
@@ -201,7 +211,7 @@ public class GroceryListService {
             String updatedListJson = objectMapper.writeValueAsString(groceryList);
 
             // Get the S3 path to store the updated grocery list
-            String s3Path = getS3Path(username, listId);
+            String s3Path = getS3Path(normUser, listId);
 
             // Upload the updated grocery list back to S3
             PutObjectRequest putObjectRequest = PutObjectRequest.builder()
@@ -222,7 +232,8 @@ public class GroceryListService {
     public boolean deleteItem(String username, String listId, String itemId) {
         try {
             // Fetch the existing grocery list from S3
-            GroceryList groceryList = getGroceryList(username, listId);
+            String normUser = normalize(username);
+            GroceryList groceryList = getGroceryList(normUser, listId);
 
             if (groceryList == null) {
                 return false;
@@ -240,7 +251,7 @@ public class GroceryListService {
                 String updatedListJson = objectMapper.writeValueAsString(groceryList);
 
                 // Get the S3 path to store the updated grocery list
-                String s3Path = getS3Path(username, listId);
+                String s3Path = getS3Path(normUser, listId);
 
                 // Upload the updated grocery list back to S3
                 PutObjectRequest putObjectRequest = PutObjectRequest.builder()
@@ -263,8 +274,9 @@ public class GroceryListService {
     // Backend function to toggle the checked status of a grocery item
     public boolean toggleChecked(String username, String listId, String itemId) {
         try {
+            String normUser = normalize(username);
             // Fetch the grocery list from S3
-            GroceryList groceryList = getGroceryList(username, listId);
+            GroceryList groceryList = getGroceryList(normUser, listId);
 
             if (groceryList == null) {
                 return false;
@@ -281,7 +293,7 @@ public class GroceryListService {
                 groceryList.setUpdatedAt(new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'").format(new Date()));  // Update the timestamp
 
                 // Serialize the updated grocery list back to JSON
-                String s3Path = getS3Path(username, listId);
+                String s3Path = getS3Path(normUser, listId);
                 String updatedListJson = objectMapper.writeValueAsString(groceryList);
 
                 // Upload the updated list back to S3
@@ -305,8 +317,9 @@ public class GroceryListService {
     // Method to update the item order in the grocery list
     public boolean updateItemOrder(String username, String listId, List<GroceryItem> reorderedItems) throws IOException {
         try {
+            String normUser = normalize(username);
             // Fetch the grocery list from S3
-            GroceryList groceryList = getGroceryList(username, listId);
+            GroceryList groceryList = getGroceryList(normUser, listId);
 
             if (groceryList == null) {
                 return false;
@@ -323,7 +336,7 @@ public class GroceryListService {
             String updatedListJson = objectMapper.writeValueAsString(groceryList);
 
             // Upload the updated grocery list back to S3
-            String s3Path = getS3Path(username, listId);
+            String s3Path = getS3Path(normUser, listId);
             PutObjectRequest putObjectRequest = PutObjectRequest.builder()
                     .bucket(BUCKET_NAME)
                     .key(s3Path)
@@ -340,8 +353,9 @@ public class GroceryListService {
     // Method to update an items information in the grocery list
     public boolean updateItemDetails(String username, String listId, GroceryItem updatedItem) {
         try {
+            String normUser = normalize(username);
             // Fetch the grocery list from S3
-            GroceryList groceryList = getGroceryList(username, listId);
+            GroceryList groceryList = getGroceryList(normUser, listId);
 
             if (groceryList == null) {
                 return false;
@@ -368,7 +382,7 @@ public class GroceryListService {
             String updatedListJson = objectMapper.writeValueAsString(groceryList);
 
             // Upload the updated grocery list back to S3
-            String s3Path = getS3Path(username, listId);
+            String s3Path = getS3Path(normUser, listId);
             PutObjectRequest putObjectRequest = PutObjectRequest.builder()
                     .bucket(BUCKET_NAME)
                     .key(s3Path)
@@ -395,9 +409,10 @@ public class GroceryListService {
         ObjectMapper objectMapper = new ObjectMapper();
         String jsonString = objectMapper.writeValueAsString(groceryList);
 
+        String normUser = normalize(username);
         // Define the source and destination S3 keys
-        String sourceKey = "users/" + username + "/grocery/lists/" + groceryListID + ".json";
-        String destinationKey = "users/" + username + "/grocery/archived/" + groceryListID + ".json";
+        String sourceKey = "users/" + normUser + "/grocery/lists/" + groceryListID + ".json";
+        String destinationKey = "users/" + normUser + "/grocery/archived/" + groceryListID + ".json";
 
         // Copy the grocery list from the original folder to the archived folder
         try {
@@ -426,8 +441,9 @@ public class GroceryListService {
     public List<GroceryList> getArchivedGroceryLists(String username) throws IOException {
         List<GroceryList> archivedLists = new ArrayList<>();
 
+        String normUser = normalize(username);
         // Construct the S3 key path to list all archived grocery lists for the user
-        String s3Path = "users/" + username + "/grocery/archived/";
+        String s3Path = "users/" + normUser + "/grocery/archived/";
 
         // List all objects in the archived grocery lists folder for the user
         ListObjectsV2Request listObjectsV2Request = ListObjectsV2Request.builder()
@@ -470,9 +486,10 @@ public class GroceryListService {
         ObjectMapper objectMapper = new ObjectMapper();
         String jsonString = objectMapper.writeValueAsString(groceryList);
 
+        String normUser = normalize(username);
         // Define the source and destination S3 keys
-        String sourceKey = "users/" + username + "/grocery/archived/" + groceryListID + ".json";
-        String destinationKey = "users/" + username + "/grocery/lists/" + groceryListID + ".json";
+        String sourceKey = "users/" + normUser + "/grocery/archived/" + groceryListID + ".json";
+        String destinationKey = "users/" + normUser + "/grocery/lists/" + groceryListID + ".json";
 
         // Copy the grocery list from the archived folder to the original folder
         try {

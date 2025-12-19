@@ -7,6 +7,9 @@
 
 import SwiftUI
 import Charts
+#if canImport(UIKit)
+import UIKit
+#endif
 
 struct FMPSearchResult: Decodable, Identifiable {
     var id: String { symbol + (exchange ?? "") }
@@ -98,10 +101,12 @@ struct WatchlistView: View {
                     }
                     .onSubmit {
                         addSymbolToWatchlist()
+                        hideKeyboard()
                     }
 
                 Button("Add") {
                     addSymbolToWatchlist()
+                    hideKeyboard()
                 }
                 .disabled(newSymbol.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
@@ -120,6 +125,7 @@ struct WatchlistView: View {
                             newSymbol = item.symbol
                             suggestions = []
                             addSymbolToWatchlist()
+                            hideKeyboard()
                         } label: {
                             HStack(spacing: 8) {
                                 Text(item.symbol).bold()
@@ -167,6 +173,7 @@ struct WatchlistView: View {
         .onTapGesture {
             // Dismiss suggestions when tapping outside
             suggestions = []
+            hideKeyboard()
         }
         .onAppear {
             fetchWatchlist()
@@ -175,7 +182,7 @@ struct WatchlistView: View {
 
     // MARK: - Networking: watchlist CRUD
     func fetchWatchlist() {
-        guard let url = URL(string: "http://localhost:8080/api/watchlist/\(username)") else { return }
+        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/watchlist/\(username)") else { return }
 
         URLSession.shared.dataTask(with: url) { data, _, _ in
             if let data = data,
@@ -190,7 +197,7 @@ struct WatchlistView: View {
     func addSymbolToWatchlist() {
         let symbol = newSymbol.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
         guard !symbol.isEmpty,
-              let url = URL(string: "http://localhost:8080/api/watchlist/add")
+              let url = URL(string: "\(BackendConfig.baseURLString)/api/watchlist/add")
         else { return }
 
         let payload = ["username": username, "symbol": symbol]
@@ -211,7 +218,7 @@ struct WatchlistView: View {
     }
 
     func removeSymbolFromWatchlist(_ symbol: String) {
-        guard let url = URL(string: "http://localhost:8080/api/watchlist/remove") else { return }
+        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/watchlist/remove") else { return }
 
         let payload = ["username": username, "symbol": symbol]
         guard let jsonData = try? JSONEncoder().encode(payload) else { return }
@@ -255,14 +262,31 @@ struct WatchlistView: View {
                 return allowed.contains(ex)
             }
 
+            let baseList: [FMPSearchResult]
+            if filtered.isEmpty {
+                // fallback: use raw results (free tier sometimes returns alt exchanges)
+                baseList = results
+            } else {
+                baseList = filtered
+            }
+
             // de-dupe by symbol and cap
-            let unique = Dictionary(grouping: filtered, by: { $0.symbol })
+            let unique = Dictionary(grouping: baseList, by: { $0.symbol })
                 .values.compactMap { $0.first }
             completion(Array(unique.prefix(20)))
         }.resume()
     }
 
 }
+
+#if canImport(UIKit)
+private extension View {
+    func hideKeyboard() {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
+                                        to: nil, from: nil, for: nil)
+    }
+}
+#endif
 
 // MARK: - Stock chart using FMP
 struct StockGraphView: View {

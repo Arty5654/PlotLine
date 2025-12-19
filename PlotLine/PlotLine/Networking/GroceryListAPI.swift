@@ -9,7 +9,7 @@ import Foundation
 import SwiftUI
 
 struct GroceryListAPI {
-    static let baseURL = "http://localhost:8080/api/groceryLists" // Replace with your actual backend URL
+    static let baseURL = "\(BackendConfig.baseURLString)/api/groceryLists" // Replace with your actual backend URL
     
     // Function to create a new grocery list with the username
     static func createGroceryList(name: String) async throws -> String {

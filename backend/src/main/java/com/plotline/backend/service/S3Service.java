@@ -19,7 +19,7 @@ public class S3Service {
   private final UserProfileService userProfileService;
 
   public S3Service(UserProfileService userProfileService) {
-    Dotenv dotenv = Dotenv.load(); // Load .env file
+    Dotenv dotenv = Dotenv.configure().ignoreIfMissing().load(); // Load .env file (ignore if absent)
     String accessKey = dotenv.get("AWS_ACCESS_KEY_ID");
     String secretKey = dotenv.get("AWS_SECRET_ACCESS_KEY");
     String region = dotenv.get("AWS_REGION");

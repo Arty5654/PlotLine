@@ -8,6 +8,9 @@
 import SwiftUI
 import Foundation
 import UserNotifications
+#if canImport(UIKit)
+import UIKit
+#endif
 
 // MARK: - Minimal Design Tokens (self-contained for now)
 private enum PLColor {
@@ -59,7 +62,7 @@ private struct PrimaryButton: ButtonStyle {
 
 // MARK: - View
 struct WeeklyMonthlyCostView: View {
-    @State private var selectedType = UserDefaults.standard.string(forKey: "selectedType") ?? "Weekly"
+    @State private var selectedType = "Weekly"
     @State private var costItems: [BudgetItem] = []
     @State private var budgetLimits: [String: Double] = [:]
     @State private var newCategory: String = ""
@@ -215,9 +218,20 @@ struct WeeklyMonthlyCostView: View {
                 .plCard()
                 
                 // Monthly Feedback (only when in Monthly mode and we have data)
-                if selectedType == "Monthly", let fb = monthlyFeedback {
-                    MonthlyFeedbackCard(fb: fb, budgetHint: budgetTotal)
+                if selectedType == "Monthly" {
+                    if let fb = monthlyFeedback {
+                        MonthlyFeedbackCard(fb: fb, budgetHint: budgetTotal)
+                            .plCard()
+                    } else {
+                        VStack(alignment: .leading, spacing: PLSpacing.sm) {
+                            Text("Feedback")
+                                .font(.headline)
+                            Text("Need more data — complete a full month first.")
+                                .font(.subheadline)
+                                .foregroundColor(PLColor.textSecondary)
+                        }
                         .plCard()
+                    }
                 }
                 
                 // Input list (custom rows instead of List to avoid nested scroll + zoomy look)
@@ -330,6 +344,7 @@ struct WeeklyMonthlyCostView: View {
             .padding(.horizontal, PLSpacing.lg)
             .padding(.vertical, PLSpacing.lg)
             .scrollDismissesKeyboard(.interactively)
+            .onTapGesture { hideKeyboard() }
         }
         //.navigationTitle("\(selectedType) Cost Input")
         .navigationBarTitleDisplayMode(.inline)
@@ -337,6 +352,10 @@ struct WeeklyMonthlyCostView: View {
             ToolbarItem(placement: .principal) {
                 Text("\(selectedType) Cost Input")
                     .font(.headline)
+            }
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") { hideKeyboard() }
             }
         }
         .tint(PLColor.accent)
@@ -346,6 +365,14 @@ struct WeeklyMonthlyCostView: View {
                 message: Text(a.message),
                 dismissButton: .default(Text("OK"))
             )
+        }
+        .onAppear {
+            selectedType = "Weekly" // default to weekly each time page opens
+            rebuildWeek(for: selectedDay)
+            loadWeeklyPeriod(for: selectedDay)
+            loadBudgetLimits()
+            loadSavedData()
+            fetchTakeHomeMonthly()
         }
         
         .sheet(isPresented: $showCategorizer, onDismiss: {
@@ -456,7 +483,7 @@ struct WeeklyMonthlyCostView: View {
         ]
         guard let data = try? JSONSerialization.data(withJSONObject: payload) else { completion(false); return }
         
-        var req = URLRequest(url: URL(string: "http://localhost:8080/api/costs/merge-dated")!)
+        var req = URLRequest(url: URL(string: "\(BackendConfig.baseURLString)/api/costs/merge-dated")!)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = data
@@ -506,7 +533,7 @@ struct WeeklyMonthlyCostView: View {
     
     // MARK: - Budget Limits + Costs
     private func loadBudgetLimits() {
-        let urlString = "http://localhost:8080/api/budget/\(username)/\(selectedType.lowercased())"
+        let urlString = "\(BackendConfig.baseURLString)/api/budget/\(username)/\(selectedType.lowercased())"
         guard let url = URL(string: urlString) else { return }
         
         URLSession.shared.dataTask(with: url) { data, _, error in
@@ -543,7 +570,7 @@ struct WeeklyMonthlyCostView: View {
         
         // MONTHLY: read the period file and show totals
         let monthStr = monthYYYYMM(from: selectedDay)
-        let urlString = "http://localhost:8080/api/costs/monthly/\(username)?month=\(monthStr)"
+        let urlString = "\(BackendConfig.baseURLString)/api/costs/monthly/\(username)?month=\(monthStr)"
         guard let url = URL(string: urlString) else { return }
         
         URLSession.shared.dataTask(with: url) { data, _, error in
@@ -614,7 +641,7 @@ struct WeeklyMonthlyCostView: View {
     }
     
     private func fetchSubscriptions() {
-        let urlString = "http://localhost:8080/api/subscriptions/\(username)"
+        let urlString = "\(BackendConfig.baseURLString)/api/subscriptions/\(username)"
         guard let url = URL(string: urlString) else { return }
         
         URLSession.shared.dataTask(with: url) { data, _, error in
@@ -644,7 +671,7 @@ struct WeeklyMonthlyCostView: View {
     }
     
     private func deleteSubscription(subscription: SubscriptionItem) {
-        let urlString = "http://localhost:8080/api/subscriptions/\(username)/\(subscription.name)"
+        let urlString = "\(BackendConfig.baseURLString)/api/subscriptions/\(username)/\(subscription.name)"
         guard let url = URL(string: urlString) else { return }
         var request = URLRequest(url: url)
         request.httpMethod = "DELETE"
@@ -674,7 +701,7 @@ struct WeeklyMonthlyCostView: View {
         let payload = SubscriptionUpload(username: username, subscriptions: dict)
         guard let json = try? JSONEncoder().encode(payload) else { return }
         
-        var request = URLRequest(url: URL(string: "http://localhost:8080/api/subscriptions")!)
+        var request = URLRequest(url: URL(string: "\(BackendConfig.baseURLString)/api/subscriptions")!)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = json
@@ -722,7 +749,7 @@ struct WeeklyMonthlyCostView: View {
     
     // MARK: - Income
     private func fetchTakeHomeMonthly() {
-        guard let url = URL(string: "http://localhost:8080/api/llm/budget/last/\(username)") else { return }
+        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/llm/budget/last/\(username)") else { return }
         URLSession.shared.dataTask(with: url) { data, _, _ in
             guard let data = data,
                   let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
@@ -761,11 +788,13 @@ struct WeeklyMonthlyCostView: View {
                         .font(.caption2)
                         .foregroundColor(PLColor.textSecondary)
                     Text(d.monthDay())
-                        .font(.caption2)
+                        //.font(.caption2)
+                        .font(.system(.body, design: .default))
+                        .minimumScaleFactor(0.5)
                     //.bold()
                         .foregroundColor(PLColor.textPrimary)
                 }
-                .frame(width: 26, height: 26)
+                .frame(width: 24, height: 24)
                 .padding(.vertical, 2)
                 .padding(.horizontal, 2)
                 .background(isSelected ? PLColor.accent.opacity(0.12) : Color.clear)
@@ -793,7 +822,7 @@ struct WeeklyMonthlyCostView: View {
     
     private func loadWeeklyPeriod(for anyDate: Date) {
         let weekStart = Calendar.current.startOfWeek(for: anyDate).ymd()
-        let urlStr = "http://localhost:8080/api/costs/weekly/\(username)?week_start=\(weekStart)"
+        let urlStr = "\(BackendConfig.baseURLString)/api/costs/weekly/\(username)?week_start=\(weekStart)"
         guard let url = URL(string: urlStr) else { return }
         
         URLSession.shared.dataTask(with: url) { data, _, error in
@@ -825,7 +854,7 @@ struct WeeklyMonthlyCostView: View {
     // Feedback
     private func fetchMonthlyFeedback(for date: Date) {
         let monthStr = monthYYYYMM(from: date)
-        guard let url = URL(string: "http://localhost:8080/api/costs/feedback/\(username)?month=\(monthStr)")
+        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/costs/feedback/\(username)?month=\(monthStr)")
         else { return }
         
         URLSession.shared.dataTask(with: url) { data, _, _ in
@@ -845,7 +874,7 @@ struct WeeklyMonthlyCostView: View {
             self.showAccountPicker = true
         }
         
-        guard let url = URL(string: "http://localhost:8080/api/plaid/accounts?username=\(username)") else { return }
+        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/plaid/accounts?username=\(username)") else { return }
         do {
             let (data, resp) = try await URLSession.shared.data(from: url)
             if let http = resp as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
@@ -874,7 +903,7 @@ struct WeeklyMonthlyCostView: View {
     
     // Call sync with selected accounts
     private func syncSelectedAccounts() async {
-        guard let url = URL(string: "http://localhost:8080/api/plaid/sync") else { return }
+        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/plaid/sync") else { return }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -919,7 +948,7 @@ struct WeeklyMonthlyCostView: View {
     
     // Send assignments to backend
     private func submitAssignments() async {
-        guard let url = URL(string: "http://localhost:8080/api/costs/assign") else { return }
+        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/costs/assign") else { return }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -1387,6 +1416,14 @@ struct AssignPayload: Codable {
     let username: String
     let assignments: [CategoryAssignment]
 }
+
+#if canImport(UIKit)
+private extension View {
+    func hideKeyboard() {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+    }
+}
+#endif
 
 private struct AccountPickerSheet: View {
     @Binding var accounts: [PlaidAccount]

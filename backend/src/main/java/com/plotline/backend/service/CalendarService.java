@@ -19,6 +19,8 @@ import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
+import static com.plotline.backend.util.UsernameUtils.normalize;
+
 @Service
 public class CalendarService {
 
@@ -37,7 +39,7 @@ public class CalendarService {
     // get all events for the user
     public List<EventDto> getEvents(String username) {
         try {
-            String key = "users/" + username + "/calendar.json";
+            String key = "users/" + normalize(username) + "/calendar.json";
 
             GetObjectRequest getRequest = GetObjectRequest.builder()
                 .bucket(bucketName)
@@ -61,7 +63,8 @@ public class CalendarService {
     public EventDto createEvent(EventDto newEvent, String username) throws Exception {
         lock.lock(); // Ensure no race conditions
         try {
-            List<EventDto> existingEvents = getEvents(username);
+            String normUser = normalize(username);
+            List<EventDto> existingEvents = getEvents(normUser);
 
             System.out.println(username + " is creating event: " + newEvent.getTitle());
 
@@ -74,12 +77,12 @@ public class CalendarService {
             
             
             // Event planner (creating calendar events) Trophy
-            userProfileService.incrementTrophy(username, "calendar-events-created", 1);
+            userProfileService.incrementTrophy(normUser, "calendar-events-created", 1);
 
             // add to each friend's calendar
             if (newEvent.getInvitedFriends() != null && !newEvent.getInvitedFriends().isEmpty()) {
                 for (String friend : newEvent.getInvitedFriends()) {
-                    List<EventDto> friendEvents = getEvents(friend);
+                    List<EventDto> friendEvents = getEvents(normalize(friend));
 
                     EventDto friendEvent = new EventDto(
                         newEvent.getId(),
@@ -92,17 +95,17 @@ public class CalendarService {
                         List.of(username)  // event creator is the only invited friend for invited users
                     );
                     friendEvents.add(friendEvent);
-                    saveEventsToS3(friend, friendEvents);                  
+                    saveEventsToS3(normalize(friend), friendEvents);                  
                 }
 
                 newEvent.getInvitedFriends().add("c-123-creator-user-c-987"); // add a unique 'creator' friend so it deletes correctly
                 // Trophy for inviting friends to calendar events
-                userProfileService.incrementTrophy(username, "friends-invited", newEvent.getInvitedFriends().size() - 1);
+                userProfileService.incrementTrophy(normUser, "friends-invited", newEvent.getInvitedFriends().size() - 1);
             }
 
             existingEvents.add(newEvent);
             // write to s3
-            saveEventsToS3(username, existingEvents);
+            saveEventsToS3(normUser, existingEvents);
 
             return newEvent;
         } finally {
@@ -285,4 +288,3 @@ public class CalendarService {
     }
   
 }
-

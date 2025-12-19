@@ -11,7 +11,7 @@ class DietaryRestrictionsAPI {
     
     static let shared = DietaryRestrictionsAPI()  // Singleton instance
     
-    private let baseURL = "http://localhost:8080/api/dietary-restrictions"  // Replace with your actual server URL
+    private let baseURL = "\(BackendConfig.baseURLString)/api/dietary-restrictions"  // Replace with your actual server URL
     
     // Method to fetch dietary restrictions
     func getDietaryRestrictions(username: String, completion: @escaping (Result<DietaryRestrictions, Error>) -> Void) {

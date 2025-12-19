@@ -30,10 +30,14 @@ public class DietaryRestrictionsService {
         this.s3Client = s3Client;
     }
 
+    private String normalize(String username) {
+        return username == null ? "" : username.trim().toLowerCase();
+    }
+
     // Get dietary restrictions for the given user
     public DietaryRestrictions getDietaryRestrictions(String username) {
         try {
-            String key = String.format(DIETARY_RESTRICTIONS_PATH, username);
+            String key = String.format(DIETARY_RESTRICTIONS_PATH, normalize(username));
 
             // Build the GetObjectRequest to retrieve the dietary restrictions JSON file
             GetObjectRequest getObjectRequest = GetObjectRequest.builder()
@@ -55,7 +59,7 @@ public class DietaryRestrictionsService {
     // Update dietary restrictions for the given user
     public void updateDietaryRestrictions(String username, DietaryRestrictions dietaryRestrictions) {
         try {
-            String key = String.format(DIETARY_RESTRICTIONS_PATH, username);
+            String key = String.format(DIETARY_RESTRICTIONS_PATH, normalize(username));
 
             // Convert the DietaryRestrictions object to JSON string
             String dietaryRestrictionsJson = objectMapper.writeValueAsString(dietaryRestrictions);

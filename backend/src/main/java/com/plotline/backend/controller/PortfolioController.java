@@ -5,6 +5,7 @@ import com.plotline.backend.dto.SavedPortfolio;
 import com.plotline.backend.dto.SavedPortfolio.AccountType;
 import com.plotline.backend.service.S3Service;
 import com.plotline.backend.service.UserProfileService;
+import static com.plotline.backend.util.UsernameUtils.normalize;
 
 import org.apache.http.HttpStatus;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -47,7 +48,7 @@ public class PortfolioController {
     @PostMapping("/portfolio")
     public ResponseEntity<String> generatePortfolio(@RequestBody Map<String, String> quizData) {
         try {
-            String username = quizData.get("username");
+            String username = normalize(quizData.get("username"));
             AccountType accountType = AccountType.fromString(quizData.get("account"));
 
             // Delete original portfilio if user takes the quiz again
@@ -223,7 +224,7 @@ public class PortfolioController {
             if (portfolio.getAccount() == null) {
                 portfolio.setAccount(SavedPortfolio.AccountType.BROKERAGE);
             }
-            portfolioService.saveOriginalPortfolio(portfolio.getUsername(), portfolio.getAccount(), portfolio);
+            portfolioService.saveOriginalPortfolio(normalize(portfolio.getUsername()), portfolio.getAccount(), portfolio);
             return ResponseEntity.ok("Original portfolio saved");
         } catch (Exception e) {
             return ResponseEntity.status(500).body("Failed to save original portfolio: " + e.getMessage());
@@ -238,7 +239,7 @@ public class PortfolioController {
             if (newPortfolio.getAccount() == null) {
                 newPortfolio.setAccount(SavedPortfolio.AccountType.BROKERAGE);
             }
-            portfolioService.saveEditedPortfolio(newPortfolio.getUsername(), newPortfolio.getAccount(), newPortfolio);
+            portfolioService.saveEditedPortfolio(normalize(newPortfolio.getUsername()), newPortfolio.getAccount(), newPortfolio);
             return ResponseEntity.ok("Edited portfolio saved.");
         } catch (Exception e) {
             e.printStackTrace();
@@ -248,14 +249,15 @@ public class PortfolioController {
 
     @GetMapping("/portfolio/{username}")
     public ResponseEntity<SavedPortfolio> getPortfolio(@PathVariable String username, @RequestParam(name="account", defaultValue="BROKERAGE") AccountType account) {
-        SavedPortfolio edited = portfolioService.loadEditedPortfolio(username, account);
+        String normUser = normalize(username);
+        SavedPortfolio edited = portfolioService.loadEditedPortfolio(normUser, account);
         System.out.println("Edited: " + edited);
         
         if (edited != null) {
             return ResponseEntity.ok(edited);
         } else {
             // Fallback to original if edited doesn't exist
-            SavedPortfolio original = portfolioService.loadOriginalPortfolio(username, account);
+            SavedPortfolio original = portfolioService.loadOriginalPortfolio(normUser, account);
             if (original != null) {
                 //System.out.println("Here??");
                 return ResponseEntity.ok(original);
@@ -267,25 +269,27 @@ public class PortfolioController {
 
     @PostMapping("/portfolio/revert/{username}")
     public ResponseEntity<String> revertToOriginal(@PathVariable String username, @RequestParam(name = "account", defaultValue = "BROKERAGE") AccountType account) {
-        SavedPortfolio original = portfolioService.loadOriginalPortfolio(username, account);
+        String normUser = normalize(username);
+        SavedPortfolio original = portfolioService.loadOriginalPortfolio(normUser, account);
         if (original == null) {
             return ResponseEntity.status(404).body("Original portfolio not found");
         }
-        portfolioService.saveEditedPortfolio(username, account, original);
+        portfolioService.saveEditedPortfolio(normUser, account, original);
         // Clean up old edited portfolio
-        portfolioService.deleteEditedPortfolio(username, account);
+        portfolioService.deleteEditedPortfolio(normUser, account);
         return ResponseEntity.ok("Reverted to original portfolio");
     }
 
     // For Stock News
     @GetMapping("/portfolio/risk/{username}")
     public ResponseEntity<String> getRiskTolerance(@PathVariable String username, @RequestParam(name = "account", defaultValue = "BROKERAGE") AccountType account) {
+        String normUser = normalize(username);
         // Try to load the edited portfolio first
-        SavedPortfolio portfolio = portfolioService.loadEditedPortfolio(username, account);
+        SavedPortfolio portfolio = portfolioService.loadEditedPortfolio(normUser, account);
     
         // If no edited portfolio or risk is invalid, try to load the original
         if (portfolio == null || portfolio.getRiskTolerance() == null || portfolio.getRiskTolerance().equalsIgnoreCase("Edited")) {
-            portfolio = portfolioService.loadOriginalPortfolio(username, account);
+            portfolio = portfolioService.loadOriginalPortfolio(normUser, account);
     
             // If still null or invalid, return default
             if (portfolio == null || portfolio.getRiskTolerance() == null) {

@@ -29,5 +29,7 @@
 	<string>$(NEWS_KEY)</string>
 	<key>StockKey</key>
 	<string>$(STOCK_KEY)</string>
+	<key>BACKEND_BASE_URL</key>
+	<string>https://backend-small-dream-2434.fly.dev</string>
 </dict>
 </plist>

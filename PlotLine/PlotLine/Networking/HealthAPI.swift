@@ -8,7 +8,7 @@
 import SwiftUI
 
 class HealthAPI {
-    private let baseURL = "http://localhost:8080/api/health"
+    private let baseURL = "\(BackendConfig.baseURLString)/api/health"
     
     // Helper to get Sunday date string for a given date
     private func getSundayKeyForDate(_ date: Date) -> String {

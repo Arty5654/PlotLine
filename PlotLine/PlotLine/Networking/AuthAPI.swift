@@ -8,7 +8,8 @@ import Foundation
 
 struct AuthAPI {
 
-    static let baseURL = "http://localhost:8080" // replace with localhost
+    // Point the app to the deployed backend
+    static let baseURL = "\(BackendConfig.baseURLString)"
     
     static func signUp(phone: String, email: String, username: String, password: String) async throws -> AuthResponse {
         guard let url = URL(string: "\(baseURL)/auth/signup") else {

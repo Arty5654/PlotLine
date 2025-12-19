@@ -9,7 +9,7 @@ import Foundation
 import SwiftUI
 
 struct ProfileAPI {
-    static let baseURL = "http://localhost:8080"
+    static let baseURL = "\(BackendConfig.baseURLString)"
 
     static func saveProfile(username: String, name: String, birthday: String, city: String) async throws {
 

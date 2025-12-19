@@ -243,7 +243,7 @@ struct ProfileView: View {
 
                     // SIGN OUT
                     Button(action: {
-                        session.signOutPending = true
+                        session.signOut()
                         dismiss()
                     }) {
                         HStack {
@@ -578,4 +578,3 @@ struct Profile_preview: PreviewProvider {
             .environmentObject(AuthViewModel())
     }
 }
-

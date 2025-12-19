@@ -4,6 +4,7 @@ import com.plotline.backend.dto.FriendList;
 import com.plotline.backend.dto.FriendRequest;
 import com.plotline.backend.dto.RequestList;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import static com.plotline.backend.util.UsernameUtils.normalize;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -62,22 +63,24 @@ public class FriendsService {
 
     // add sender username to receivers friends list
     public String createOrUpdateFriendRequest(FriendRequest request) throws Exception {
+        String sender = normalize(request.getSenderUsername());
+        String receiver = normalize(request.getReceiverUsername());
 
         // update existing (accepted or declined) friend requests
         String status = request.getStatus();
         if ("ACCEPTED".equalsIgnoreCase(status)) {
-            acceptFriendRequest(request);
+            acceptFriendRequest(new FriendRequest(sender, receiver, status));
             return "Accepted";
         } else if ("DECLINED".equalsIgnoreCase(status)) {
-            declineFriendRequest(request);
+            declineFriendRequest(new FriendRequest(sender, receiver, status));
             return "Declined";
         }
 
-        String fKey = "users/" + request.getReceiverUsername() + "/friends.json"; // friends ket
-        String key = "users/" + request.getReceiverUsername() + "/friend_requests.json"; // requests key
+        String fKey = "users/" + receiver + "/friends.json"; // friends key
+        String key = "users/" + receiver + "/friend_requests.json"; // requests key
 
         FriendList friendList = readJson(fKey, FriendList.class);
-        if (friendList != null && friendList.getFriends().contains(request.getSenderUsername())) {
+        if (friendList != null && friendList.getFriends().contains(sender)) {
             // theyre already friends, so no friend request!
             return "You are already friends!";
         }
@@ -85,13 +88,13 @@ public class FriendsService {
         RequestList requestList = readJson(key, RequestList.class);
         if (requestList == null) {
             requestList = new RequestList();
-            requestList.setUsername(request.getReceiverUsername());
+            requestList.setUsername(receiver);
             requestList.setPendingRequests(new ArrayList<>());
         }
 
         // don't duplicate requests
-        if (!requestList.getPendingRequests().contains(request.getSenderUsername())) {
-            requestList.getPendingRequests().add(request.getSenderUsername());
+        if (!requestList.getPendingRequests().contains(sender)) {
+            requestList.getPendingRequests().add(sender);
         }
         writeJson(key, requestList);
         return "Successfully sent request!";
@@ -99,11 +102,12 @@ public class FriendsService {
 
     // get the friend list stored for a given user.
     public FriendList getFriendList(String username) throws Exception {
-        String key = "users/" + username + "/friends.json";
+        String normUser = normalize(username);
+        String key = "users/" + normUser + "/friends.json";
         FriendList friendList = readJson(key, FriendList.class);
         if (friendList == null) {
             friendList = new FriendList();
-            friendList.setUsername(username);
+            friendList.setUsername(normUser);
             friendList.setFriends(new ArrayList<>());
         }
         return friendList;
@@ -111,11 +115,12 @@ public class FriendsService {
 
     // get the pending friend requests stored for a given user.
     public RequestList getFriendRequests(String username) throws Exception {
-        String key = "users/" + username + "/friend_requests.json";
+        String normUser = normalize(username);
+        String key = "users/" + normUser + "/friend_requests.json";
         RequestList requestList = readJson(key, RequestList.class);
         if (requestList == null) {
             requestList = new RequestList();
-            requestList.setUsername(username);
+            requestList.setUsername(normUser);
             requestList.setPendingRequests(new ArrayList<>());
         }
         return requestList;
@@ -123,32 +128,34 @@ public class FriendsService {
 
     // accept a friend request: remove the sender's username from the receiver's pending requests and update both users' friend lists.
     public void acceptFriendRequest(FriendRequest request) throws Exception {
+        String sender = normalize(request.getSenderUsername());
+        String receiver = normalize(request.getReceiverUsername());
 
         // remove sender username from receiver's pending requests
-        String reqKey = "users/" + request.getReceiverUsername() + "/friend_requests.json";
-        RequestList requestList = getFriendRequests(request.getReceiverUsername());
+        String reqKey = "users/" + receiver + "/friend_requests.json";
+        RequestList requestList = getFriendRequests(receiver);
         List<String> updatedRequests = requestList.getPendingRequests().stream()
-                .filter(sender -> !sender.equals(request.getSenderUsername()))
+                .filter(s -> !s.equals(sender))
                 .collect(Collectors.toList());
         requestList.setPendingRequests(updatedRequests);
         writeJson(reqKey, requestList);
 
        
         // update friend list for the receiver
-        String receiverFriendsKey = "users/" + request.getReceiverUsername() + "/friends.json";
-        FriendList receiverFriendList = getFriendList(request.getReceiverUsername());
-        if (!receiverFriendList.getFriends().contains(request.getSenderUsername())) {
-            receiverFriendList.getFriends().add(request.getSenderUsername());
+        String receiverFriendsKey = "users/" + receiver + "/friends.json";
+        FriendList receiverFriendList = getFriendList(receiver);
+        if (!receiverFriendList.getFriends().contains(sender)) {
+            receiverFriendList.getFriends().add(sender);
         }
 
         writeJson(receiverFriendsKey, receiverFriendList);
 
 
         // update friend list for the sender
-        String senderFriendsKey = "users/" + request.getSenderUsername() + "/friends.json";
-        FriendList senderFriendList = getFriendList(request.getSenderUsername());
-        if (!senderFriendList.getFriends().contains(request.getReceiverUsername())) {
-            senderFriendList.getFriends().add(request.getReceiverUsername());
+        String senderFriendsKey = "users/" + sender + "/friends.json";
+        FriendList senderFriendList = getFriendList(sender);
+        if (!senderFriendList.getFriends().contains(receiver)) {
+            senderFriendList.getFriends().add(receiver);
         }
 
         writeJson(senderFriendsKey, senderFriendList);
@@ -156,15 +163,40 @@ public class FriendsService {
 
     // remove sender username from receiver's pending requests
     public void declineFriendRequest(FriendRequest request) throws Exception {
-        String reqKey = "users/" + request.getReceiverUsername() + "/friend_requests.json";
+        String sender = normalize(request.getSenderUsername());
+        String receiver = normalize(request.getReceiverUsername());
+        String reqKey = "users/" + receiver + "/friend_requests.json";
 
-        RequestList requestList = getFriendRequests(request.getReceiverUsername());
+        RequestList requestList = getFriendRequests(receiver);
 
         List<String> updatedRequests = requestList.getPendingRequests().stream()
-                .filter(sender -> !sender.equals(request.getSenderUsername()))
+                .filter(s -> !s.equals(sender))
                 .collect(Collectors.toList());
 
         requestList.setPendingRequests(updatedRequests);
         writeJson(reqKey, requestList);
+    }
+
+    // remove a friendship (from both users' friend lists)
+    public void removeFriend(String userA, String userB) throws Exception {
+        String u1 = normalize(userA);
+        String u2 = normalize(userB);
+
+        FriendList listA = getFriendList(u1);
+        listA.getFriends().removeIf(f -> f.equalsIgnoreCase(u2));
+        writeJson("users/" + u1 + "/friends.json", listA);
+
+        FriendList listB = getFriendList(u2);
+        listB.getFriends().removeIf(f -> f.equalsIgnoreCase(u1));
+        writeJson("users/" + u2 + "/friends.json", listB);
+
+        // also clean any pending requests between them
+        RequestList reqA = getFriendRequests(u1);
+        reqA.getPendingRequests().removeIf(f -> f.equalsIgnoreCase(u2));
+        writeJson("users/" + u1 + "/friend_requests.json", reqA);
+
+        RequestList reqB = getFriendRequests(u2);
+        reqB.getPendingRequests().removeIf(f -> f.equalsIgnoreCase(u1));
+        writeJson("users/" + u2 + "/friend_requests.json", reqB);
     }
 }

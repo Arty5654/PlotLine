@@ -21,6 +21,8 @@ import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
 
+import static com.plotline.backend.util.UsernameUtils.normalize;
+
 @Service
 public class WeeklyGoalsService {
 
@@ -31,7 +33,7 @@ public class WeeklyGoalsService {
 
   public WeeklyGoalsService(UserProfileService userProfileService, ChatMessageService chatMessageService) {
     this.chatMessageService = chatMessageService;
-    Dotenv dotenv = Dotenv.load();
+    Dotenv dotenv = Dotenv.configure().ignoreIfMissing().load();
     String accessKey = dotenv.get("AWS_ACCESS_KEY_ID");
     String secretKey = dotenv.get("AWS_SECRET_ACCESS_KEY");
     String region = dotenv.get("AWS_REGION");
@@ -45,7 +47,7 @@ public class WeeklyGoalsService {
 
   public Map<String, Object> getWeeklyGoals(String username) {
     try {
-      String key = "users/" + username + "/weekly-goals.json"; // Path to JSON file in S3
+      String key = "users/" + normalize(username) + "/weekly-goals.json"; // Path to JSON file in S3
       System.out.println("\n\n\n\n\n\n\nFetching from S3: " + key + "\n\n\n\n\n\n\n"); // Debugging log
 
       GetObjectRequest getObjectRequest = GetObjectRequest.builder()
@@ -68,7 +70,7 @@ public class WeeklyGoalsService {
 
   public boolean addGoalToS3(String username, TaskItem newTask) {
     try {
-      String key = "users/" + username + "/weekly-goals.json";
+      String key = "users/" + normalize(username) + "/weekly-goals.json";
       System.out.println("📡 Fetching existing goals from: " + key);
 
       // Fetch existing goals
@@ -121,7 +123,7 @@ public class WeeklyGoalsService {
 
         PutObjectRequest putObjectRequest = PutObjectRequest.builder()
             .bucket(bucketName)
-            .key("users/" + username + "/weekly-goals.json")
+            .key("users/" + normalize(username) + "/weekly-goals.json")
             .build();
 
         s3Client.putObject(putObjectRequest, RequestBody.fromString(newJson));
@@ -139,7 +141,7 @@ public class WeeklyGoalsService {
 
   public boolean deleteGoalFromS3(String username, int taskId) {
     try {
-      String key = "users/" + username + "/weekly-goals.json";
+      String key = "users/" + normalize(username) + "/weekly-goals.json";
       System.out.println("📡 Fetching existing goals from: " + key);
 
       // Fetch existing goals
@@ -186,7 +188,7 @@ public class WeeklyGoalsService {
 
   public boolean updateGoalInS3(String username, int taskId, TaskItem updatedTask) {
     try {
-      String key = "users/" + username + "/weekly-goals.json";
+      String key = "users/" + normalize(username) + "/weekly-goals.json";
       System.out.println("📡 Fetching existing goals from: " + key);
 
       // Fetch existing goals
@@ -231,7 +233,7 @@ public class WeeklyGoalsService {
 
   public boolean resetGoalsInS3(String username) {
     try {
-      String key = "users/" + username + "/weekly-goals.json";
+      String key = "users/" + normalize(username) + "/weekly-goals.json";
       System.out.println("📡 Resetting all goals for: " + key);
 
       // Create an empty goal list
@@ -262,7 +264,7 @@ public class WeeklyGoalsService {
 
   public boolean updateGoalCompletionInS3(String username, int taskId, boolean isCompleted) {
     try {
-      String key = "users/" + username + "/weekly-goals.json";
+      String key = "users/" + normalize(username) + "/weekly-goals.json";
       System.out.println("📡 Fetching existing goals from: " + key);
 
       // Fetch existing goals
@@ -319,7 +321,7 @@ public class WeeklyGoalsService {
 
   public Map<String, Double> getWeeklyCosts(String username) {
     try {
-      String key = "users/" + username + "/weekly_costs.json";
+      String key = "users/" + normalize(username) + "/weekly_costs.json";
       GetObjectRequest request = GetObjectRequest.builder()
           .bucket(bucketName)
           .key(key)
@@ -342,7 +344,7 @@ public class WeeklyGoalsService {
 
   public Map<String, Double> getWeeklyBudget(String username) {
     try {
-      String key = "users/" + username + "/weekly-budget-edited.json";
+      String key = "users/" + normalize(username) + "/weekly-budget-edited.json";
       GetObjectRequest request = GetObjectRequest.builder()
           .bucket(bucketName)
           .key(key)

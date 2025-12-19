@@ -40,15 +40,21 @@ public class MealService {
         // this.userProfileService = userProfileService;
     }
 
+    private String normalize(String username) {
+        return username == null ? "" : username.trim().toLowerCase();
+    }
+
     // Helper function to construct the S3 path for the meal
     private String getS3Path(String username, String mealID) {
-        return "users/" + username + "/meals/" + mealID.toUpperCase() + ".json";
+        String normUser = normalize(username);
+        return "users/" + normUser + "/meals/" + mealID.toUpperCase() + ".json";
     }
 
     // Method to list all meal files for a user and fetch meal data
     public List<Map<String, Object>> getAllMealsFromS3(String username) throws IOException, java.io.IOException {
+        String normUser = normalize(username);
         // Construct the path to the user's meal folder in S3
-        String prefix = "users/" + username + "/meals/";
+        String prefix = "users/" + normUser + "/meals/";
 
         // List all objects under the user's meals folder
         ListObjectsV2Request listObjectsRequest = ListObjectsV2Request.builder()
@@ -65,7 +71,7 @@ public class MealService {
             String mealID = s3Object.key().substring(s3Object.key().lastIndexOf("/") + 1, s3Object.key().lastIndexOf("."));
 
             // Fetch each meal's JSON data from S3
-            Map<String, Object> meal = getMealFromS3(username, mealID);
+            Map<String, Object> meal = getMealFromS3(normUser, mealID);
             meals.add(meal);
         }
 
@@ -74,8 +80,9 @@ public class MealService {
 
     // Method to fetch meal from S3 using mealID and username
     public Map<String, Object> getMealFromS3(String username, String mealID) throws IOException, java.io.IOException {
+        String normUser = normalize(username);
         // Construct the S3 path for the meal
-        String fileName = "users/" + username + "/meals/" + mealID + ".json";
+        String fileName = "users/" + normUser + "/meals/" + mealID + ".json";
 
         // Get the object from S3
         GetObjectRequest getObjectRequest = GetObjectRequest.builder()
@@ -97,13 +104,14 @@ public class MealService {
     // Method to create and save the meal recipe in S3
     public void createMeal(String username, String listID, String mealRecipe, List<Map<String, Object>> groceryItems) {
         try {
+            String normUser = normalize(username);
             // Parse mealRecipe into a structured JSON format
             ObjectMapper objectMapper = new ObjectMapper();
             Map<String, Object> meal = objectMapper.readValue(mealRecipe, Map.class);
 
             // Generate a unique file name for the meal using UUID
             String mealID = UUID.randomUUID().toString().toUpperCase();
-            String fileName = getS3Path(username, mealID);
+            String fileName = getS3Path(normUser, mealID);
 
             meal.put("mealID", mealID);
             meal.put("listID", listID);
@@ -121,7 +129,7 @@ public class MealService {
             s3Client.putObject(putObjectRequest, RequestBody.fromString(mealJson));
 
             // add the meal ID to the respective grocery list
-            GroceryList groceryList = groceryListService.getGroceryList(username, listID);
+            GroceryList groceryList = groceryListService.getGroceryList(normUser, listID);
 
             // Update the grocery list with meal information
             groceryList.setMealID(mealID);
@@ -131,7 +139,7 @@ public class MealService {
             String groceryListJson = objectMapper.writeValueAsString(groceryList);
 
             // save the grocery list to S3
-            String groceryListFileName = "users/" + username + "/grocery/lists/" + listID + ".json";
+            String groceryListFileName = "users/" + normUser + "/grocery/lists/" + listID + ".json";
             PutObjectRequest groceryListPutObjectRequest = PutObjectRequest.builder()
                     .bucket(BUCKET_NAME)
                     .key(groceryListFileName)

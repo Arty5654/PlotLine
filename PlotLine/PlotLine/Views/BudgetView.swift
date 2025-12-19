@@ -50,6 +50,24 @@ private struct PrimaryButton: ButtonStyle {
     }
 }
 
+
+// Light vs Dark Mode
+struct AdaptivePrimaryButton: ButtonStyle {
+    @SwiftUI.Environment(\.colorScheme) private var colorScheme
+
+    func makeBody(configuration: Configuration) -> some View {
+        let isDark = (colorScheme == .dark)
+
+        return configuration.label
+            .font(.headline)
+            .foregroundColor(isDark ? .white : PLColor.accent)
+            //.frame(maxWidth: .infinity)
+            //.padding(.vertical, 12)
+            .opacity(configuration.isPressed ? 0.7 : 1.0)
+    }
+}
+
+
 // MARK: - Root
 struct BudgetView: View {
     @State private var selectedTab = "Budgeting"
@@ -136,18 +154,23 @@ struct BudgetSection: View {
                     ActionRow(title: "Take the AI Powered Budget Quiz Again", system: "sparkles") {
                         BudgetQuizView().environmentObject(calendarVM)
                     }
+                    .buttonStyle(AdaptivePrimaryButton())
                     ActionRow(title: "Upload a Receipt to Track Spending", system: "doc.viewfinder") {
                         ReceiptUploadView().environmentObject(calendarVM)
                     }
+                    .buttonStyle(AdaptivePrimaryButton())
                     ActionRow(title: "Input Weekly/Monthly Costs", system: "square.and.pencil") {
                         WeeklyMonthlyCostView().environmentObject(calendarVM)
                     }
+                    .buttonStyle(AdaptivePrimaryButton())
                     ActionRow(title: "Create Weekly/Monthly Budget", system: "list.bullet.rectangle.portrait") {
                         BudgetInputView()
                     }
+                    .buttonStyle(AdaptivePrimaryButton())
                     ActionRow(title: "Compare New Income/Location Budget", system: "arrow.2.squarepath") {
                         BudgetCompareView()
                     }
+                    .buttonStyle(AdaptivePrimaryButton())
                     Button {
                         Task { await startPlaidLink() }
                     } label: {
@@ -155,11 +178,11 @@ struct BudgetSection: View {
                             Image(systemName: "creditcard").frame(width: 20)
                             Text("Track Credit Card Transactions Automatically")
                                 .font(.headline)
-                                .foregroundColor(.primary)
+                                //.foregroundColor(colorScheme == .dark ? .white : .primary)
                             Spacer()
                             Image(systemName: "chevron.right")
                                 .font(.footnote)
-                                .foregroundColor(PLColor.textSecondary)
+                                //.foregroundColor(colorScheme == .dark ? .white.opacity(0.85) : PLColor.textSecondary)
                         }
                         .padding(.vertical, 10)
                         .padding(.horizontal, PLSpacing.md)
@@ -167,13 +190,14 @@ struct BudgetSection: View {
                         .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
                         .overlay(RoundedRectangle(cornerRadius: PLRadius.md).stroke(PLColor.cardBorder))
                     }
+                    .buttonStyle(AdaptivePrimaryButton())
                 }
             }
         }
     }
     
     private func startPlaidLink() async {
-        guard let url = URL(string: "http://localhost:8080/api/plaid/link_token?username=\(currentUsername())"),
+        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/plaid/link_token?username=\(currentUsername())"),
               let (data, _) = try? await URLSession.shared.data(from: url),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let linkToken = obj["link_token"] as? String
@@ -185,7 +209,7 @@ struct BudgetSection: View {
     }
     
     private func exchange(publicToken: String, selectedAccountIds: [String]) async {
-        guard let url = URL(string: "http://localhost:8080/api/plaid/exchange") else { return }
+        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/plaid/exchange") else { return }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -364,14 +388,58 @@ struct SpendingTrendChartView: View {
 
     private func fetchBudgetTarget() async throws -> Double {
         let type = chartType.lowercased()
-        guard let url = URL(string: "http://localhost:8080/api/budget/\(username)/\(type)") else { return 0 }
-        let (data, _) = try await URLSession.shared.data(from: url)
-        let resp = try JSONDecoder().decode(BudgetResponse.self, from: data)
-        return resp.budget.values.reduce(0, +)
+        let candidates = [
+            "\(BackendConfig.baseURLString)/api/budget/\(username)/\(type)",
+            "\(BackendConfig.baseURLString)/api/budget/\(username.lowercased())/\(type)"
+        ]
+
+        for urlStr in candidates {
+            guard let url = URL(string: urlStr) else { continue }
+            do {
+                let (data, resp) = try await URLSession.shared.data(from: url)
+                guard let http = resp as? HTTPURLResponse, (200...299).contains(http.statusCode), !data.isEmpty else { continue }
+
+                // Primary decode
+                if let resp = try? JSONDecoder().decode(BudgetResponse.self, from: data) {
+                    let filtered = resp.budget.filter { !is401kKey($0.key) }
+                    return filtered.values.reduce(0, +)
+                }
+                // Fallback: flexible JSON
+                if let any = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    if let budgetMap = any["budget"] as? [String: Any] {
+                        let filtered = budgetMap.filter { !is401kKey($0.key) }
+                        let sum = filtered.values.compactMap { v -> Double? in
+                            if let d = v as? Double { return d }
+                            if let s = v as? String, let d = Double(s) { return d }
+                            if let n = v as? NSNumber { return n.doubleValue }
+                            return nil
+                        }.reduce(0, +)
+                        return sum
+                    } else {
+                        let filtered = any.filter { !is401kKey($0.key) }
+                        let sum = filtered.values.compactMap { v -> Double? in
+                            if let d = v as? Double { return d }
+                            if let s = v as? String, let d = Double(s) { return d }
+                            if let n = v as? NSNumber { return n.doubleValue }
+                            return nil
+                        }.reduce(0, +)
+                        return sum
+                    }
+                }
+            } catch {
+                continue
+            }
+        }
+        return 0
     }
 
     private func fetchTrendSeries() async throws -> [TrendPoint] {
         chartType == "Weekly" ? try await last8Weeks() : try await last6Months()
+    }
+
+    private func is401kKey(_ key: String) -> Bool {
+        let lower = key.lowercased()
+        return lower.contains("401k") || lower.contains("401(k)")
     }
 
     private func last8Weeks() async throws -> [TrendPoint] {
@@ -404,7 +472,7 @@ struct SpendingTrendChartView: View {
 
     private func fetchWeeklyPoint(for start: Date) async throws -> TrendPoint? {
         let weekStart = start.ymd()
-        guard let url = URL(string: "http://localhost:8080/api/costs/weekly/\(username)?week_start=\(weekStart)") else { return nil }
+        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/costs/weekly/\(username)?week_start=\(weekStart)") else { return nil }
         let (data, _) = try await URLSession.shared.data(from: url)
         let resp = try JSONDecoder().decode(PeriodFile.self, from: data)
         let total = (resp.totals?.values.reduce(0, +)) ?? 0
@@ -414,7 +482,7 @@ struct SpendingTrendChartView: View {
     private func fetchMonthlyPoint(for date: Date) async throws -> TrendPoint? {
         let f = DateFormatter(); f.calendar = .init(identifier: .gregorian); f.dateFormat = "yyyy-MM"
         let monthStr = f.string(from: date)
-        guard let url = URL(string: "http://localhost:8080/api/costs/monthly/\(username)?month=\(monthStr)") else { return nil }
+        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/costs/monthly/\(username)?month=\(monthStr)") else { return nil }
         let (data, _) = try await URLSession.shared.data(from: url)
         let resp = try JSONDecoder().decode(PeriodFile.self, from: data)
         let total = (resp.totals?.values.reduce(0, +)) ?? 0

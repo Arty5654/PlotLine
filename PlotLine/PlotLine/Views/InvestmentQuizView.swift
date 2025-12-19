@@ -7,6 +7,9 @@
 
 import SwiftUI
 import Foundation
+#if canImport(UIKit)
+import UIKit
+#endif
 
 private enum PLColor {
     static let surface        = Color(.secondarySystemBackground)
@@ -74,6 +77,7 @@ struct InvestmentQuizView: View {
     @State private var quizCompleted = false
     @State private var llmRecommendation: String? = nil
     @Environment(\.dismiss) var dismiss
+    @State private var monthlyContribution: Double = 0
     
     // Check for Missing Budget
     @State private var showBudgetMissingAlert = false
@@ -290,14 +294,14 @@ struct InvestmentQuizView: View {
                         }
                         .plCard()
 
-                        VStack(alignment: .leading, spacing: PLSpacing.sm) {
-                            Text("Age")
-                                .font(.headline)
-                            TextField("Enter your age", text: $age)
-                                .keyboardType(.numberPad)
-                                .textFieldStyle(.roundedBorder)
-                        }
-                        .plCard()
+                VStack(alignment: .leading, spacing: PLSpacing.sm) {
+                    Text("Age")
+                        .font(.headline)
+                    TextField("Enter your age", text: $age)
+                        .keyboardType(.numberPad)
+                        .textFieldStyle(.roundedBorder)
+                }
+                .plCard()
 
                         VStack(spacing: PLSpacing.sm) {
                             Button("Submit Quiz") {
@@ -324,12 +328,17 @@ struct InvestmentQuizView: View {
                     .padding(.vertical, PLSpacing.lg)
                 }
                 .scrollDismissesKeyboard(.interactively)
+                .onTapGesture { hideKeyboard() }
             }
         }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .principal) {
                 Text("Investor Quiz").font(.headline)
+            }
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") { hideKeyboard() }
             }
         }
         .tint(PLColor.accent)
@@ -339,61 +348,60 @@ struct InvestmentQuizView: View {
             Text(budgetMissingMessage)
         }
     }
+
+    private func hideKeyboard() {
+#if canImport(UIKit)
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+#endif
+    }
     
     // Verify budget contains the required category with a positive amount
     private func precheckBudgetLine() async -> Bool {
-        guard let url = URL(string: "http://localhost:8080/api/budget/\(username)/monthly") else {
-            budgetMissingMessage = "Could not check your Budget. Please ensure your Budget includes the needed line."
-            showBudgetMissingAlert = true
-            return false
-        }
+        let key = (selectedAccount == .rothIRA) ? "Roth IRA" : "Brokerage"
+        let candidates = [
+            "\(BackendConfig.baseURLString)/api/budget/\(username)/monthly",
+            "\(BackendConfig.baseURLString)/api/budget/\(username.lowercased())/monthly"
+        ]
 
-        do {
-            let (data, response) = try await URLSession.shared.data(from: url)
-            guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode), !data.isEmpty else {
-                // Treat no budget as missing
-                let key = (selectedAccount == .rothIRA) ? "Roth IRA" : "Brokerage"
-                budgetMissingMessage = "We couldn’t find your Budget. Please create a budget and add a “\(key)” line first."
-                showBudgetMissingAlert = true
-                return false
-            }
+        for urlStr in candidates {
+            guard let url = URL(string: urlStr) else { continue }
+            do {
+                let (data, response) = try await URLSession.shared.data(from: url)
+                guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode), !data.isEmpty else { continue }
 
-            struct BudgetResponse: Decodable {
-                let budget: [String: Double]
-            }
+                struct BudgetResponse: Decodable { let budget: [String: Double] }
 
-            if let decoded = try? JSONDecoder().decode(BudgetResponse.self, from: data) {
-                let key = (selectedAccount == .rothIRA) ? "Roth IRA" : "Brokerage"
-                if let val = decoded.budget[key], val > 0 {
+                if let decoded = try? JSONDecoder().decode(BudgetResponse.self, from: data),
+                   let val = decoded.budget[key], val > 0 {
+                    monthlyContribution = val
                     return true
-                } else {
-                    budgetMissingMessage = "To build a \(selectedAccount.rawValue) portfolio, please add a monthly amount for “\(key)” in your Budget first."
-                    showBudgetMissingAlert = true
-                    return false
                 }
-            } else {
-                // Fallback: try flat map (in case backend returns a plain {category: amount} map)
                 if let map = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                    let key = (selectedAccount == .rothIRA) ? "Roth IRA" : "Brokerage"
                     if let val = map[key] as? Double, val > 0 {
+                        monthlyContribution = val
                         return true
                     }
+                    if let budgetMap = map["budget"] as? [String: Any],
+                       let valAny = budgetMap[key],
+                       let val = (valAny as? Double) ?? Double("\(valAny)") {
+                        if val > 0 {
+                            monthlyContribution = val
+                            return true
+                        }
+                    }
                 }
-                let key = (selectedAccount == .rothIRA) ? "Roth IRA" : "Brokerage"
-                budgetMissingMessage = "Please add a monthly amount for “\(key)” in your Budget first."
-                showBudgetMissingAlert = true
-                return false
+            } catch {
+                continue
             }
-        } catch {
-            let key = (selectedAccount == .rothIRA) ? "Roth IRA" : "Brokerage"
-            budgetMissingMessage = "Couldn’t reach the Budget service. Make sure your Budget has a “\(key)” line, then try again."
-            showBudgetMissingAlert = true
-            return false
         }
+
+        budgetMissingMessage = "Please add a monthly amount for “\(key)” in your Budget first."
+        showBudgetMissingAlert = true
+        return false
     }
 
     func generatePortfolioFromLLM() async {
-        let url = URL(string: "http://localhost:8080/api/llm/portfolio")!
+        let url = URL(string: "\(BackendConfig.baseURLString)/api/llm/portfolio")!
         let payload: [String: String] = [
             "username": username,
             "goals": goals,
@@ -403,7 +411,8 @@ struct InvestmentQuizView: View {
             "timeHorizon": timeHorizon,
             "taxPriority": taxPriority,
             "withdrawalFlexibility": withdrawalFlexibility,
-            "account": selectedAccount.apiValue
+            "account": selectedAccount.apiValue,
+            "monthlyContribution": String(monthlyContribution)
         ]
         print("Username: " + username)
 
@@ -427,7 +436,7 @@ struct InvestmentQuizView: View {
 
 
     func savePortfolioToBackend(_ recommendation: String) {
-        let url = URL(string: "http://localhost:8080/api/llm/portfolio/save-original")!
+        let url = URL(string: "\(BackendConfig.baseURLString)/api/llm/portfolio/save-original")!
         let payload: [String: String] = [
             "username": username,
             "portfolio": recommendation,

@@ -27,7 +27,7 @@ struct PlaidView: View {
     }
 
     private func link() async {
-        guard let url = URL(string: "http://localhost:8080/api/plaid/link_token?username=\(currentUsername())"),
+        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/plaid/link_token?username=\(currentUsername())"),
               let (data, _) = try? await URLSession.shared.data(from: url),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let linkToken = obj["link_token"] as? String
@@ -39,14 +39,14 @@ struct PlaidView: View {
     }
 
     private func syncPlaid() async {
-        guard let url = URL(string: "http://localhost:8080/api/plaid/sync?username=\(currentUsername())") else { return }
+        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/plaid/sync?username=\(currentUsername())") else { return }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         _ = try? await URLSession.shared.data(for: req)
     }
 
     private func exchange(publicToken: String, selectedAccountIds: [String]) async {
-        guard let url = URL(string: "http://localhost:8080/api/plaid/exchange") else { return }
+        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/plaid/exchange") else { return }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")

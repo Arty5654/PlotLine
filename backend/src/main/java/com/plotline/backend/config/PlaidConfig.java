@@ -13,7 +13,7 @@ public class PlaidConfig {
 
   @Bean
   public PlaidApi plaidApi() {
-    Dotenv dotenv = Dotenv.load();
+    Dotenv dotenv = Dotenv.configure().ignoreIfMissing().load();
     String clientId = dotenv.get("PLAID_CLIENT_ID");
     String secret   = dotenv.get("PLAID_SECRET");
 

@@ -85,7 +85,7 @@ struct GoalsView: View {
     /* Fetch Weekly Goals */
     private func fetchGoals() {
         guard username != "Guest",
-              let url = URL(string: "http://localhost:8080/api/goals/\(username)") else {
+              let url = URL(string: "\(BackendConfig.baseURLString)/api/goals/\(username)") else {
             print("⚠️ Invalid username or URL")
             return
         }
@@ -130,7 +130,7 @@ struct GoalsView: View {
     /* Fetch Long term goals */
     private func fetchLongTermGoals() {
         guard username != "Guest",
-              let url = URL(string: "http://localhost:8080/api/goals/\(username)/long-term") else {
+              let url = URL(string: "\(BackendConfig.baseURLString)/api/goals/\(username)/long-term") else {
             print("⚠️ Invalid username or URL")
             return
         }

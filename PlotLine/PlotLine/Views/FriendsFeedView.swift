@@ -143,7 +143,7 @@ struct FriendsFeedView: View {
         }
 
     private func fetchFriendsFeed() {
-        guard let url = URL(string: "http://localhost:8080/api/goals/friends-feed/\(username)") else {
+        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/goals/friends-feed/\(username)") else {
             print("⚠️ Invalid Friends Feed URL")
             return
         }
@@ -187,7 +187,7 @@ struct FriendsFeedView: View {
     }
     
     private func deletePost(_ post: FriendPost) {
-        guard let url = URL(string: "http://localhost:8080/api/goals/friends-feed/\(username)/post/\(post.id)") else {
+        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/goals/friends-feed/\(username)/post/\(post.id)") else {
             print("❌ Invalid delete URL")
             return
         }
@@ -213,7 +213,7 @@ struct FriendsFeedView: View {
     }
     
     private func likePost(_ post: FriendPost) {
-        guard let url = URL(string: "http://localhost:8080/api/goals/friends-feed/\(username)/post/\(post.id)/like") else {
+        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/goals/friends-feed/\(username)/post/\(post.id)/like") else {
             return
         }
 
@@ -238,7 +238,7 @@ struct FriendsFeedView: View {
 
 
     private func commentOnPost(_ post: FriendPost, _ comment: String) {
-        guard let url = URL(string: "http://localhost:8080/api/goals/friends-feed/\(username)/post/\(post.id)/comment") else {
+        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/goals/friends-feed/\(username)/post/\(post.id)/comment") else {
             return
         }
 

@@ -21,6 +21,8 @@ import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.core.ResponseBytes;
 import software.amazon.awssdk.core.sync.RequestBody;
 
+import static com.plotline.backend.util.UsernameUtils.normalize;
+
 @Service
 public class SmsService {
   private final TwilioRestClient twilioRestClient;
@@ -30,24 +32,43 @@ public class SmsService {
   private final String bucketName = "plotline-database-bucket";
   private final ObjectMapper objectMapper;
 
-  Dotenv dotenv = Dotenv.load();
+  private final boolean twilioConfigured;
 
-  
+  private static String resolveEnv(Dotenv dotenv, String key) {
+    String env = System.getenv(key);
+    if (env != null && !env.isBlank()) {
+      return env;
+    }
+    return dotenv.get(key);
+  }
 
   public SmsService(S3Client s3Client) {
-    String sid = dotenv.get("TWILIO_ACCOUNT_SID");
-    String authToken = dotenv.get("TWILIO_AUTH_TOKEN");
-    Twilio.init(sid, authToken);
+    Dotenv dotenv = Dotenv.configure().ignoreIfMissing().load();
+    String sid = resolveEnv(dotenv, "TWILIO_ACCOUNT_SID");
+    String authToken = resolveEnv(dotenv, "TWILIO_AUTH_TOKEN");
+    this.sender = resolveEnv(dotenv, "TWILIO_PHONE_NUMBER");
+    this.verifyServiceSid = resolveEnv(dotenv, "TWILIO_VERIFY_SERVICE_SID");
+    this.twilioConfigured = sid != null && authToken != null && sender != null && verifyServiceSid != null;
 
-    this.twilioRestClient = Twilio.getRestClient();
-    this.sender = dotenv.get("TWILIO_PHONE_NUMBER");
-    this.verifyServiceSid = dotenv.get("TWILIO_VERIFY_SERVICE_SID");
+    if (twilioConfigured) {
+      Twilio.init(sid, authToken);
+      this.twilioRestClient = Twilio.getRestClient();
+    } else {
+      this.twilioRestClient = null;
+      System.err.println("Twilio credentials are not fully configured; SMS features are disabled.");
+    }
     this.s3Client = s3Client;
     this.objectMapper = new ObjectMapper();
   }
 
+  private void ensureTwilioConfigured() {
+    if (!twilioConfigured) {
+      throw new IllegalStateException("Twilio is not configured. Set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER, and TWILIO_VERIFY_SERVICE_SID.");
+    }
+  }
 
   public void sendSms(String toNumber) {
+    ensureTwilioConfigured();
     Message.creator(
         new PhoneNumber(toNumber),
         new PhoneNumber(sender),
@@ -57,9 +78,7 @@ public class SmsService {
 
   public void sendVerificationCode(String toNumber) {
 
-    String sid = dotenv.get("TWILIO_ACCOUNT_SID");
-    String authToken = dotenv.get("TWILIO_AUTH_TOKEN");
-    Twilio.init(sid, authToken);
+    ensureTwilioConfigured();
 
     Verification verification = Verification.creator(
         verifyServiceSid,
@@ -71,6 +90,7 @@ public class SmsService {
   }
 
   public boolean verifyCode(String toNumber, String code, String username) {
+    ensureTwilioConfigured();
 
     if (toNumber == null || code == null || username == null) {
       System.out.println("To " + toNumber + ", Code " + code + ", Username " + username);
@@ -87,10 +107,11 @@ public class SmsService {
     if ("approved".equals(verificationCheck.getStatus())) {
 
       try {
+        String normUser = normalize(username);
 
         GetObjectRequest getObjectRequest = GetObjectRequest.builder()
         .bucket(bucketName)
-        .key("users/" + username + "/account.json")
+        .key("users/" + normUser + "/account.json")
         .build();
 
         ResponseBytes<GetObjectResponse> objectBytes = s3Client.getObjectAsBytes(getObjectRequest);
@@ -104,7 +125,7 @@ public class SmsService {
 
         PutObjectRequest putObjectRequest = PutObjectRequest.builder()
           .bucket(bucketName)
-          .key("users/" + username + "/account.json")
+          .key("users/" + normUser + "/account.json")
           .contentType("application/json")
           .build();
 

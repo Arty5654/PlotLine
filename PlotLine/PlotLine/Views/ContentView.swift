@@ -278,7 +278,7 @@ struct SpendingPreviewWidget: View {
         let weekStart = cal.startOfWeek(for: Date())
         let startStr = weekStart.ymd()
 
-        guard let url = URL(string: "http://localhost:8080/api/costs/weekly/\(username)?week_start=\(startStr)") else {
+        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/costs/weekly/\(username)?week_start=\(startStr)") else {
             return []
         }
         let (data, _) = try await URLSession.shared.data(from: url)
@@ -357,7 +357,7 @@ struct GoalsWidget: View {
     }
 
     private func fetchGoals() async {
-        guard let url = URL(string: "http://localhost:8080/api/goals/\(username)") else { return }
+        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/goals/\(username)") else { return }
         var request = URLRequest(url: url); request.httpMethod = "GET"
 
         do {

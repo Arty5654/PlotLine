@@ -23,7 +23,7 @@ struct Meal: Identifiable, Decodable {
 class MealViewModel: ObservableObject {
     @Published var meals: [Meal] = []  // Array of meals instead of single meal
     
-    static let baseURL = "http://localhost:8080/api/meals"
+    static let baseURL = "\(BackendConfig.baseURLString)/api/meals"
     
     func fetchMeals(username: String) async throws {
         guard let url = URL(string: "\(MealViewModel.baseURL)/\(username)/all") else {

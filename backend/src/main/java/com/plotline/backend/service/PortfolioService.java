@@ -5,6 +5,7 @@ import com.plotline.backend.dto.SavedPortfolio;
 import com.plotline.backend.dto.SavedPortfolio.AccountType;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import static com.plotline.backend.util.UsernameUtils.normalize;
 
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
@@ -21,13 +22,13 @@ public class PortfolioService {
     private String getOriginalKey(String username, AccountType acct) {
         // users/{u}/portfolio/{account}/original.json
         return "users/%s/portfolio/%s/original.json"
-                .formatted(username, acct.name().toLowerCase());
+                .formatted(normalize(username), acct.name().toLowerCase());
     }
 
     private String getEditedKey(String username, AccountType acct) {
         // users/{u}/portfolio/{account}/edited.json
         return "users/%s/portfolio/%s/edited.json"
-                .formatted(username, acct.name().toLowerCase());
+                .formatted(normalize(username), acct.name().toLowerCase());
     }
 
     // ---------- Save / Load (per account) ----------

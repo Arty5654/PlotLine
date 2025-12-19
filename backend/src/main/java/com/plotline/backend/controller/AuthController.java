@@ -25,7 +25,7 @@ import com.plotline.backend.dto.GoogleSigninRequest;
 @RestController
 @RequestMapping("/auth")
 public class AuthController {
-    Dotenv dotenv = Dotenv.load();
+    Dotenv dotenv = Dotenv.configure().ignoreIfMissing().load();
     String googleClientId = dotenv.get("GOOGLE_CLIENT_ID");
     String googleIosClient = dotenv.get("GOOGLE_IOS_CLIENT_ID");
 

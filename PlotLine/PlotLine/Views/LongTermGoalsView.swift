@@ -177,7 +177,7 @@ struct LongTermGoalsView: View {
         archivedGoals.append(goal)
         
         // Send archive request to backend
-        guard let url = URL(string: "http://localhost:8080/api/goals/\(username)/long-term/\(goal.id)/archive") else {
+        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/goals/\(username)/long-term/\(goal.id)/archive") else {
             print("❌ Invalid URL for archiving goal")
             return
         }
@@ -203,7 +203,7 @@ struct LongTermGoalsView: View {
         longTermGoals.append(goal)
         
         // Send unarchive request to backend
-        guard let url = URL(string: "http://localhost:8080/api/goals/\(username)/long-term/\(goal.id)/unarchive") else {
+        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/goals/\(username)/long-term/\(goal.id)/unarchive") else {
             print("❌ Invalid URL for unarchiving goal")
             return
         }
@@ -237,7 +237,7 @@ struct LongTermGoalsView: View {
             }
         )
         
-        guard let url = URL(string: "http://localhost:8080/api/goals/\(username)/long-term") else {
+        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/goals/\(username)/long-term") else {
             print("❌ Invalid URL")
             return
         }
@@ -280,7 +280,7 @@ struct LongTermGoalsView: View {
         longTermGoals[goalIndex].steps[stepIndex].isCompleted.toggle()
         
         // Prepare backend update
-        guard let url = URL(string: "http://localhost:8080/api/goals/\(username)/long-term/\(goalId)/steps/\(stepId)") else {
+        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/goals/\(username)/long-term/\(goalId)/steps/\(stepId)") else {
             print("❌ Invalid URL for step update")
             return
         }
@@ -312,7 +312,7 @@ struct LongTermGoalsView: View {
     }
     
     private func resetLongTermGoals() {
-        guard let url = URL(string: "http://localhost:8080/api/goals/\(username)/long-term/reset") else {
+        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/goals/\(username)/long-term/reset") else {
             print("❌ Invalid URL for resetting long-term goals")
             return
         }
@@ -347,7 +347,7 @@ struct LongTermGoalsView: View {
     
     /* Sharing an archived post*/
     private func shareGoalToFriends(goal: LongTermGoal) {
-        guard let url = URL(string: "http://localhost:8080/api/goals/friends-feed/\(username)/post") else {
+        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/goals/friends-feed/\(username)/post") else {
             print("❌ Invalid share URL")
             return
         }

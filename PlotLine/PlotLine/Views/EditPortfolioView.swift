@@ -132,7 +132,7 @@ struct EditPortfolioView: View {
         )
 
         guard let jsonData = try? JSONEncoder().encode(payload),
-              let url = URL(string: "http://localhost:8080/api/llm/portfolio/save") else { return }
+              let url = URL(string: "\(BackendConfig.baseURLString)/api/llm/portfolio/save") else { return }
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"

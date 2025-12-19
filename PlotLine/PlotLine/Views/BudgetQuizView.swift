@@ -7,6 +7,9 @@
 
 import SwiftUI
 import CoreLocation
+#if canImport(UIKit)
+import UIKit
+#endif
 
 // ---------- Design tokens to match other screens ----------
 private enum PLColor {
@@ -482,6 +485,10 @@ struct BudgetQuizView: View {
             ToolbarItem(placement: .principal) {
                 Text("Budget Quiz").font(.headline)
             }
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") { hideKeyboard() }
+            }
         }
         .tint(PLColor.accent)
         .alert("Something went wrong", isPresented: $showError) {
@@ -505,11 +512,12 @@ struct BudgetQuizView: View {
                 getLocation()
             }
         }
+        .onTapGesture { hideKeyboard() }
     }
     
     // MARK: - LLM Budget Gen (logic unchanged)
     func generateBudgetFromLLM() async {
-        let url = URL(string: "http://localhost:8080/api/llm/budget")!
+        let url = URL(string: "\(BackendConfig.baseURLString)/api/llm/budget")!
         
         let iso = ISO8601DateFormatter()
         let debtsPayload: [[String: Any]] = hasDebt ? debts.map { d in
@@ -524,6 +532,13 @@ struct BudgetQuizView: View {
         
         let finalCity = useDeviceLocation ? city : manualCity
         let finalState = useDeviceLocation ? state : manualState
+
+        let knownCostsPayload: [String: Double] = knownCosts.reduce(into: [:]) { result, entry in
+            if let val = parseAmount(entry.value) {
+                result[entry.key] = val
+            }
+        }
+
         let payload: [String: Any] = [
             "username": username,
             "yearlyIncome": yearlyIncome,
@@ -539,7 +554,7 @@ struct BudgetQuizView: View {
             "eatingOutFrequency": eatingOutFrequency,
             "useDeviceLocation": useDeviceLocation,
             "categories": Array(selectedCategories.subtracting(trackerExclusions).sorted()),
-            "knownCosts": knownCosts.compactMapValues { Double($0) },
+            "knownCosts": knownCostsPayload,
             "hasDebt": hasDebt,
             "debts": debtsPayload
         ]
@@ -573,6 +588,14 @@ struct BudgetQuizView: View {
             }
         }
     }
+
+    private func parseAmount(_ raw: String) -> Double? {
+        let cleaned = raw
+            .replacingOccurrences(of: ",", with: "")
+            .replacingOccurrences(of: "$", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return Double(cleaned)
+    }
     
     func saveBudgetToBackend(_ budget: [String: Double]) async {
         do {
@@ -598,7 +621,7 @@ struct BudgetQuizView: View {
     }
     
     func postBudget(username: String, type: String, budget: [String: Double]) async throws {
-        let url = URL(string: "http://localhost:8080/api/budget")!
+        let url = URL(string: "\(BackendConfig.baseURLString)/api/budget")!
         let payload: [String: Any] = [
             "username": username,
             "type": type,
@@ -613,7 +636,7 @@ struct BudgetQuizView: View {
     }
     
     func loadSavedQuiz() {
-        guard let url = URL(string: "http://localhost:8080/api/llm/budget/last/\(username)") else { return }
+        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/llm/budget/last/\(username)") else { return }
         Task {
             do {
                 let (data, resp) = try await URLSession.shared.data(from: url)
@@ -682,7 +705,7 @@ struct BudgetQuizView: View {
     }
     
     func postCosts(username: String, type: String, costs: [String: Double]) async throws {
-        let url = URL(string: "http://localhost:8080/api/costs")!
+        let url = URL(string: "\(BackendConfig.baseURLString)/api/costs")!
         let payload: [String: Any] = [
             "username": username,
             "type": type,
@@ -802,5 +825,13 @@ struct DebtItem: Identifiable, Codable {
     var minPayment: String = ""
     var dueDate: Date = Date()
 }
+
+#if canImport(UIKit)
+private extension View {
+    func hideKeyboard() {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+    }
+}
+#endif
 
 #Preview { BudgetQuizView() }

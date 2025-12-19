@@ -6,6 +6,7 @@ import com.plotline.backend.dto.WeeklyMonthlyCostRequest;
 import com.plotline.backend.service.S3Service;
 import com.plotline.backend.service.OCRService;
 import com.plotline.backend.service.OpenAIService;
+import static com.plotline.backend.util.UsernameUtils.normalize;
 
 import io.jsonwebtoken.io.IOException;
 
@@ -52,6 +53,7 @@ public class WeeklyMonthlyCostController {
     @PostMapping
     public ResponseEntity<String> saveWeeklyMonthlyCosts(@RequestBody WeeklyMonthlyCostRequest request) {
         try {
+            String normUser = normalize(request.getUsername());
             // Ensure all costs are stored as Double
             //request.getCosts().replaceAll((k, v) -> Double.valueOf(String.valueOf(v)));
  
@@ -62,12 +64,12 @@ public class WeeklyMonthlyCostController {
             ByteArrayInputStream inputStream = new ByteArrayInputStream(jsonData.getBytes(StandardCharsets.UTF_8));
 
             // Generate a unique S3 key per user
-            String key = "users/" + request.getUsername() + "/" + request.getType() + "_costs.json";
+            String key = "users/" + normUser + "/" + request.getType() + "_costs.json";
 
             // Upload the file to S3 using S3Service
             //s3Service.uploadFile(key, inputStream, jsonData.length());
             //updateWeeklyCosts(request.getUsername(), request.getCosts());
-            overwriteCosts(request.getUsername(), request.getType(), request.getCosts());
+            overwriteCosts(normUser, request.getType(), request.getCosts());
 
             return ResponseEntity.ok("Weekly/Monthly costs saved successfully.");
         } catch (Exception e) {
@@ -77,12 +79,13 @@ public class WeeklyMonthlyCostController {
 
     @GetMapping("/{username}/{type}")
     public ResponseEntity<String> getWeeklyMonthlyCosts(@PathVariable String username, @PathVariable String type) {
+        String normUser = normalize(username);
         try {
             // Determine current week or month
             //int period = determinePeriod(type);
 
             // Generate the key dynamically
-            String key = "users/" + username + "/" + type + "_costs" + ".json";
+            String key = "users/" + normUser + "/" + type + "_costs" + ".json";
 
             // Fetch data from S3
             byte[] fileData = s3Service.downloadFile(key);
@@ -90,8 +93,8 @@ public class WeeklyMonthlyCostController {
 
             return ResponseEntity.ok(jsonData);
         } catch (Exception e) {
-           // Instead of returning `{}`, return a valid empty response that matches the expected format
-            String emptyJson = "{ \"username\": \"" + username + "\", \"type\": \"" + type + "\", \"costs\": {} }";
+            // Instead of returning `{}`, return a valid empty response that matches the expected format
+            String emptyJson = "{ \"username\": \"" + normUser + "\", \"type\": \"" + type + "\", \"costs\": {} }";
             return ResponseEntity.ok(emptyJson);
         }
     }
@@ -100,8 +103,9 @@ public class WeeklyMonthlyCostController {
     @DeleteMapping("/{username}/{type}")
     public ResponseEntity<String> deleteWeeklyMonthlyCosts(@PathVariable String username, @PathVariable String type) {
         try {
+            String normUser = normalize(username);
             // Generate key to delete
-            String key = "users/" + username + "/" + type + "_costs.json";
+            String key = "users/" + normUser + "/" + type + "_costs.json";
 
             // Delete file from S3
             s3Service.deleteFile(key);
@@ -117,6 +121,7 @@ public class WeeklyMonthlyCostController {
             @RequestParam("image") MultipartFile image,
             @RequestParam("username") String username) {
         try {
+            String normUser = normalize(username);
             File tempFile = File.createTempFile("receipt-", ".jpg");
             image.transferTo(tempFile);
 
@@ -162,7 +167,7 @@ public class WeeklyMonthlyCostController {
                     .filter(e -> e.getValue() > 0) // prevent 0 values from being passed into updates
                     .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
 
-            updateWeeklyCosts(username, parsed);
+            updateWeeklyCosts(normUser, parsed);
 
             //return ResponseEntity.ok("Receipt parsed and weekly budget updated!");
             System.out.println("Result: " + result);
@@ -178,13 +183,14 @@ public class WeeklyMonthlyCostController {
 
     private void overwriteCosts(String username, String type,
                             Map<String, Double> newCosts) throws Exception {
+        String normUser = normalize(username);
         Map<String, Object> data = Map.of(
-            "username", username,
+            "username", normUser,
             "type",     type,
             "costs",    newCosts
         );
 
-        String key = "users/" + username + "/" + type + "_costs.json";
+        String key = "users/" + normUser + "/" + type + "_costs.json";
         String json = new ObjectMapper().writeValueAsString(data);
         s3Service.uploadFile(key,
             new ByteArrayInputStream(json.getBytes(StandardCharsets.UTF_8)),
@@ -196,7 +202,8 @@ public class WeeklyMonthlyCostController {
         String type,
         Map<String, Double> delta) throws Exception {
 
-        String key = "users/" + username + "/" + type + "_costs.json";
+        String normUser = normalize(username);
+        String key = "users/" + normUser + "/" + type + "_costs.json";
 
         // 1.  Load existing file (or create an empty shell)
         Map<String,Object> data;
@@ -205,7 +212,7 @@ public class WeeklyMonthlyCostController {
         data = new ObjectMapper().readValue(raw, new TypeReference<>() {});
         } catch (Exception e) {           // file doesn’t exist yet
         data = new HashMap<>();
-        data.put("username", username);
+        data.put("username", normUser);
         data.put("type",     type);
         data.put("costs",    new HashMap<String,Double>());
         }
@@ -231,7 +238,7 @@ public class WeeklyMonthlyCostController {
 
         /** Convenience wrapper kept for receipt-scanner code */
         private void updateWeeklyCosts(String username, Map<String,Double> delta){
-        try { mergeCosts(username, "weekly", delta); }
+        try { mergeCosts(normalize(username), "weekly", delta); }
         catch (Exception e){                       // you can log if you like
         System.err.println("merge error: "+e.getMessage());
         }
@@ -240,7 +247,7 @@ public class WeeklyMonthlyCostController {
     @PostMapping("/merge")
         public ResponseEntity<String> merge(@RequestBody WeeklyMonthlyCostRequest req){
         try {
-        mergeCosts(req.getUsername(), req.getType(), req.getCosts());
+        mergeCosts(normalize(req.getUsername()), req.getType(), req.getCosts());
         return ResponseEntity.ok("Merged successfully");
         } catch (Exception e){
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
@@ -269,11 +276,12 @@ public class WeeklyMonthlyCostController {
             @RequestParam(name="week_start") String weekStart // YYYY-MM-DD (Sunday of that week)
     ) {
         try {
+            String normUser = normalize(username);
             LocalDate start = LocalDate.parse(weekStart);
             // normalize to the server’s concept of week, then build the key
             WeekFields wf = WeekFields.SUNDAY_START;
             String keyPart = weekKey(start);
-            String s3Key = "users/%s/costs/weekly/%s.json".formatted(username, keyPart);
+            String s3Key = "users/%s/costs/weekly/%s.json".formatted(normUser, keyPart);
 
             Map<String,Object> period = loadJsonOrEmpty(s3Key);
             // If empty, seed a minimal object so the client can render
@@ -296,9 +304,10 @@ public class WeeklyMonthlyCostController {
             @RequestParam(name="month") String month // "YYYY-MM"
     ) {
         try {
+            String normUser = normalize(username);
             YearMonth ym = YearMonth.parse(month);
             String keyPart = String.format("%04d-%02d", ym.getYear(), ym.getMonthValue());
-            String s3Key = "users/%s/costs/monthly/%s.json".formatted(username, keyPart);
+            String s3Key = "users/%s/costs/monthly/%s.json".formatted(normUser, keyPart);
 
             Map<String,Object> period = loadJsonOrEmpty(s3Key);
             period.putIfAbsent("periodKey", keyPart);
@@ -320,7 +329,7 @@ public class WeeklyMonthlyCostController {
     )
     public ResponseEntity<?> mergeDatedCosts(@RequestBody Map<String, Object> body) {
         try {
-            String username = String.valueOf(body.get("username"));
+            String username = normalize(String.valueOf(body.get("username")));
             String type = String.valueOf(body.get("type")); // weekly|monthly
             String dateStr = String.valueOf(body.getOrDefault("date", LocalDate.now().toString()));
             @SuppressWarnings("unchecked")
@@ -439,7 +448,7 @@ public class WeeklyMonthlyCostController {
     /** Helper: sum the "totals" map from a monthly period file (if missing, returns empty map). */
     @SuppressWarnings("unchecked")
     private Map<String, Double> readMonthlyTotalsOrEmpty(String username, String monthKey) throws Exception {
-        String s3Key = "users/%s/costs/monthly/%s.json".formatted(username, monthKey);
+        String s3Key = "users/%s/costs/monthly/%s.json".formatted(normalize(username), monthKey);
         Map<String,Object> period = loadJsonOrEmpty(s3Key);
         Object totalsObj = period.get("totals");
         if (totalsObj instanceof Map<?,?> raw) {
@@ -463,8 +472,9 @@ public class WeeklyMonthlyCostController {
         try {
             String prev = prevMonthKey(month);
 
-            Map<String, Double> curTotals  = readMonthlyTotalsOrEmpty(username, month);
-            Map<String, Double> prevTotals = readMonthlyTotalsOrEmpty(username, prev);
+            String normUser = normalize(username);
+            Map<String, Double> curTotals  = readMonthlyTotalsOrEmpty(normUser, month);
+            Map<String, Double> prevTotals = readMonthlyTotalsOrEmpty(normUser, prev);
 
             // Union of categories
             java.util.Set<String> cats = new java.util.TreeSet<>();

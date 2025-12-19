@@ -15,6 +15,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.plotline.backend.dto.S3UserRecord;
 import com.twilio.twiml.voice.Sms;
+import io.github.cdimascio.dotenv.Dotenv;
 
 import software.amazon.awssdk.core.ResponseBytes;
 import software.amazon.awssdk.core.ResponseInputStream;
@@ -24,17 +25,13 @@ import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
-import io.github.cdimascio.dotenv.Dotenv;
-
-
 @Service
 public class AuthService {
 
     private final S3Client s3Client;
     private final String bucketName = "plotline-database-bucket";
     private final ObjectMapper objectMapper;
-    Dotenv dotenv = Dotenv.load();
-    private String jwt_secret = dotenv.get("JWT_SECRET_KEY");
+    private final String jwt_secret;
     private static final String EMAIL_INDEX_KEY = "email-index.json";
 
  
@@ -46,6 +43,19 @@ public class AuthService {
         this.s3Client = s3Client;
         this.objectMapper = new ObjectMapper();
         this.smsService = smsService;
+        Dotenv dotenv = Dotenv.configure().ignoreIfMissing().load();
+        this.jwt_secret = resolveEnv(dotenv, "JWT_SECRET_KEY");
+        if (jwt_secret == null || jwt_secret.isBlank()) {
+            throw new IllegalStateException("JWT_SECRET_KEY is not configured.");
+        }
+    }
+
+    private static String resolveEnv(Dotenv dotenv, String key) {
+        String env = System.getenv(key);
+        if (env != null && !env.isBlank()) {
+            return env;
+        }
+        return dotenv.get(key);
     }
 
     // check if user exists for username uniqueness and login functions

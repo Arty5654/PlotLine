@@ -7,7 +7,7 @@ private enum PLColor {
     static let cardBorder     = Color.black.opacity(0.06)
     static let textPrimary    = Color.primary
     static let textSecondary  = Color.secondary
-    static let accent         = Color.blue
+    static let accent         = Color(red: 0.32, green: 0.67, blue: 0.97) // lighter accent to improve readability
     static let success        = Color.green
     static let danger         = Color.red
     static let warning        = Color.orange
@@ -123,7 +123,6 @@ struct BudgetInputView: View {
         BudgetItem(category: "Savings", amount: ""),
         BudgetItem(category: "Miscellaneous", amount: ""),
         BudgetItem(category: "Transportation", amount: ""),
-        BudgetItem(category: "401(k)", amount: ""),
         BudgetItem(category: "Roth IRA", amount: ""),
         BudgetItem(category: "Car Insurance", amount: ""),
         BudgetItem(category: "Health Insurance", amount: ""),
@@ -326,7 +325,7 @@ extension BudgetInputView {
     }
     
     private func fetchBudgetData() {
-        let urlString = "http://localhost:8080/api/budget/\(username)/\(backendType)"
+        let urlString = "\(BackendConfig.baseURLString)/api/budget/\(username)/\(backendType)"
         guard let url = URL(string: urlString) else { return }
         URLSession.shared.dataTask(with: url) { data, _, error in
             if let error = error {
@@ -340,8 +339,11 @@ extension BudgetInputView {
             }
             do {
                 let decoded = try JSONDecoder().decode(BudgetResponse.self, from: data)
+                let filtered = decoded.budget
+                    .filter { !self.is401kKey($0.key) }
+                    .map { BudgetItem(category: $0.key, amount: String($0.value)) }
                 DispatchQueue.main.async {
-                    self.budgetItems = decoded.budget.map { BudgetItem(category: $0.key, amount: String($0.value)) }
+                    self.budgetItems = filtered
                 }
             } catch {
                 print("❌ decode budget:", error)
@@ -351,7 +353,7 @@ extension BudgetInputView {
     }
     
     private func fetchIncomeData() {
-        let urlString = "http://localhost:8080/api/income/\(username)"
+        let urlString = "\(BackendConfig.baseURLString)/api/income/\(username)"
         guard let url = URL(string: urlString) else { return }
         URLSession.shared.dataTask(with: url) { data, _, error in
             if let error = error { print("❌ income:", error.localizedDescription); return }
@@ -368,6 +370,7 @@ extension BudgetInputView {
     
     private func saveBudget() {
         let budgetDict = budgetItems.reduce(into: [String: Double]()) { result, item in
+            guard !is401kKey(item.category) else { return }
             if let val = Double(item.amount) { result[item.category] = val }
         }
         let payload: [String: Any] = [
@@ -376,7 +379,7 @@ extension BudgetInputView {
             "budget": budgetDict
         ]
         guard let json = try? JSONSerialization.data(withJSONObject: payload) else { return }
-        var req = URLRequest(url: URL(string: "http://localhost:8080/api/budget")!)
+        var req = URLRequest(url: URL(string: "\(BackendConfig.baseURLString)/api/budget")!)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = json
@@ -406,7 +409,7 @@ extension BudgetInputView {
     }
     
     private func clearAllBudget() {
-        let urlString = "http://localhost:8080/api/budget/\(username)/\(backendType)"
+        let urlString = "\(BackendConfig.baseURLString)/api/budget/\(username)/\(backendType)"
         guard let url = URL(string: urlString) else { return }
         var req = URLRequest(url: url)
         req.httpMethod = "DELETE"
@@ -419,7 +422,7 @@ extension BudgetInputView {
     }
     
     private func revertToOriginalBudget() {
-        let urlString = "http://localhost:8080/api/llm/budget/revert/\(username)/\(backendType)"
+        let urlString = "\(BackendConfig.baseURLString)/api/llm/budget/revert/\(username)/\(backendType)"
         guard let url = URL(string: urlString) else { return }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
@@ -427,7 +430,7 @@ extension BudgetInputView {
             DispatchQueue.main.async { self.fetchBudgetData() }
         }.resume()
     }
-    
+
     private func parseNumber(_ any: Any?) -> Double? {
         guard let any = any else { return nil }
         let s = String(describing: any)
@@ -437,8 +440,16 @@ extension BudgetInputView {
         return Double(s)
     }
     
+    private func is401kKey(_ key: String) -> Bool {
+        let lowered = key.lowercased()
+        return lowered.contains("401k")
+            || lowered.contains("401(k)")
+            || lowered == "401k contribution"
+            || lowered == "401(k) contribution"
+    }
+    
     private func fetchTakeHomeFromLastQuiz() {
-        let url = URL(string: "http://localhost:8080/api/llm/budget/last/\(username)")!
+        let url = URL(string: "\(BackendConfig.baseURLString)/api/llm/budget/last/\(username)")!
         URLSession.shared.dataTask(with: url) { data, response, error in
             if let error = error { print("quiz err:", error.localizedDescription); self.fetchIncomeData(); return }
             guard let http = response as? HTTPURLResponse, http.statusCode == 200, let data = data, !data.isEmpty else {

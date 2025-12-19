@@ -32,7 +32,7 @@ public class FriendsFeedService {
   private final String bucketName = "plotline-database-bucket";
 
   public FriendsFeedService() {
-    Dotenv dotenv = Dotenv.load();
+    Dotenv dotenv = Dotenv.configure().ignoreIfMissing().load();
     String accessKey = dotenv.get("AWS_ACCESS_KEY_ID");
     String secretKey = dotenv.get("AWS_SECRET_ACCESS_KEY");
     String region = dotenv.get("AWS_REGION");

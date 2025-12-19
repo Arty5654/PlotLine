@@ -439,7 +439,7 @@ struct GroceryListDetailView: View {
         guard let jsonData = try? JSONSerialization.data(withJSONObject: payload) else { return }
         
         var request = URLRequest(
-            url: URL(string: "http://localhost:8080/api/groceryLists/estimate-grocery-cost-live")!
+            url: URL(string: "\(BackendConfig.baseURLString)/api/groceryLists/estimate-grocery-cost-live")!
         )
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -557,7 +557,7 @@ struct GroceryListDetailView: View {
     }
 
     func addCostToWeeklyGroceries(username: String, amount: Double) {
-        let getURL = URL(string: "http://localhost:8080/api/costs/\(username)/weekly")!
+        let getURL = URL(string: "\(BackendConfig.baseURLString)/api/costs/\(username)/weekly")!
         URLSession.shared.dataTask(with: getURL) { data, _, _ in
             guard let data = data,
                   var decoded = try? JSONDecoder().decode(WeeklyMonthlyCostResponse.self, from: data) else { return }
@@ -572,7 +572,7 @@ struct GroceryListDetailView: View {
             ]
             guard let newJson = try? JSONSerialization.data(withJSONObject: uploadPayload) else { return }
 
-            var uploadRequest = URLRequest(url: URL(string: "http://localhost:8080/api/costs")!)
+            var uploadRequest = URLRequest(url: URL(string: "\(BackendConfig.baseURLString)/api/costs")!)
             uploadRequest.httpMethod = "POST"
             uploadRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
             uploadRequest.httpBody = newJson
@@ -587,7 +587,7 @@ struct GroceryListDetailView: View {
     }
     
     func undoGroceryCost(username: String, amount: Double) {
-        let getURL = URL(string: "http://localhost:8080/api/costs/\(username)/weekly")!
+        let getURL = URL(string: "\(BackendConfig.baseURLString)/api/costs/\(username)/weekly")!
         URLSession.shared.dataTask(with: getURL) { data, _, _ in
             guard let data = data,
                   var decoded = try? JSONDecoder().decode(WeeklyMonthlyCostResponse.self, from: data) else { return }
@@ -602,7 +602,7 @@ struct GroceryListDetailView: View {
             ]
             guard let newJson = try? JSONSerialization.data(withJSONObject: uploadPayload) else { return }
 
-            var uploadRequest = URLRequest(url: URL(string: "http://localhost:8080/api/costs")!)
+            var uploadRequest = URLRequest(url: URL(string: "\(BackendConfig.baseURLString)/api/costs")!)
             uploadRequest.httpMethod = "POST"
             uploadRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
             uploadRequest.httpBody = newJson
@@ -657,7 +657,7 @@ struct GroceryListDetailView: View {
     
     func fetchGroceryBudget() {
         let username = UserDefaults.standard.string(forKey: "loggedInUsername") ?? "UnknownUser"
-        let url = URL(string: "http://localhost:8080/api/budget/\(username)/monthly/groceries")!
+        let url = URL(string: "\(BackendConfig.baseURLString)/api/budget/\(username)/monthly/groceries")!
         URLSession.shared.dataTask(with: url) { data, _, _ in
             guard let data = data,
                   let result = try? JSONSerialization.jsonObject(with: data) as? [String: Double],

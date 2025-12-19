@@ -108,9 +108,21 @@ struct FriendProfileView: View {
                                     .italic()
 
                             case .friends:
-                                Text("You are friends")
-                                    .foregroundColor(.green)
-                                    .fontWeight(.bold)
+                                VStack(spacing: 8) {
+                                    Text("You are friends")
+                                        .foregroundColor(.green)
+                                        .fontWeight(.bold)
+                                    Button(role: .destructive) {
+                                        Task {
+                                            await viewModel.removeFriend(user: currentUsername, friend: username)
+                                            await fetchFriendStatus()
+                                        }
+                                    } label: {
+                                        Text("Remove Friend")
+                                            .frame(maxWidth: .infinity)
+                                    }
+                                    .buttonStyle(.bordered)
+                                }
                             }
                         }
 

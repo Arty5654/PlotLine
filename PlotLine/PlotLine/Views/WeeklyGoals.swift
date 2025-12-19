@@ -356,7 +356,7 @@ struct WeeklyGoalsView: View {
                 self.isFinancialGoalDeleted = true
             }
 
-            guard let url = URL(string: "http://localhost:8080/api/goals/\(username)/\(id)") else {
+            guard let url = URL(string: "\(BackendConfig.baseURLString)/api/goals/\(username)/\(id)") else {
                 print("❌ Invalid DELETE URL")
                 return
             }
@@ -409,7 +409,7 @@ struct WeeklyGoalsView: View {
         )
         
         
-        guard let url = URL(string: "http://localhost:8080/api/goals/\(username)") else {
+        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/goals/\(username)") else {
             print("❌ Invalid URL")
             return
         }
@@ -472,7 +472,7 @@ struct WeeklyGoalsView: View {
         guard let index = tasks.firstIndex(where: { $0.id == task.id }) else { return }
         tasks[index].isCompleted.toggle()
         
-        guard let url = URL(string: "http://localhost:8080/api/goals/\(username)/\(task.id)/completion") else {
+        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/goals/\(username)/\(task.id)/completion") else {
             print("❌ Invalid URL")
             return
         }
@@ -502,7 +502,7 @@ struct WeeklyGoalsView: View {
     }
     
     private func updateTask(task: TaskItem) {
-        guard let url = URL(string: "http://localhost:8080/api/goals/\(username)/\(task.id)") else {
+        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/goals/\(username)/\(task.id)") else {
             print("❌ Invalid URL for updating task")
             return
         }
@@ -541,7 +541,7 @@ struct WeeklyGoalsView: View {
         for index in offsets {
             let task = tasks[index]
             
-            guard let url = URL(string: "http://localhost:8080/api/goals/\(username)/\(task.id)") else {
+            guard let url = URL(string: "\(BackendConfig.baseURLString)/api/goals/\(username)/\(task.id)") else {
                 print("❌ Invalid URL for deleting task")
                 return
             }
@@ -568,7 +568,7 @@ struct WeeklyGoalsView: View {
     }
     
     private func resetGoals() {
-        guard let url = URL(string: "http://localhost:8080/api/goals/\(username)/reset") else {
+        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/goals/\(username)/reset") else {
             print("❌ Invalid URL for resetting tasks")
             return
         }
@@ -714,7 +714,7 @@ struct WeeklyGoalsView: View {
             )
 
 
-            guard let url = URL(string: "http://localhost:8080/api/goals/\(username)") else {
+            guard let url = URL(string: "\(BackendConfig.baseURLString)/api/goals/\(username)") else {
                 print("❌ Invalid URL")
                 return
             }
@@ -759,7 +759,7 @@ struct WeeklyGoalsView: View {
     
     private func fetchFinancialSummary(completion: @escaping (FinancialSummary?) -> Void) {
         guard username != "Guest",
-              let url = URL(string: "http://localhost:8080/api/goals/\(username)/financial-data") else {
+              let url = URL(string: "\(BackendConfig.baseURLString)/api/goals/\(username)/financial-data") else {
             print("⚠️ Invalid username or URL")
             completion(nil)
             return

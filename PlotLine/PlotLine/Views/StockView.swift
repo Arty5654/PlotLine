@@ -140,7 +140,7 @@ struct StockView: View {
 
     func fetchSavedPortfolio(for account: ViewAccount) {
         // Prefer new endpoint with query param, but gracefully fall back to legacy
-        var components = URLComponents(string: "http://localhost:8080/api/llm/portfolio/\(username)")!
+        var components = URLComponents(string: "\(BackendConfig.baseURLString)/api/llm/portfolio/\(username)")!
         components.queryItems = [URLQueryItem(name: "account", value: account.apiValue)]
 
         func decodeAndSet(_ data: Data) {
@@ -159,7 +159,7 @@ struct StockView: View {
                     decodeAndSet(data)
                 } else {
                     // Fallback to old endpoint without account filter
-                    let legacyURL = URL(string: "http://localhost:8080/api/llm/portfolio/\(username)")!
+                    let legacyURL = URL(string: "\(BackendConfig.baseURLString)/api/llm/portfolio/\(username)")!
                     URLSession.shared.dataTask(with: legacyURL) { data2, _, _ in
                         if let data2 = data2 { decodeAndSet(data2) }
                     }.resume()
@@ -169,7 +169,7 @@ struct StockView: View {
     }
     
     func revertToLLMGeneratedPortfolio(for account: ViewAccount) {
-        var components = URLComponents(string: "http://localhost:8080/api/llm/portfolio/revert/\(username)")!
+        var components = URLComponents(string: "\(BackendConfig.baseURLString)/api/llm/portfolio/revert/\(username)")!
         components.queryItems = [URLQueryItem(name: "account", value: account.apiValue)]
         guard let url = components.url else { return }
 
@@ -341,18 +341,20 @@ struct PortfolioExplanationView: View {
         .navigationTitle("Why These Investments?")
     }
     
-    // Replace literal "\n" with actual newline characters and split on double newline.
+    // Replace literal "\n" with actual newline characters, collapse double percent signs, and split on double newline.
     private func splitPortfolioText() -> [String] {
-        let replaced = portfolioText.replacingOccurrences(of: "\\n", with: "\n")
+        let replaced = portfolioText
+            .replacingOccurrences(of: "\\n", with: "\n")
+            .replacingOccurrences(of: "%%", with: "%")
         return replaced.components(separatedBy: "\n\n")
                        .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     }
     
     private func extractAssetInfo(from block: String) -> (name: String, percent: Double, allocation: Double)? {
         // The regex looks for a pattern like:
-        // **<TICKER> - <PERCENT>%%**
+        // **<TICKER> - <PERCENT>%**
         // followed by something like "- **Allocation:** $<ALLOCATION>"
-        let pattern = #"\*\*([A-Z]+)\s*-\s*(\d+)%{2}\*\*\s*-?\s*\*\*Allocation:\*\*\s*\$(\d+(?:\.\d+)?)"#
+        let pattern = #"\*\*([A-Z]+)\s*-\s*(\d+)%+\*\*\s*-?\s*\*\*Allocation:\*\*\s*\$(\d+(?:\.\d+)?)"#
         
         guard let regex = try? NSRegularExpression(pattern: pattern, options: [.dotMatchesLineSeparators]) else {
             return nil

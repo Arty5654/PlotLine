@@ -9,7 +9,7 @@ import Foundation
 
 struct CalendarAPI {
     
-    static let baseURL = "http://localhost:8080"
+    static let baseURL = "\(BackendConfig.baseURLString)"
     
     static func createEvent(_ event: Event, username: String) async throws -> Event {
         guard let url = URL(string: "\(baseURL)/calendar/create-event") else {

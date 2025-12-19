@@ -215,7 +215,7 @@ struct BudgetCompareView: View {
         if !newState.trimmingCharacters(in: .whitespaces).isEmpty { payload["state"] = newState }
 
         guard let data = try? JSONSerialization.data(withJSONObject: payload),
-              let url = URL(string: "http://localhost:8080/api/llm/budget") else { return }
+              let url = URL(string: "\(BackendConfig.baseURLString)/api/llm/budget") else { return }
 
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
@@ -247,7 +247,7 @@ struct BudgetCompareView: View {
         isLoading = true
         defer { isLoading = false }
 
-        guard let url = URL(string: "http://localhost:8080/api/budget/\(username)/monthly") else { return }
+        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/budget/\(username)/monthly") else { return }
 
         do {
             let (data, _) = try await URLSession.shared.data(from: url)
@@ -270,7 +270,7 @@ struct BudgetCompareView: View {
 
     
     private func loadQuizData() async {
-        guard let url = URL(string: "http://localhost:8080/api/llm/budget/last/\(username)") else { return }
+        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/llm/budget/last/\(username)") else { return }
         do {
             let (data, resp) = try await URLSession.shared.data(from: url)
             guard let http = resp as? HTTPURLResponse, (200...299).contains(http.statusCode) else { return }
@@ -291,7 +291,7 @@ struct BudgetCompareView: View {
     private func applyBudget() async {
         isLoading = true
         defer { isLoading = false }
-        guard let url = URL(string: "http://localhost:8080/api/budget") else { return }
+        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/budget") else { return }
         let cleanedMonthly = proposedBudget.filter { !excludedCats.contains($0.key) }
         let weeklyBudget = cleanedMonthly.mapValues { $0 / 4.0 }
 

@@ -21,8 +21,9 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import static com.plotline.backend.util.UsernameUtils.normalize;
 
-import io.github.cdimascio.dotenv.Dotenv;
+
 import software.amazon.awssdk.core.ResponseBytes;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
@@ -121,7 +122,6 @@ public class UserProfileService {
   private final ObjectMapper objectMapper;
   private final ChatMessageService chatService;
   private final String bucketName = "plotline-database-bucket";
-  private final Dotenv dotenv = Dotenv.load();
 
   public UserProfileService(S3Client s3Client,
                             ChatMessageService chatService) {
@@ -135,7 +135,7 @@ public class UserProfileService {
 
           String user = objectMapper.writeValueAsString(profile);
 
-          String username = profile.getUsername();
+          String username = normalize(profile.getUsername());
           String key = "users/" + username + "/profile.json";
 
           PutObjectRequest putRequest = PutObjectRequest.builder().
@@ -156,7 +156,7 @@ public class UserProfileService {
       try {
 
         System.out.println(username);
-        String key = "users/" + username + "/profile.json";
+        String key = "users/" + normalize(username) + "/profile.json";
 
         GetObjectRequest getRequest = GetObjectRequest.builder()
           .bucket(bucketName)
@@ -180,7 +180,7 @@ public class UserProfileService {
     try {
 
       System.out.println(username);
-      String key = "users/" + username + "/account.json";
+      String key = "users/" + normalize(username) + "/account.json";
 
       GetObjectRequest getRequest = GetObjectRequest.builder()
         .bucket(bucketName)
@@ -200,7 +200,8 @@ public class UserProfileService {
 }
 
   public String uploadProfilePicture(MultipartFile file, String username) throws Exception {
-        String fileName = "users/" + username + "/profile_pictures/" + username + ".jpg";
+        String normUser = normalize(username);
+        String fileName = "users/" + normUser + "/profile_pictures/" + normUser + ".jpg";
 
         System.out.println("Uploading profile picture");
 
@@ -223,7 +224,7 @@ public class UserProfileService {
   // TROPHY FUNCTIONS
 
   public List<Trophy> getTrophies(String username) throws IOException {
-    String key = "users/" + username + "/trophies.json";
+    String key = "users/" + normalize(username) + "/trophies.json";
 
     try {
       GetObjectRequest getRequest = GetObjectRequest.builder()
@@ -280,7 +281,7 @@ public class UserProfileService {
 
   public void saveTrophies(String username, List<Trophy> trophies) throws IOException {
 
-    String key = "users/" + username + "/trophies.json";
+    String key = "users/" + normalize(username) + "/trophies.json";
     PutObjectRequest putRequest = PutObjectRequest.builder()
         .bucket(bucketName)
         .key(key)

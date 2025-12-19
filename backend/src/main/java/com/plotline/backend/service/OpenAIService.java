@@ -39,17 +39,33 @@ public class OpenAIService {
 
   public OpenAIService() {
 
-    Dotenv dotenv = Dotenv.load();
-    String openaiApiKey = dotenv.get("OPENAI_API_KEY");
+    Dotenv dotenv = Dotenv.configure().ignoreIfMissing().load();
+    String openaiApiKey = resolveEnv(dotenv, "OPENAI_API_KEY");
 
-    this.openAIClient = OpenAIOkHttpClient.builder()
-                        .apiKey(openaiApiKey)
-                        .build(); 
+    if (openaiApiKey == null || openaiApiKey.isBlank()) {
+      System.err.println("OPENAI_API_KEY not configured; LLM features are disabled.");
+      this.openAIClient = null;
+    } else {
+      this.openAIClient = OpenAIOkHttpClient.builder()
+                          .apiKey(openaiApiKey)
+                          .build();
+    }
 
+  }
+
+  private static String resolveEnv(Dotenv dotenv, String key) {
+    String env = System.getenv(key);
+    if (env != null && !env.isBlank()) {
+      return env;
+    }
+    return dotenv.get(key);
   }
 
   // @Arty5654 @ay-chang @ymehtaa this is an example which sends a user prompt and returns the response
   public String generateResponse(String userMessage) {
+    if (openAIClient == null) {
+      return "Service Error: OpenAI is not configured.";
+    }
 
     try {
 
@@ -115,6 +131,9 @@ public class OpenAIService {
 
   // Response for Estimating Groccery Costs
   public String generateResponseGC(String userMessage) {
+    if (openAIClient == null) {
+      return "Service Error: OpenAI is not configured.";
+    }
 
     try {
         String systemMessage = "You are a helpful financial assistant." +
@@ -143,6 +162,9 @@ public class OpenAIService {
 
   // Calcaulate local taxes
   public String generateResponseLocalTaxes(String userMessage) {
+    if (openAIClient == null) {
+      return "Service Error: OpenAI is not configured.";
+    }
 
     try {
         String systemMessage = """

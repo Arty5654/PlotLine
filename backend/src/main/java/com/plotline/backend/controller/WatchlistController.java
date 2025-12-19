@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.plotline.backend.dto.WatchlistEntry;
 import com.plotline.backend.service.S3Service;
 import com.plotline.backend.service.UserProfileService;
+import static com.plotline.backend.util.UsernameUtils.normalize;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -27,19 +28,20 @@ public class WatchlistController {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private String getKey(String username) {
-        return "users/" + username + "/watchlist.json";
+        return "users/" + normalize(username) + "/watchlist.json";
     }
 
     @PostMapping("/add")
     public ResponseEntity<String> addToWatchlist(@RequestBody WatchlistEntry entry) {
         try {
-            List<String> watchlist = getWatchlist(entry.getUsername());
+            String user = normalize(entry.getUsername());
+            List<String> watchlist = getWatchlist(user);
             if (!watchlist.contains(entry.getSymbol())) {
                 watchlist.add(entry.getSymbol());
-                saveWatchlist(entry.getUsername(), watchlist);
+                saveWatchlist(user, watchlist);
 
                 // Increment trophy progress for adding to watchlist
-                userProfileService.incrementTrophy(entry.getUsername(), "watchlist-adder", 1);
+                userProfileService.incrementTrophy(user, "watchlist-adder", 1);
 
             }
             return ResponseEntity.ok("Added to watchlist.");
@@ -51,9 +53,10 @@ public class WatchlistController {
     @PostMapping("/remove")
     public ResponseEntity<String> removeFromWatchlist(@RequestBody WatchlistEntry entry) {
         try {
-            List<String> watchlist = getWatchlist(entry.getUsername());
+            String user = normalize(entry.getUsername());
+            List<String> watchlist = getWatchlist(user);
             if (watchlist.remove(entry.getSymbol())) {
-                saveWatchlist(entry.getUsername(), watchlist);
+                saveWatchlist(user, watchlist);
             }
             return ResponseEntity.ok("Removed from watchlist.");
         } catch (Exception e) {
@@ -64,7 +67,7 @@ public class WatchlistController {
     @GetMapping("/{username}")
     public ResponseEntity<List<String>> getWatchlistForUser(@PathVariable String username) {
         try {
-            List<String> watchlist = getWatchlist(username);
+            List<String> watchlist = getWatchlist(normalize(username));
             return ResponseEntity.ok(watchlist);
         } catch (Exception e) {
             return ResponseEntity.status(500).body(null);

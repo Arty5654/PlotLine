@@ -63,7 +63,7 @@ struct StockNewsView: View {
 
 
     func fetchRiskAndNews() {
-        guard let url = URL(string: "http://localhost:8080/api/llm/portfolio/risk/\(username)") else { return }
+        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/llm/portfolio/risk/\(username)") else { return }
 
         URLSession.shared.dataTask(with: url) { data, _, _ in
             if let data = data,

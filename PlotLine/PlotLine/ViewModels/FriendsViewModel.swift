@@ -79,6 +79,16 @@ class FriendsViewModel: ObservableObject {
         }
     }
     
+    func removeFriend(user: String, friend: String) async {
+        do {
+            try await FriendsAPI.removeFriend(username: user, friendUsername: friend)
+            await loadFriends(for: user)
+            await loadPendingRequests(for: user)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+    
     func findUser(username: String) async {
         // reset before each new search
         searchExecuted = false

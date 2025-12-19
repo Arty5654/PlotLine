@@ -8,7 +8,7 @@
 import Foundation
 
 class ChatAPI {
-    private let baseURL = URL(string: "http://localhost:8080/chat")!
+    private let baseURL = URL(string: "\(BackendConfig.baseURLString)/chat")!
     
     // helper decoder/encoder for reuse of timestamp encode/decode
     private let decoder: JSONDecoder = {
@@ -73,7 +73,7 @@ class ChatAPI {
     }
     
     func removeReaction(owner: String, messageId: String, emoji: String) async throws {
-        // Build URL: http://localhost:8080/chat/{owner}/{messageId}/reactions?emoji={emoji}
+        // Build URL: \(BackendConfig.baseURLString)/chat/{owner}/{messageId}/reactions?emoji={emoji}
         let url = baseURL
             .appendingPathComponent(owner)
             .appendingPathComponent(messageId)

@@ -11,3 +11,5 @@
 **/.DS_Store/*
 
 **/Config.xcconfig
+
+**/Info.plist

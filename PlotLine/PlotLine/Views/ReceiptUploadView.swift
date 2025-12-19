@@ -263,7 +263,7 @@ extension ReceiptUploadView {
     }
 
     private func fetchCategoriesFromBudget(type: String, completion: @escaping ([String]?) -> Void) {
-        let urlString = "http://localhost:8080/api/budget/\(username)/\(type)"
+        let urlString = "\(BackendConfig.baseURLString)/api/budget/\(username)/\(type)"
         guard let url = URL(string: urlString) else { completion(nil); return }
         URLSession.shared.dataTask(with: url) { data, _, _ in
             guard let data,
@@ -273,7 +273,7 @@ extension ReceiptUploadView {
     }
 
     private func fetchCategoriesFromCosts(type: String, completion: @escaping ([String]?) -> Void) {
-        let urlString = "http://localhost:8080/api/costs/\(username)/\(type)"
+        let urlString = "\(BackendConfig.baseURLString)/api/costs/\(username)/\(type)"
         guard let url = URL(string: urlString) else { completion(nil); return }
         URLSession.shared.dataTask(with: url) { data, _, _ in
             guard let data,
@@ -287,7 +287,7 @@ extension ReceiptUploadView {
               let imageData = image.jpegData(compressionQuality: 0.8) else { return }
 
         let boundary = UUID().uuidString
-        var request = URLRequest(url: URL(string: "http://localhost:8080/api/costs/upload-receipt")!)
+        var request = URLRequest(url: URL(string: "\(BackendConfig.baseURLString)/api/costs/upload-receipt")!)
         request.httpMethod = "POST"
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
 
@@ -385,7 +385,7 @@ extension ReceiptUploadView {
         guard let jsonData = try? JSONSerialization.data(withJSONObject: payload) else {
             completion(false); return
         }
-        var request = URLRequest(url: URL(string: "http://localhost:8080/api/costs/merge")!)
+        var request = URLRequest(url: URL(string: "\(BackendConfig.baseURLString)/api/costs/merge")!)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = jsonData

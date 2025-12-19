@@ -7,6 +7,7 @@ import com.plotline.backend.dto.BudgetQuizRequest;
 import com.plotline.backend.dto.BudgetRequest;
 import com.plotline.backend.service.OpenAIService;
 import com.plotline.backend.service.S3Service;
+import static com.plotline.backend.util.UsernameUtils.normalize;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -63,7 +64,7 @@ public class BudgetQuizController {
     @PostMapping
     public ResponseEntity<?> generateBudget(@RequestBody Map<String, Object> quizData) {
         try {
-            String username = (String) quizData.get("username");
+            String username = normalize((String) quizData.get("username"));
             double grossYearlyIncome = Double.parseDouble(quizData.get("yearlyIncome").toString());
             double retirment = Double.parseDouble(quizData.get("401(k) Contribution").toString());
             String city = (String) quizData.get("city");
@@ -263,7 +264,6 @@ public class BudgetQuizController {
             monthly.remove("401k Contribution");
             monthly.remove("401KContribution");
             monthly.remove("401(k) Contribution");
-            monthly.put("401(k) Contribution", k401Monthly);
 
             // Enforce debt minimums (ensure presence and at least min)
             for (var e : debtFixed.entrySet()) {
@@ -282,9 +282,7 @@ public class BudgetQuizController {
 
             // Save all 4 versions to S3
             saveToS3(username, "monthly-budget.json", monthly);
-            //saveToS3(username, "monthly-budget-edited.json", monthly);
             saveToS3(username, "weekly-budget.json", weekly);
-            //saveToS3(username, "weekly-budget-edited.json", weekly);
 
             // Add net monthly to quiz data for live tracker
             quizData.put("afterTaxYearly", round2(afterTaxYearly));
@@ -301,7 +299,8 @@ public class BudgetQuizController {
 
     // Save the previous quiz that was submitted
     private void saveQuizInput(String username, Map<String,Object> quizData) throws Exception {
-        String key      = "users/%s/last_budget_quiz.json".formatted(username);
+        String normUser = normalize(username);
+        String key      = "users/%s/last_budget_quiz.json".formatted(normUser);
         String json     = objectMapper.writeValueAsString(quizData);
         try (var in = new ByteArrayInputStream(json.getBytes(StandardCharsets.UTF_8))) {
             s3Service.uploadFile(key, in, json.length());
@@ -370,7 +369,8 @@ public class BudgetQuizController {
     }
 
     private void saveToS3(String username, String fileName, Map<String, Double> budget) throws Exception {
-        String key = "users/" + username + "/" + fileName;
+        String normUser = normalize(username);
+        String key = "users/" + normUser + "/" + fileName;
         String jsonData = objectMapper.writeValueAsString(budget);
         ByteArrayInputStream stream = new ByteArrayInputStream(jsonData.getBytes(StandardCharsets.UTF_8));
         s3Service.uploadFile(key, stream, jsonData.length());
@@ -479,7 +479,7 @@ public class BudgetQuizController {
       try {
           String jsonData = objectMapper.writeValueAsString(request.getBudget());
           ByteArrayInputStream stream = new ByteArrayInputStream(jsonData.getBytes(StandardCharsets.UTF_8));
-          String key = String.format("users/%s/%s-budget-edited.json", request.getUsername(), request.getType());
+          String key = String.format("users/%s/%s-budget-edited.json", normalize(request.getUsername()), request.getType());
           s3Service.uploadFile(key, stream, jsonData.length());
           return ResponseEntity.ok("Edited budget saved.");
       } catch (Exception e) {
@@ -491,7 +491,7 @@ public class BudgetQuizController {
   @PostMapping("/revert/{username}/{type}")
   public ResponseEntity<String> revertToOriginal(@PathVariable String username, @PathVariable String type) {
     try {
-        String editedKey = String.format("users/%s/%s-budget-edited.json", username, type);
+        String editedKey = String.format("users/%s/%s-budget-edited.json", normalize(username), type);
         s3Service.deleteFile(editedKey);
         return ResponseEntity.ok("Reverted to original budget.");
     } catch (Exception e) {
@@ -502,13 +502,21 @@ public class BudgetQuizController {
     @GetMapping("/last/{username}")
     public ResponseEntity<?> lastQuiz(@PathVariable String username) {
         try {
-            String key   = "users/%s/last_budget_quiz.json".formatted(username);
+            String normUser = normalize(username);
+            String key   = "users/%s/last_budget_quiz.json".formatted(normUser);
             byte[] bytes = s3Service.downloadFile(key);
             String json  = new String(bytes, StandardCharsets.UTF_8);
             return ResponseEntity.ok(objectMapper.readTree(json)); 
         } catch (Exception e) {
-            // nothing saved yet 
-            return ResponseEntity.noContent().build();
+            // Legacy fallback with original casing
+            try {
+                String key   = "users/%s/last_budget_quiz.json".formatted(username);
+                byte[] bytes = s3Service.downloadFile(key);
+                String json  = new String(bytes, StandardCharsets.UTF_8);
+                return ResponseEntity.ok(objectMapper.readTree(json)); 
+            } catch (Exception ignored) {
+                return ResponseEntity.noContent().build();
+            }
         }
     }
 

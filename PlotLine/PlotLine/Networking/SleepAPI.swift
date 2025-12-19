@@ -8,7 +8,7 @@
 import Foundation
 
 class SleepAPI {
-    private let baseURL = "http://localhost:8080/api/health"
+    private let baseURL = "\(BackendConfig.baseURLString)/api/health"
     
     // Fetch sleep schedule for the user
     func fetchSleepSchedule() async throws -> SleepSchedule {
