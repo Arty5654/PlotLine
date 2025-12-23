@@ -82,7 +82,7 @@ public class BudgetQuizController {
                 .stream()
                 .map(String::valueOf)
                 .collect(Collectors.toCollection(ArrayList::new));
-            Map<String, Double> knownCosts = (Map<String, Double>) quizData.getOrDefault("knownCosts", Map.of());
+            Map<String, Double> knownCosts = toDoubleMap(quizData.get("knownCosts"));
 
             // Parse debt
             boolean hasDebt = Boolean.parseBoolean(String.valueOf(quizData.getOrDefault("hasDebt", false)));
@@ -213,6 +213,7 @@ public class BudgetQuizController {
             - Use housingSituation to tune Rent / Housing: e.g., "Renting" → normal rent; "Live with Others" → keep rent lower; "Own with Mortgage" → allow higher housing cost but keep other lifestyle categories modest.
             - Use carOwnership to adjust "Transportation" (and "Car Insurance"): "Multiple Cars" → more, "No Car" → less.
             - Use eatingOutFrequency to balance "Eating Out" vs "Groceries": "Often" → higher Eating Out but do not let it dominate the budget; "Rarely" → keep Eating Out low and shift more to Groceries.
+            - If the user already knows some costs and has requested to fix them, please adjust the rest of the budget accordingly to not create a budget that is over budget.
 
             IMPORTANT: **Do NOT include a '401k Contribution' category in your output.** The server will append a fixed line for this.
 
@@ -456,6 +457,19 @@ public class BudgetQuizController {
     }
     private static double round2(double v) { return Math.round(v * 100.0) / 100.0; }
     private static long round0(double v) { return Math.round(v); }
+
+    private Map<String, Double> toDoubleMap(Object raw) {
+        if (!(raw instanceof Map<?,?> m)) return Map.of();
+        Map<String, Double> out = new LinkedHashMap<>();
+        for (var e : m.entrySet()) {
+            String key = String.valueOf(e.getKey());
+            Double val = toNullableDouble(e.getValue());
+            if (val != null) {
+                out.put(key, val);
+            }
+        }
+        return out;
+    }
 
    
   

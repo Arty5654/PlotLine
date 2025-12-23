@@ -485,10 +485,10 @@ struct BudgetQuizView: View {
             ToolbarItem(placement: .principal) {
                 Text("Budget Quiz").font(.headline)
             }
-            ToolbarItemGroup(placement: .keyboard) {
-                Spacer()
-                Button("Done") { hideKeyboard() }
-            }
+//            ToolbarItemGroup(placement: .keyboard) {
+//                Spacer()
+//                Button("Done") { hideKeyboard() }
+//            }
         }
         .tint(PLColor.accent)
         .alert("Something went wrong", isPresented: $showError) {
