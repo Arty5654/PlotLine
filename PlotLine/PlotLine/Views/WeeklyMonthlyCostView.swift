@@ -353,10 +353,10 @@ struct WeeklyMonthlyCostView: View {
                 Text("\(selectedType) Cost Input")
                     .font(.headline)
             }
-            ToolbarItemGroup(placement: .keyboard) {
-                Spacer()
-                Button("Done") { hideKeyboard() }
-            }
+//            ToolbarItemGroup(placement: .keyboard) {
+//                Spacer()
+//                Button("Done") { hideKeyboard() }
+//            }
         }
         .tint(PLColor.accent)
         .alert(item: $activeAlert) { a in
@@ -853,16 +853,34 @@ struct WeeklyMonthlyCostView: View {
     
     // Feedback
     private func fetchMonthlyFeedback(for date: Date) {
-        let monthStr = monthYYYYMM(from: date)
-        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/costs/feedback/\(username)?month=\(monthStr)")
+        let currentMonth = monthYYYYMM(from: Date())
+        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/costs/feedback/\(username)?month=\(currentMonth)")
         else { return }
         
-        URLSession.shared.dataTask(with: url) { data, _, _ in
-            guard let data = data,
-                  let decoded = try? JSONDecoder().decode(MonthlyFeedback.self, from: data)
+        URLSession.shared.dataTask(with: url) { data, response, _ in
+            guard
+                let http = response as? HTTPURLResponse,
+                (200...299).contains(http.statusCode),
+                let data = data,
+                !data.isEmpty,
+                let decoded = try? JSONDecoder().decode(MonthlyFeedback.self, from: data),
+                decoded.month == currentMonth
             else { DispatchQueue.main.async { self.monthlyFeedback = nil }; return }
+
+            // Require a real previous-month baseline
+            if decoded.totalPrevious == 0 {
+                DispatchQueue.main.async { self.monthlyFeedback = nil }
+                return
+            }
+
+            // If both totals are zero, treat as "no data"
+            if decoded.totalCurrent == 0 && decoded.totalPrevious == 0 {
+                DispatchQueue.main.async { self.monthlyFeedback = nil }
+                return
+            }
+
             DispatchQueue.main.async { self.monthlyFeedback = decoded }
-        }.resume()
+        }.resume();
     }
     
     // Fetch accounts (grouped across items) the user can pick from
