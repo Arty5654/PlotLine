@@ -126,7 +126,7 @@ struct BudgetSection: View {
             .plCard()
 
             if hasQuiz == false {
-                // No quiz anywhere -> show only the CTA
+                // No quiz anywhere
                 NavigationLink { BudgetQuizView().environmentObject(calendarVM) } label: {
                     Label("Take the AI Powered Budget Quiz", systemImage: "sparkles")
                         .frame(maxWidth: .infinity)

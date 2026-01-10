@@ -90,6 +90,7 @@ struct BudgetInputView: View {
     @State private var userRent: Double = 0.0
     
     @State private var warningsAcknowledged: Bool = false
+    @State private var isRegenerating: Bool = false
     
     // Exclude from progress math (still visible as budget lines)
     private let trackerExclusions: Set<String> = ["401(k)", "401(k) Contribution"]
@@ -216,6 +217,19 @@ struct BudgetInputView: View {
                         }
                         .tint(.green)
                     }
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Tip: Leave a new category blank to auto-generate amounts. If you enter a number, it won’t regenerate unless you tap Regenerate.")
+                            .font(.footnote)
+                            .foregroundColor(PLColor.textSecondary)
+                        if isRegenerating {
+                            HStack(spacing: 6) {
+                                ProgressView().scaleEffect(0.8)
+                                Text("Generating updated budget…")
+                                    .font(.footnote)
+                                    .foregroundColor(PLColor.accent)
+                            }
+                        }
+                    }
                 }
                 .plCard()
                 
@@ -223,7 +237,10 @@ struct BudgetInputView: View {
                 VStack(spacing: PLSpacing.sm) {
                     Button("Save Budget", action: attemptSaveBudget)
                         .buttonStyle(PrimaryButton())
-                    Button("Regenerate with New Categories", action: regenerateBudgetFromUI)
+                        .disabled(isRegenerating)
+                    Button("Regenerate with New Categories") {
+                        regenerateBudgetFromUI()
+                    }
                         .buttonStyle(OutlinedButton(tint: PLColor.accent))
                     HStack(spacing: PLSpacing.sm) {
                         Button("Clear All", action: clearAllBudget)
@@ -328,6 +345,8 @@ extension BudgetInputView {
         guard !trimmed.isEmpty else { return }
         if !budgetItems.contains(where: { $0.category.caseInsensitiveCompare(trimmed) == .orderedSame }) {
             budgetItems.append(BudgetItem(category: trimmed, amount: ""))
+            // If the new field is blank (default), auto-regenerate to include it
+            regenerateBudgetFromUI(auto: true)
         }
         newCategory = ""
     }
@@ -339,7 +358,8 @@ extension BudgetInputView {
     }
 
     // Call backend to regenerate using last quiz + current categories/known costs
-    private func regenerateBudgetFromUI() {
+    private func regenerateBudgetFromUI(auto: Bool = false) {
+        isRegenerating = true
         let cats = budgetItems.map { $0.category }
         var known: [String: Double] = [:]
         for item in budgetItems {
@@ -353,7 +373,7 @@ extension BudgetInputView {
             "knownCosts": known
         ]
         guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
-        var req = URLRequest(url: URL(string: "\(BackendConfig.baseURLString)/api/llm/budget/regenerate")!)
+        var req = URLRequest(url: URL(string: "\(BackendConfig.baseURLString)/api/llm/budget/regen")!)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = data
@@ -365,10 +385,31 @@ extension BudgetInputView {
                   let data = data,
                   let decoded = try? JSONDecoder().decode([String: Double].self, from: data)
             else {
+                DispatchQueue.main.async { self.isRegenerating = false }
                 return
             }
             DispatchQueue.main.async {
-                self.budgetItems = decoded.map { BudgetItem(category: $0.key, amount: String(format: "%.2f", $0.value)) }
+                // Ensure all requested categories are present (LLM may omit)
+                var merged: [BudgetItem] = []
+                for cat in cats {
+                    if let val = decoded[cat] {
+                        merged.append(BudgetItem(category: cat, amount: String(format: "%.2f", val)))
+                    } else {
+                        // Keep existing amount (likely blank) to let user fill or regen later
+                        if let existing = self.budgetItems.first(where: { $0.category == cat }) {
+                            merged.append(existing)
+                        } else {
+                            merged.append(BudgetItem(category: cat, amount: ""))
+                        }
+                    }
+                }
+                // Include any extra keys returned by the backend that weren't in cats (except 401k)
+                let extra = decoded.filter { key, _ in !cats.contains(key) && !is401kKey(key) }
+                for (k,v) in extra {
+                    merged.append(BudgetItem(category: k, amount: String(format: "%.2f", v)))
+                }
+                self.budgetItems = merged
+                self.isRegenerating = false
             }
         }.resume()
     }

@@ -63,46 +63,6 @@ public class BudgetQuizController {
 
     @PostMapping
     public ResponseEntity<?> generateBudget(@RequestBody Map<String, Object> quizData) {
-        return generateBudgetInternal(quizData, true);
-    }
-
-    @PostMapping("/regenerate")
-    public ResponseEntity<?> regenerateBudget(@RequestBody Map<String, Object> payload) {
-        try {
-            String usernameRaw = String.valueOf(payload.getOrDefault("username", ""));
-            String username = normalize(usernameRaw);
-            if (username.isBlank()) {
-                return ResponseEntity.badRequest().body("username is required");
-            }
-
-            // Load last quiz input
-            String key = "users/%s/last_budget_quiz.json".formatted(username);
-            byte[] bytes = s3Service.downloadFile(key);
-            Map<String,Object> quizData = objectMapper.readValue(bytes, new TypeReference<Map<String,Object>>() {});
-
-            // Merge categories
-            List<String> incomingCats = ((List<?>) payload.getOrDefault("categories", List.of()))
-                    .stream().map(String::valueOf).toList();
-            List<String> categories = ((List<?>) quizData.getOrDefault("categories", List.of()))
-                    .stream().map(String::valueOf).collect(Collectors.toCollection(ArrayList::new));
-            for (String c : incomingCats) {
-                if (categories.stream().noneMatch(e -> e.equalsIgnoreCase(c))) {
-                    categories.add(c);
-                }
-            }
-            quizData.put("categories", categories);
-
-            // Merge knownCosts (only numeric, skip blanks)
-            Map<String, Double> known = toDoubleMap(payload.get("knownCosts"));
-            quizData.put("knownCosts", known);
-
-            return generateBudgetInternal(quizData, false);
-        } catch (Exception e) {
-            return ResponseEntity.status(500).body("Failed to regenerate: " + e.getMessage());
-        }
-    }
-
-    private ResponseEntity<?> generateBudgetInternal(Map<String, Object> quizData, boolean persistQuizInput) {
         try {
             String username = normalize((String) quizData.get("username"));
             double grossYearlyIncome = Double.parseDouble(quizData.get("yearlyIncome").toString());
@@ -338,7 +298,102 @@ public class BudgetQuizController {
         }
     }
 
-    // Save the previous quiz that was submitted (or regenerated)
+    // Regen Budget when new field is added (post quiz, no tax recompute)
+    @PostMapping("/regen")
+    public ResponseEntity<?> regenBudget(@RequestBody Map<String, Object> payload) {
+        try {
+            String username = normalize(String.valueOf(payload.getOrDefault("username", "")));
+            if (username.isBlank()) return ResponseEntity.badRequest().body("username is required");
+            String type = String.valueOf(payload.getOrDefault("type", "monthly")).toLowerCase(Locale.ROOT);
+            boolean weeklyRequested = "weekly".equals(type);
+
+            List<String> incomingCats = toStringList(payload.get("categories"));
+            Map<String, Double> incomingKnown = toDoubleMap(payload.get("knownCosts"));
+
+            Map<String, Double> result = regenBudgetInternal(username, weeklyRequested, incomingCats, incomingKnown);
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body("Failed to regenerate: " + e.getMessage());
+        }
+    }
+
+    private Map<String, Double> regenBudgetInternal(String username,
+                                                    boolean weeklyRequested,
+                                                    List<String> incomingCats,
+                                                    Map<String, Double> incomingKnown) throws Exception {
+        String normUser = normalize(username);
+
+        // Load monthlyNet + quiz categories
+        Map<String,Object> quizData = readLastQuiz(normUser);
+        Double monthlyNetObj = toNullableDouble(quizData.get("monthlyNet"));
+        double monthlyNet = monthlyNetObj != null ? monthlyNetObj : 0.0;
+        List<String> quizCats = toStringList(quizData.get("categories"));
+
+        // Load current budget (edited preferred)
+        Map<String, Double> current = loadBudget(normUser, weeklyRequested ? "weekly" : "monthly");
+        Map<String, Double> currentMonthly = weeklyRequested ? multiplyMap(current, 4.0) : current;
+
+        // Merge categories
+        Set<String> mergedCats = new LinkedHashSet<>();
+        mergedCats.addAll(currentMonthly.keySet());
+        mergedCats.addAll(quizCats);
+        mergedCats.addAll(incomingCats);
+
+        // Known costs baseline from current budget, override with incoming numeric (convert weekly->monthly if needed)
+        Map<String, Double> known = new LinkedHashMap<>(currentMonthly);
+        incomingKnown.forEach((k,v) -> {
+            if (v != null) known.put(k, weeklyRequested ? v * 4.0 : v);
+        });
+
+        // Strip 401k keys from known
+        known.keySet().removeIf(this::is401kKey);
+
+        // Fallback monthlyNet
+        if (monthlyNet <= 0) {
+            monthlyNet = known.values().stream().mapToDouble(Double::doubleValue).sum();
+        }
+
+        String categoriesList = String.join(", ", mergedCats);
+        String knownAllocations = known.entrySet().stream()
+                .map(e -> String.format("- Allocate $%.2f to %s.", e.getValue(), e.getKey()))
+                .collect(Collectors.joining("\n"));
+
+        String prompt = String.format("""
+            You are a financial assistant regenerating a monthly budget.
+
+            Use ONLY these categories: %s.
+            Fixed/known amounts (do not change):
+            %s
+
+            Any category not listed in known amounts must still get a reasonable allocation > 0.
+            Do NOT include 401k/401(k) lines.
+
+            Output JSON:
+            {
+              "Category1": amount,
+              "Category2": amount
+            }
+
+            Total must NOT exceed $%.2f. Allocate to every category.
+            """, categoriesList, knownAllocations, monthlyNet);
+
+        String raw = openAIService.generateBudget(prompt);
+        String jsonOnly = extractJsonBlock(raw);
+        Map<String, Double> monthly = objectMapper.readValue(jsonOnly, new TypeReference<>() {});
+
+        // Cleanup and enforce
+        monthly.keySet().removeIf(this::is401kKey);
+        enforceAllCategories(monthly, new ArrayList<>(mergedCats), monthlyNet);
+
+        // Save monthly & weekly
+        Map<String, Double> weekly = divideMap(monthly, 4.0);
+        saveToS3(normUser, "monthly-budget.json", monthly);
+        saveToS3(normUser, "weekly-budget.json", weekly);
+
+        return weeklyRequested ? weekly : monthly;
+    }
+
+    // Save the previous quiz that was submitted
     private void saveQuizInput(String username, Map<String,Object> quizData) throws Exception {
         String normUser = normalize(username);
         String key      = "users/%s/last_budget_quiz.json".formatted(normUser);
@@ -509,6 +564,77 @@ public class BudgetQuizController {
             }
         }
         return out;
+    }
+
+    private List<String> toStringList(Object raw) {
+        if (!(raw instanceof List<?> list)) return List.of();
+        return list.stream().map(String::valueOf).toList();
+    }
+
+    private Map<String, Double> loadBudget(String username, String type) {
+        String norm = normalize(username);
+        String editedKey = "users/%s/%s-budget-edited.json".formatted(norm, type);
+        String baseKey   = "users/%s/%s-budget.json".formatted(norm, type);
+        try {
+            byte[] data = s3Service.downloadFile(editedKey);
+            return objectMapper.readValue(data, new TypeReference<>() {});
+        } catch (Exception ignored) { }
+        try {
+            byte[] data = s3Service.downloadFile(baseKey);
+            return objectMapper.readValue(data, new TypeReference<>() {});
+        } catch (Exception ignored) { }
+        return new LinkedHashMap<>();
+    }
+
+    private Map<String,Object> readLastQuiz(String username) throws Exception {
+        String key = "users/%s/last_budget_quiz.json".formatted(username);
+        byte[] bytes = s3Service.downloadFile(key);
+        return objectMapper.readValue(bytes, new TypeReference<>() {});
+    }
+
+    private Map<String, Double> divideMap(Map<String, Double> src, double factor) {
+        Map<String, Double> out = new LinkedHashMap<>();
+        src.forEach((k,v) -> out.put(k, round2(v / factor)));
+        return out;
+    }
+
+    private Map<String, Double> multiplyMap(Map<String, Double> src, double factor) {
+        Map<String, Double> out = new LinkedHashMap<>();
+        src.forEach((k,v) -> out.put(k, round2(v * factor)));
+        return out;
+    }
+
+    private boolean is401kKey(String key) {
+        if (key == null) return false;
+        String lowered = key.toLowerCase(Locale.ROOT);
+        return lowered.contains("401k") || lowered.contains("401(k)");
+    }
+
+    private void enforceAllCategories(Map<String, Double> monthly,
+                                      List<String> categories,
+                                      double monthlyNet) {
+        Set<String> targetCats = categories.stream()
+                .filter(c -> c != null && !c.isBlank())
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+
+        double current = monthly.entrySet().stream()
+                .filter(e -> e.getValue() != null && e.getValue() > 0)
+                .mapToDouble(Map.Entry::getValue)
+                .sum();
+
+        List<String> missing = targetCats.stream()
+                .filter(cat -> monthly.getOrDefault(cat, 0.0) <= 0.0)
+                .toList();
+
+        if (missing.isEmpty()) return;
+
+        double remaining = monthlyNet - current;
+        double fallback = remaining > 0 ? remaining / missing.size() : 1.0;
+        if (fallback <= 0) fallback = 1.0;
+
+        for (String cat : missing) {
+            monthly.put(cat, round2(fallback));
+        }
     }
 
    

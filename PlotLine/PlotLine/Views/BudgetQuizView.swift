@@ -131,7 +131,7 @@ struct BudgetQuizView: View {
     
     @State private var primaryGoal = "Balanced"
     @State private var savingsPriority = "Medium"
-    @State private var housingSituation = ""
+    @State private var housingSituation = "Renting"
     @State private var carOwnership = "One Car"
     @State private var eatingOutFrequency = "Sometimes"
 
