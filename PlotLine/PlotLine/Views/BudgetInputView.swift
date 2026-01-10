@@ -79,7 +79,7 @@ private struct DestructiveButton: ButtonStyle {
 struct BudgetInputView: View {
     // MARK: State
     @State private var selectedType: String =
-        UserDefaults.standard.string(forKey: "selectedType") ?? "Weekly"
+        UserDefaults.standard.string(forKey: "selectedType") ?? "Monthly"
     
     @State private var budgetItems: [BudgetItem] = []
     @State private var newCategory: String = ""
