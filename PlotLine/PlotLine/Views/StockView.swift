@@ -346,8 +346,20 @@ struct PortfolioExplanationView: View {
         let replaced = portfolioText
             .replacingOccurrences(of: "\\n", with: "\n")
             .replacingOccurrences(of: "%%", with: "%")
-        return replaced.components(separatedBy: "\n\n")
-                       .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        return replaced
+            .components(separatedBy: "\n\n")
+            .map { formatSummarySection($0) }
+            .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    }
+
+    // Ensure common summary fields show on new lines for readability.
+    private func formatSummarySection(_ text: String) -> String {
+        let keys = ["Frequency:", "Total allocation", "Total percent", "Total monthly", "Total amount"]
+        var result = text
+        for key in keys {
+            result = result.replacingOccurrences(of: " " + key, with: "\n" + key)
+        }
+        return result
     }
     
     private func extractAssetInfo(from block: String) -> (name: String, percent: Double, allocation: Double)? {

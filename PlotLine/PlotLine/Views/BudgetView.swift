@@ -9,6 +9,7 @@ import SwiftUI
 import Charts
 import Foundation
 import LinkKit
+import Combine
 
 // MARK: - Local tokens (scoped to this file)
 private enum PLColor {
@@ -113,9 +114,16 @@ struct BudgetSection: View {
     @State private var chartType = "Weekly" // or "Monthly"
     @StateObject private var plaidCoordinator = PlaidLinkCoordinator()
 
-    private var quizCompleted: Bool {
-        UserDefaults.standard.bool(forKey: "budgetQuizCompleted")
-    }
+//    @State private var quizCompletedFlag = UserDefaults.standard.bool(forKey: "budgetQuizCompleted")
+//    @State private var quizExistsRemote = false
+//    @State private var isCheckingQuiz = false
+//
+//    private var showQuizCTA: Bool {
+//        // Show CTA only if neither local completion nor remote file exists
+//        !(quizCompletedFlag || quizExistsRemote)
+//    }
+    
+    @State private var hasQuiz: Bool? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: PLSpacing.lg) {
@@ -126,12 +134,14 @@ struct BudgetSection: View {
             }
             .plCard()
 
-            if !quizCompleted {
+            if hasQuiz == false {
+                // No quiz anywhere -> show only the CTA
                 NavigationLink { BudgetQuizView().environmentObject(calendarVM) } label: {
                     Label("Take the AI Powered Budget Quiz", systemImage: "sparkles")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(PrimaryButton())
+
             } else {
                 // Trend chart card
                 VStack(alignment: .leading, spacing: PLSpacing.md) {
@@ -194,8 +204,42 @@ struct BudgetSection: View {
                 }
             }
         }
+        .onAppear { Task { await checkQuizExists() } }
+        .onReceive(NotificationCenter.default.publisher(for: .budgetQuizCompleted)) { _ in
+            // After the flow finishes, re-check server to flip hasQuiz -> true
+            Task { await checkQuizExists() }
+        }
     }
     
+    private func checkQuizExists() async {
+        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/llm/budget/last/\(currentUsername())")
+        else { return }
+
+        await MainActor.run { hasQuiz = nil }  // show spinner
+
+        do {
+            let (data, resp) = try await URLSession.shared.data(from: url)
+            guard let http = resp as? HTTPURLResponse else {
+                await MainActor.run { hasQuiz = false }
+                return
+            }
+
+            if (200...299).contains(http.statusCode), !data.isEmpty {
+                // File exists and has content
+                await MainActor.run { hasQuiz = true }
+            } else if http.statusCode == 204 {
+                // No content -> no quiz
+                await MainActor.run { hasQuiz = false }
+            } else {
+                // Any other status, be conservative: treat as absent
+                await MainActor.run { hasQuiz = false }
+            }
+        } catch {
+            // Network problem -> don’t render empty budget UI
+            await MainActor.run { hasQuiz = false }
+        }
+    }
+
     private func startPlaidLink() async {
         guard let url = URL(string: "\(BackendConfig.baseURLString)/api/plaid/link_token?username=\(currentUsername())"),
               let (data, _) = try? await URLSession.shared.data(from: url),

@@ -79,10 +79,10 @@ struct FriendProfileView: View {
                             case .notFriends:
                                 Button("Add Friend") {
                                     Task {
-                                        _ = await viewModel.sendFriendRequest(sender: currentUsername, receiver: username)
+                                        let resp = await viewModel.sendFriendRequest(sender: currentUsername, receiver: username)
+                                        await MainActor.run { friendStatus = .pendingRequest }
                                         await fetchFriendStatus()
-                                        
-                                        print("Sent request")
+                                        print("Sent request: \(resp)")
                                     }
                                 }
                                 .buttonStyle(.borderedProminent)
@@ -122,9 +122,10 @@ struct FriendProfileView: View {
                                             .frame(maxWidth: .infinity)
                                     }
                                     .buttonStyle(.bordered)
-                                }
-                            }
-                        }
+        }
+        .task { await fetchFriendStatus() }
+    }
+}
 
 
                         // Trophy Section

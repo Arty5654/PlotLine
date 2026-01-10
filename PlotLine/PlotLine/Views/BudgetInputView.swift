@@ -198,7 +198,10 @@ struct BudgetInputView: View {
                         ForEach(budgetItems.indices, id: \.self) { i in
                             BudgetRow(
                                 item: $budgetItems[i],
-                                onRemove: { removeCategory(item: budgetItems[i]) }
+                                onRemove: { removeCategory(item: budgetItems[i]) },
+                                onChangeAmount: { newVal in
+                                    budgetItems[i].amount = sanitizeAmount(newVal)
+                                }
                             )
                         }
                     }
@@ -221,6 +224,8 @@ struct BudgetInputView: View {
                 VStack(spacing: PLSpacing.sm) {
                     Button("Save Budget", action: attemptSaveBudget)
                         .buttonStyle(PrimaryButton())
+                    Button("Regenerate with New Categories", action: regenerateBudgetFromUI)
+                        .buttonStyle(OutlinedButton(tint: PLColor.accent))
                     HStack(spacing: PLSpacing.sm) {
                         Button("Clear All", action: clearAllBudget)
                             .buttonStyle(DestructiveButton())
@@ -279,6 +284,7 @@ struct BudgetInputView: View {
 private struct BudgetRow: View {
     @Binding var item: BudgetItem
     var onRemove: () -> Void
+    var onChangeAmount: (String) -> Void
     
     var body: some View {
         HStack(spacing: PLSpacing.sm) {
@@ -288,6 +294,9 @@ private struct BudgetRow: View {
             TextField("Amount ($)", text: $item.amount)
                 .keyboardType(.decimalPad)
                 .textFieldStyle(.roundedBorder)
+                .onChange(of: item.amount) { newValue in
+                    onChangeAmount(newValue)
+                }
             
             Spacer(minLength: PLSpacing.sm)
             Button(action: onRemove) {
@@ -301,6 +310,12 @@ private struct BudgetRow: View {
 // ---------- Logic (unchanged APIs, tidied a bit) ----------
 extension BudgetInputView {
     private func attemptSaveBudget() {
+        // If any blanks, regenerate to fill them before saving
+        let empties = budgetItems.filter { $0.amount.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        if !empties.isEmpty {
+            regenerateBudgetFromUI()
+            return
+        }
         generateBudgetingWarnings()
         if budgetingWarnings.isEmpty {
             saveBudget()
@@ -322,6 +337,53 @@ extension BudgetInputView {
     }
     private func deleteItems(at offsets: IndexSet) {
         budgetItems.remove(atOffsets: offsets)
+    }
+
+    // Call backend to regenerate using last quiz + current categories/known costs
+    private func regenerateBudgetFromUI() {
+        let cats = budgetItems.map { $0.category }
+        var known: [String: Double] = [:]
+        for item in budgetItems {
+            if let v = Double(item.amount) {
+                known[item.category] = v
+            }
+        }
+        let payload: [String: Any] = [
+            "username": username,
+            "categories": cats,
+            "knownCosts": known
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
+        var req = URLRequest(url: URL(string: "\(BackendConfig.baseURLString)/api/llm/budget/regenerate")!)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = data
+
+        URLSession.shared.dataTask(with: req) { data, response, error in
+            guard error == nil,
+                  let http = response as? HTTPURLResponse,
+                  (200...299).contains(http.statusCode),
+                  let data = data,
+                  let decoded = try? JSONDecoder().decode([String: Double].self, from: data)
+            else {
+                return
+            }
+            DispatchQueue.main.async {
+                self.budgetItems = decoded.map { BudgetItem(category: $0.key, amount: String(format: "%.2f", $0.value)) }
+            }
+        }.resume()
+    }
+
+    // Keep only digits and a single decimal point
+    private func sanitizeAmount(_ input: String) -> String {
+        var filtered = input.filter { "0123456789.".contains($0) }
+        // enforce a single dot
+        if let firstDot = filtered.firstIndex(of: ".") {
+            let afterDot = filtered.index(after: firstDot)
+            let remainder = filtered[afterDot...].replacingOccurrences(of: ".", with: "")
+            filtered = String(filtered[..<afterDot]) + remainder
+        }
+        return filtered
     }
     
     private func fetchBudgetData() {

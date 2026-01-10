@@ -29,6 +29,8 @@ import software.amazon.awssdk.services.s3.model.ListObjectsV2Response;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Object;
 
+import static com.plotline.backend.util.UsernameUtils.normalize;
+
 @Service
 public class ChatMessageService {
 
@@ -49,6 +51,7 @@ public class ChatMessageService {
     public ChatMessage postMessage(String username,
                                    ChatMessage message) throws JsonProcessingException {
 
+        String normUser = normalize(username);
         // 1) assign ID + timestamp
         message.setId(UUID.randomUUID().toString());
         message.setTimestamp(
@@ -60,7 +63,7 @@ public class ChatMessageService {
 
         // 3) build & execute upload
         String key = String.format("chat-messages/%s/%s.json",
-                                   username, message.getId());
+                                   normUser, message.getId());
         PutObjectRequest putReq = PutObjectRequest.builder()
             .bucket(bucketName)
             .key(key)
@@ -75,10 +78,11 @@ public class ChatMessageService {
                                             List<String> friendIds) throws IOException {
         List<ChatMessage> all = new ArrayList<>();
 
+        String self = normalize(userId);
         // combine your own + friends
         List<String> prefixes = Stream.concat(
-            friendIds.stream(),
-            Stream.of(userId)
+            friendIds.stream().map(f -> normalize(f)),
+            Stream.of(self)
         ).toList();
 
         for (String uid : prefixes) {

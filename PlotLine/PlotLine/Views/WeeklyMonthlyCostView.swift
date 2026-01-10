@@ -246,7 +246,10 @@ struct WeeklyMonthlyCostView: View {
                                 CostRow(
                                     item: $costItems[i],
                                     budgetLimit: budgetLimits[costItems[i].category],
-                                    onRemove: { removeCategory(item: costItems[i]) }
+                                    onRemove: { removeCategory(item: costItems[i]) },
+                                    onChangeAmount: { newVal in
+                                        costItems[i].amount = sanitizeAmount(newVal)
+                                    }
                                 )
                             }
                         }
@@ -473,6 +476,17 @@ struct WeeklyMonthlyCostView: View {
     private func removeCategory(item: BudgetItem) {
         costItems.removeAll { $0.id == item.id }
     }
+
+    // Keep only digits and a single decimal point
+    private func sanitizeAmount(_ input: String) -> String {
+        var filtered = input.filter { "0123456789.".contains($0) }
+        if let firstDot = filtered.firstIndex(of: ".") {
+            let after = filtered.index(after: firstDot)
+            let remainder = filtered[after...].replacingOccurrences(of: ".", with: "")
+            filtered = String(filtered[..<after]) + remainder
+        }
+        return filtered
+    }
     
     private func postMerge(type: String, date: Date, values: [String: Double], completion: @escaping (Bool)->Void) {
         let payload: [String: Any] = [
@@ -495,6 +509,18 @@ struct WeeklyMonthlyCostView: View {
     }
     
     private func saveCosts() {
+        // Validate all cost rows (non-excluded) have a value and are numeric
+        let invalid = costItems.first { item in
+            guard !trackerExclusions.contains(item.category) else { return false }
+            let trimmed = item.amount.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty { return true }
+            return Double(trimmed) == nil
+        }
+        if invalid != nil {
+            activeAlert = AppAlert(title: "Missing Amount", message: "Please enter a number for every cost before saving.")
+            return
+        }
+
         // build payload excluding tracker exclusions and zeroes
         let values = costItems.reduce(into: [String: Double]()) { acc, item in
             guard !trackerExclusions.contains(item.category),
@@ -1013,6 +1039,7 @@ private struct CostRow: View {
     @Binding var item: BudgetItem
     let budgetLimit: Double?
     var onRemove: () -> Void
+    var onChangeAmount: (String) -> Void
     
     var body: some View {
         HStack(spacing: PLSpacing.sm) {
@@ -1022,8 +1049,8 @@ private struct CostRow: View {
             TextField("Amount ($)", text: $item.amount)
                 .keyboardType(.decimalPad)
                 .textFieldStyle(.roundedBorder)
-                .onChange(of: item.amount) { _ in
-                    // handled by parent warning builder if desired
+                .onChange(of: item.amount) { newValue in
+                    onChangeAmount(newValue)
                 }
             
             if let limit = budgetLimit, let cost = Double(item.amount) {

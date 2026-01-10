@@ -72,6 +72,7 @@ private struct OutlineButton: ButtonStyle {
 struct ReceiptUploadView: View {
     @State private var selectedImage: UIImage? = nil
     @State private var imagePickerItem: PhotosPickerItem? = nil
+    @State private var showCameraPicker: Bool = false
     @State private var isUploading: Bool = false
     @State private var resultMessage: String? = nil
     @State private var showCategoryPrompt: Bool = false
@@ -127,6 +128,14 @@ struct ReceiptUploadView: View {
                             }
                             .buttonStyle(OutlineButton(tint: PLColor.accent))
                             
+                             Button {
+                                 showCameraPicker = true
+                             } label: {
+                                 Label("Take Photo", systemImage: "camera")
+                                     .frame(maxWidth: .infinity)
+                             }
+                             .buttonStyle(OutlineButton(tint: PLColor.accent))
+                            
                             Button {
                                 uploadReceipt()
                             } label: {
@@ -157,6 +166,14 @@ struct ReceiptUploadView: View {
                                     .frame(maxWidth: .infinity)
                             }
                             .buttonStyle(PrimaryButton())
+                            
+                            Button {
+                                showCameraPicker = true
+                            } label: {
+                                Label("Take Photo", systemImage: "camera")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(OutlineButton(tint: PLColor.accent))
                         }
                     }
                 }
@@ -218,6 +235,9 @@ struct ReceiptUploadView: View {
                 onConfirm: submitCorrections
             )
         }
+        .sheet(isPresented: $showCameraPicker) {
+            CameraPicker(image: $selectedImage)
+        }
         .onChange(of: imagePickerItem) { newItem in
             Task {
                 guard let newItem else { return }
@@ -228,6 +248,10 @@ struct ReceiptUploadView: View {
                     self.errorText = nil
                 }
             }
+        }
+        .onChange(of: selectedImage) { _ in
+            resultMessage = nil
+            errorText = nil
         }
         .onAppear { loadCategories() }
     }
@@ -418,6 +442,47 @@ extension ReceiptUploadView {
             self.showCategoryPrompt = false
             self.loadCategories()
             if !(okWeekly && okMonthly) { print("One of the merges failed (weekly:\(okWeekly), monthly:\(okMonthly))") }
+        }
+    }
+}
+
+// MARK: - Camera Picker
+struct CameraPicker: UIViewControllerRepresentable {
+    @Binding var image: UIImage?
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let picker = UIImagePickerController()
+        picker.delegate = context.coordinator
+        if UIImagePickerController.isSourceTypeAvailable(.camera) {
+            picker.sourceType = .camera
+        } else {
+            picker.sourceType = .photoLibrary
+        }
+        picker.allowsEditing = false
+        return picker
+    }
+
+    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
+
+    class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+        let parent: CameraPicker
+        init(_ parent: CameraPicker) {
+            self.parent = parent
+        }
+
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+            picker.dismiss(animated: true)
+        }
+
+        func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
+            if let img = info[.originalImage] as? UIImage {
+                parent.image = img
+            }
+            picker.dismiss(animated: true)
         }
     }
 }

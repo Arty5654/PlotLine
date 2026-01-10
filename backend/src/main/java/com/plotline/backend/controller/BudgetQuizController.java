@@ -63,6 +63,46 @@ public class BudgetQuizController {
 
     @PostMapping
     public ResponseEntity<?> generateBudget(@RequestBody Map<String, Object> quizData) {
+        return generateBudgetInternal(quizData, true);
+    }
+
+    @PostMapping("/regenerate")
+    public ResponseEntity<?> regenerateBudget(@RequestBody Map<String, Object> payload) {
+        try {
+            String usernameRaw = String.valueOf(payload.getOrDefault("username", ""));
+            String username = normalize(usernameRaw);
+            if (username.isBlank()) {
+                return ResponseEntity.badRequest().body("username is required");
+            }
+
+            // Load last quiz input
+            String key = "users/%s/last_budget_quiz.json".formatted(username);
+            byte[] bytes = s3Service.downloadFile(key);
+            Map<String,Object> quizData = objectMapper.readValue(bytes, new TypeReference<Map<String,Object>>() {});
+
+            // Merge categories
+            List<String> incomingCats = ((List<?>) payload.getOrDefault("categories", List.of()))
+                    .stream().map(String::valueOf).toList();
+            List<String> categories = ((List<?>) quizData.getOrDefault("categories", List.of()))
+                    .stream().map(String::valueOf).collect(Collectors.toCollection(ArrayList::new));
+            for (String c : incomingCats) {
+                if (categories.stream().noneMatch(e -> e.equalsIgnoreCase(c))) {
+                    categories.add(c);
+                }
+            }
+            quizData.put("categories", categories);
+
+            // Merge knownCosts (only numeric, skip blanks)
+            Map<String, Double> known = toDoubleMap(payload.get("knownCosts"));
+            quizData.put("knownCosts", known);
+
+            return generateBudgetInternal(quizData, false);
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body("Failed to regenerate: " + e.getMessage());
+        }
+    }
+
+    private ResponseEntity<?> generateBudgetInternal(Map<String, Object> quizData, boolean persistQuizInput) {
         try {
             String username = normalize((String) quizData.get("username"));
             double grossYearlyIncome = Double.parseDouble(quizData.get("yearlyIncome").toString());
@@ -298,7 +338,7 @@ public class BudgetQuizController {
         }
     }
 
-    // Save the previous quiz that was submitted
+    // Save the previous quiz that was submitted (or regenerated)
     private void saveQuizInput(String username, Map<String,Object> quizData) throws Exception {
         String normUser = normalize(username);
         String key      = "users/%s/last_budget_quiz.json".formatted(normUser);

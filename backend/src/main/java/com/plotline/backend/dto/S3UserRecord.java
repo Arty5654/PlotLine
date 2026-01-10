@@ -1,5 +1,8 @@
 package com.plotline.backend.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+
+@JsonIgnoreProperties(value = {"displayUsername"})
 public class S3UserRecord {
     private String username;
     private String phone;

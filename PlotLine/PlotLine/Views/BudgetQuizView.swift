@@ -21,6 +21,10 @@ private enum PLColor {
     static let danger         = Color.red
     static let warning        = Color.orange
 }
+
+extension Notification.Name {
+    static let budgetQuizCompleted = Notification.Name("budgetQuizCompleted")
+}
 private enum PLSpacing {
     static let xs: CGFloat = 6
     static let sm: CGFloat = 10
@@ -604,6 +608,8 @@ struct BudgetQuizView: View {
             try await postBudget(username: username, type: "weekly", budget: weekly)
             await resetCostsToSelectedCategories()
             UserDefaults.standard.set(true, forKey: "budgetQuizCompleted")
+            // Notify observers (e.g., BudgetView) to refresh state immediately
+            NotificationCenter.default.post(name: .budgetQuizCompleted, object: nil)
             
             DispatchQueue.main.async {
                 isLoading = false

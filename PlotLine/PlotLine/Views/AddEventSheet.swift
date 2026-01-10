@@ -1,4 +1,5 @@
 import SwiftUI
+import UserNotifications
 
 struct AddEventSheet: View {
     @Environment(\.presentationMode) var presentationMode
@@ -18,6 +19,20 @@ struct AddEventSheet: View {
 
     @State private var showFriendDropdown = false
     @State private var selectedFriends: [Friend] = []
+
+    // Reminder selections
+    struct ReminderOption: Identifiable {
+        let id = UUID()
+        let label: String
+        let secondsBefore: TimeInterval
+    }
+    private let reminderOptions: [ReminderOption] = [
+        ReminderOption(label: "15 minutes before", secondsBefore: 15 * 60),
+        ReminderOption(label: "1 hour before", secondsBefore: 60 * 60),
+        ReminderOption(label: "1 day before", secondsBefore: 24 * 60 * 60),
+        ReminderOption(label: "At start time", secondsBefore: 0)
+    ]
+    @State private var selectedReminders: Set<UUID> = []
 
 
     let onSave: (String, String, Date, Date, String, [String]) -> Void
@@ -60,24 +75,30 @@ struct AddEventSheet: View {
                 }
 
                 // Date selection fields
-                Section(header: Text("Dates")) {
+                Section(header: Text("Dates & Times")) {
                     Toggle("Multiple Days?", isOn: $isRange)
-                    DatePicker("Start Date", selection: $startDate, displayedComponents: .date)
+                    DatePicker("Start", selection: $startDate, displayedComponents: [.date, .hourAndMinute])
 
                     if isRange {
-                        DatePicker("End Date", selection: $endDate, displayedComponents: .date)
+                        DatePicker("End", selection: $endDate, in: startDate..., displayedComponents: [.date, .hourAndMinute])
                     }
                 }
 
                 // Recurrence options
                 Section(header: Text("Repeat")) {
                     Toggle("Recurring Event?", isOn: $isRecurring)
+                        .onChange(of: isRecurring) { on in
+                            if !on { recurrence = "none" }
+                            else if recurrence == "none" {
+                                recurrence = "weekly" // sensible default when turning on
+                            }
+                        }
                     if isRecurring {
                         Picker("Frequency", selection: $recurrence) {
-                            Text("Never (Default)").tag("none")
                             Text("Every Week").tag("weekly")
                             Text("Every other week").tag("biweekly")
                             Text("Every Month").tag("monthly")
+                            Text("Every Year").tag("yearly")
                         }
                     }
                 }
@@ -168,7 +189,25 @@ struct AddEventSheet: View {
                         }
                     }
                 }
+
+                // Notifications
+                Section(header: Text("Reminders")) {
+                    ForEach(reminderOptions) { opt in
+                        Toggle(isOn: Binding<Bool>(
+                            get: { selectedReminders.contains(opt.id) },
+                            set: { isOn in
+                                if isOn { selectedReminders.insert(opt.id) }
+                                else { selectedReminders.remove(opt.id) }
+                            }
+                        )) {
+                            Text(opt.label)
+                        }
+                    }
+                }
             }
+            .scrollDismissesKeyboard(.interactively)
+            .onTapGesture { hideKeyboard() }
+            .onAppear { requestNotificationPermission() }
             .navigationBarTitle("Add Event", displayMode: .inline)
             .navigationBarItems(
                 leading: Button("Cancel") {
@@ -176,11 +215,51 @@ struct AddEventSheet: View {
                 },
                 trailing: Button("Save") {
                     let finalEndDate = isRange ? endDate : startDate
+                    scheduleRemindersIfNeeded(eventTitle: title, start: startDate)
                     // Pass the selected friend IDs along with other parameters.
                     onSave(title, description, startDate, finalEndDate, recurrence, selectedFriends.map { $0.id })
                     presentationMode.wrappedValue.dismiss()
                 }
             )
+        }
+    }
+}
+
+private extension AddEventSheet {
+    func hideKeyboard() {
+        #if canImport(UIKit)
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        #endif
+    }
+
+    func requestNotificationPermission() {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
+    }
+
+    func scheduleRemindersIfNeeded(eventTitle: String, start: Date) {
+        let center = UNUserNotificationCenter.current()
+        let selectedOpts = reminderOptions.filter { selectedReminders.contains($0.id) }
+        guard !selectedOpts.isEmpty else { return }
+
+        for opt in selectedOpts {
+            let triggerDate = start.addingTimeInterval(-opt.secondsBefore)
+            if triggerDate < Date() { continue } // skip past reminders
+
+            var comps = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: triggerDate)
+            comps.second = 0
+            let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: false)
+
+            let content = UNMutableNotificationContent()
+            content.title = "Upcoming Event"
+            content.body = "\(eventTitle.isEmpty ? "Event" : eventTitle) starts soon."
+            content.sound = .default
+
+            let request = UNNotificationRequest(
+                identifier: UUID().uuidString,
+                content: content,
+                trigger: trigger
+            )
+            center.add(request)
         }
     }
 }
@@ -194,4 +273,3 @@ struct Friend: Identifiable, Equatable {
         self.id = username
     }
 }
-

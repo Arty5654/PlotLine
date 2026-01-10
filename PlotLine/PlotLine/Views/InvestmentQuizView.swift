@@ -336,10 +336,10 @@ struct InvestmentQuizView: View {
             ToolbarItem(placement: .principal) {
                 Text("Investor Quiz").font(.headline)
             }
-            ToolbarItemGroup(placement: .keyboard) {
-                Spacer()
-                Button("Done") { hideKeyboard() }
-            }
+            //ToolbarItemGroup(placement: .keyboard) {
+               // Spacer()
+               // Button("Done") { hideKeyboard() }
+            //}
         }
         .tint(PLColor.accent)
         .alert("Add to Budget First", isPresented: $showBudgetMissingAlert) {
