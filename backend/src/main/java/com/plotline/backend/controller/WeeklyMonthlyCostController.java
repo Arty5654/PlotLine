@@ -29,6 +29,10 @@ import java.util.stream.Collectors;
 import java.util.Objects;
 import java.util.LinkedHashMap;
 import java.util.Iterator;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import java.time.DayOfWeek;
 import java.time.YearMonth;
@@ -126,52 +130,26 @@ public class WeeklyMonthlyCostController {
             image.transferTo(tempFile);
 
             String ocrText = OCRService.extractTextFromImage(tempFile);
+            if (ocrText == null || ocrText.isBlank()) {
+                return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                        .body(Map.of("error", "OCR unavailable on server", "details", "Missing Tesseract native library or no text detected"));
+            }
             System.out.println("Extracted OCR Text:\n" + ocrText);
 
-            String safeText = ocrText.replace("\"", "");
-            String prompt = """
-            You are a budgeting assistant. Based on the following receipt text, extract line items and their prices.
-
-            Then categorize each item into one of the following budget categories:
-            [Groceries, Eating Out, Transportation, Utilities, Subscriptions, Entertainment, Miscellaneous]
-            If a line item doesn't clearly match a category, put it under "Unmatched".
-
-            Return your answer as JSON like this:
-            {
-            "Groceries": 23.99,
-            "Eating Out": 12.50,
-            "Unmatched": [
-                { "item": "Yoga Mat", "amount": 30.00 }
-            ]
+            Map<String, Double> parsed = parseReceiptWithLLM(ocrText);
+            String source = "llm";
+            if (parsed.isEmpty()) {
+                parsed = parseReceiptHeuristics(ocrText);
+                source = "heuristic";
             }
-            Only include a category in the JSON if the total amount for that category is greater than 0.
-            Do not include categories with a value of 0.
-
-            Receipt text:
-            """ + safeText;
-
-            String response = openAIService.generateResponse(prompt);
-            System.out.println("GPT Response:\n" + response);
-
-            // Clean up response to parse
-            String cleanedJson = response
-                .replaceAll("(?s)```json\\s*", "")  // remove ```json
-                .replaceAll("(?s)```", "")          // remove closing ```
-                .trim();
-
-            // Parse
-            Map<String, Object> result = new ObjectMapper().readValue(cleanedJson, new TypeReference<>() {});
-            Map<String, Double> parsed = result.entrySet().stream()
-                    .filter(e -> e.getValue() instanceof Number)
-                    .map(e -> Map.entry(e.getKey(), ((Number) e.getValue()).doubleValue()))
-                    .filter(e -> e.getValue() > 0) // prevent 0 values from being passed into updates
-                    .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+            if (parsed.isEmpty()) {
+                return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+                        .body(Map.of("error", "Could not extract line items. Please retake a clearer photo."));
+            }
 
             updateWeeklyCosts(normUser, parsed);
-
-            //return ResponseEntity.ok("Receipt parsed and weekly budget updated!");
-            System.out.println("Result: " + result);
-            return ResponseEntity.ok(result);
+            System.out.println("Parsed receipt (" + source + "): " + parsed);
+            return ResponseEntity.ok(Map.of("parsed", parsed, "source", source));
 
         } catch (Exception e) {
             e.printStackTrace();
@@ -253,6 +231,110 @@ public class WeeklyMonthlyCostController {
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
         .body("Error merging: "+e.getMessage());
         }
+    }
+
+    // ---------- Receipt parsing helpers ----------
+    private Map<String, Double> parseReceiptWithLLM(String ocrText) {
+        try {
+            String safeText = ocrText.replace("\"", "");
+            String prompt = """
+            You are a budgeting assistant. Based only on the receipt text below, extract line items and their prices.
+
+            Categories: [Groceries, Eating Out, Transportation, Utilities, Subscriptions, Entertainment, Miscellaneous]
+            If a line item doesn't clearly match, put it under "Unmatched".
+
+            Return ONLY JSON (no code fences) like:
+            {
+              "Groceries": 23.99,
+              "Eating Out": 12.50,
+              "Unmatched": [ { "item": "Gift Card", "amount": 25.00 } ]
+            }
+
+            Rules:
+            - DO NOT invent items. Use only line items with prices found in the text.
+            - If no valid prices are found, return {}.
+            - Ignore card numbers, auth codes, totals like BALANCE/CHANGE/TAX/TOTAL.
+            - Only include categories whose total is > 0.
+
+            Receipt text:
+            """ + safeText;
+
+            String response = openAIService.generateResponse(prompt);
+            System.out.println("GPT Response:\n" + response);
+            String cleanedJson = response
+                    .replaceAll("(?s)```json\\s*", "")
+                    .replaceAll("(?s)```", "")
+                    .trim();
+
+            Map<String, Object> result = new ObjectMapper().readValue(cleanedJson, new TypeReference<>() {});
+            return result.entrySet().stream()
+                    .filter(e -> e.getValue() instanceof Number)
+                    .map(e -> Map.entry(e.getKey(), ((Number) e.getValue()).doubleValue()))
+                    .filter(e -> e.getValue() > 0)
+                    .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+        } catch (Exception ex) {
+            System.err.println("LLM parse failed: " + ex.getMessage());
+            return Map.of();
+        }
+    }
+
+    private static final Pattern PRICE_PATTERN = Pattern.compile("(\\d+[\\.,]\\d{2})");
+    private Map<String, Double> parseReceiptHeuristics(String text) {
+        Map<String, Double> totals = new HashMap<>();
+        if (text == null || text.isBlank()) return totals;
+
+        String[] lines = text.split("\\r?\\n");
+        for (String rawLine : lines) {
+            String line = rawLine.trim();
+            if (line.isEmpty()) continue;
+            String lower = line.toLowerCase();
+
+            // Skip obvious non-item lines
+            if (lower.contains("total") || lower.contains("balance") || lower.contains("change")
+                    || lower.contains("tax") || lower.contains("auth") || lower.contains("approved")
+                    || lower.contains("card") || lower.contains("visa") || lower.contains("mastercard")
+                    || lower.contains("debit") || lower.contains("credit") || lower.matches(".*\\*+.*")) {
+                continue;
+            }
+
+            Matcher m = PRICE_PATTERN.matcher(line);
+            String priceStr = null;
+            while (m.find()) {
+                priceStr = m.group(1); // last price on the line
+            }
+            if (priceStr == null) continue;
+
+            double price = 0.0;
+            try {
+                price = Double.parseDouble(priceStr.replace(",", "."));
+            } catch (NumberFormatException ignored) { }
+            if (price <= 0) continue;
+
+            String cat = categorizeLine(lower);
+            totals.put(cat, totals.getOrDefault(cat, 0.0) + price);
+        }
+        // Remove zero/negative categories just in case
+        totals.entrySet().removeIf(e -> e.getValue() <= 0);
+        return totals;
+    }
+
+    private String categorizeLine(String lower) {
+        if (lower.contains("chipotle") || lower.contains("restaurant") || lower.contains("cafe") || lower.contains("grill") || lower.contains("pizza"))
+            return "Eating Out";
+        if (lower.contains("gift card") || lower.contains("gc") || lower.contains("giftcard"))
+            return "Miscellaneous";
+        if (lower.contains("uber") || lower.contains("lyft") || lower.contains("fuel") || lower.contains("gas"))
+            return "Transportation";
+        if (lower.contains("subscription") || lower.contains("subscr"))
+            return "Subscriptions";
+        if (lower.contains("electric") || lower.contains("water") || lower.contains("utility") || lower.contains("cable"))
+            return "Utilities";
+        if (lower.contains("movie") || lower.contains("game") || lower.contains("entertain"))
+            return "Entertainment";
+        if (lower.contains("candle"))
+            return "Miscellaneous";
+        // default
+        return "Groceries";
     }
 
     // Calander format for weekly costs
