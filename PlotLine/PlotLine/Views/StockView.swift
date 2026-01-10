@@ -45,6 +45,8 @@ struct StockView: View {
                }
                .pickerStyle(.segmented)
                .onChange(of: viewAccount) { newVal in
+                   // Clear old data when switching accounts to avoid showing stale charts
+                   savedPortfolio = nil
                    fetchSavedPortfolio(for: newVal)
                }
                 
@@ -139,7 +141,7 @@ struct StockView: View {
     }
 
     func fetchSavedPortfolio(for account: ViewAccount) {
-        // Prefer new endpoint with query param, but gracefully fall back to legacy
+        // Prefer new endpoint with query param; if missing, clear the view
         var components = URLComponents(string: "\(BackendConfig.baseURLString)/api/llm/portfolio/\(username)")!
         components.queryItems = [URLQueryItem(name: "account", value: account.apiValue)]
 
@@ -153,19 +155,16 @@ struct StockView: View {
             }
         }
 
-        if let url = components.url {
-            URLSession.shared.dataTask(with: url) { data, resp, _ in
-                if let http = resp as? HTTPURLResponse, http.statusCode == 200, let data = data {
-                    decodeAndSet(data)
-                } else {
-                    // Fallback to old endpoint without account filter
-                    let legacyURL = URL(string: "\(BackendConfig.baseURLString)/api/llm/portfolio/\(username)")!
-                    URLSession.shared.dataTask(with: legacyURL) { data2, _, _ in
-                        if let data2 = data2 { decodeAndSet(data2) }
-                    }.resume()
-                }
-            }.resume()
-        }
+        guard let url = components.url else { return }
+
+        URLSession.shared.dataTask(with: url) { data, resp, _ in
+            if let http = resp as? HTTPURLResponse, http.statusCode == 200, let data = data {
+                decodeAndSet(data)
+            } else {
+                // No data for this account; clear the view
+                DispatchQueue.main.async { self.savedPortfolio = nil }
+            }
+        }.resume()
     }
     
     func revertToLLMGeneratedPortfolio(for account: ViewAccount) {
@@ -359,7 +358,11 @@ struct PortfolioExplanationView: View {
         for key in keys {
             result = result.replacingOccurrences(of: " " + key, with: "\n" + key)
         }
-        return result
+        // Drop the "Total allocation" line because it's redundant with amount to invest
+        let filtered = result
+            .components(separatedBy: "\n")
+            .filter { !($0.lowercased().contains("total allocation")) }
+        return filtered.joined(separator: "\n")
     }
     
     private func extractAssetInfo(from block: String) -> (name: String, percent: Double, allocation: Double)? {

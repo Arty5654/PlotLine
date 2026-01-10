@@ -113,15 +113,6 @@ struct BudgetSection: View {
     @EnvironmentObject var calendarVM: CalendarViewModel
     @State private var chartType = "Weekly" // or "Monthly"
     @StateObject private var plaidCoordinator = PlaidLinkCoordinator()
-
-//    @State private var quizCompletedFlag = UserDefaults.standard.bool(forKey: "budgetQuizCompleted")
-//    @State private var quizExistsRemote = false
-//    @State private var isCheckingQuiz = false
-//
-//    private var showQuizCTA: Bool {
-//        // Show CTA only if neither local completion nor remote file exists
-//        !(quizCompletedFlag || quizExistsRemote)
-//    }
     
     @State private var hasQuiz: Bool? = nil
 
