@@ -122,7 +122,7 @@ public class AuthService {
     }
 
     // create new user in s3 bucket
-    public boolean createUser(String phone, String email, String username, String rawPassword, Boolean isGoogle) {
+    public boolean createUser(String phone, String email, String username, String displayUsername, String rawPassword, Boolean isGoogle) {
         String norm = normalizeUsername(username);
         String normEmail = normalizeEmail(email);
         if (norm.isBlank() || normEmail.isBlank()) return false;
@@ -144,7 +144,7 @@ public class AuthService {
 
             s3Client.putObject(putRequest, RequestBody.fromString(userJson));
 
-            updateAllUsersList(norm);
+            updateAllUsersList(displayUsername);
             updateEmailIndex(normEmail, norm);
 
             return true;

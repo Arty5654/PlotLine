@@ -168,6 +168,10 @@ struct BudgetSection: View {
                         BudgetInputView()
                     }
                     .buttonStyle(AdaptivePrimaryButton())
+                    ActionRow(title: "Track Subscriptions", system: "calendar.badge.clock") {
+                        SubsView().environmentObject(calendarVM)
+                    }
+                    .buttonStyle(AdaptivePrimaryButton())
                     ActionRow(title: "Compare New Income/Location Budget", system: "arrow.2.squarepath") {
                         BudgetCompareView()
                     }

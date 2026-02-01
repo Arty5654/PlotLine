@@ -12,7 +12,7 @@ public class SubscriptionRequest {
 
     public static class SubscriptionItem {
         private String name;
-        private String cost;
+        private String cost; // optional/nullable; kept for backward compatibility
 
         //@JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss'Z'", timezone = "EST")
         @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", timezone = "UTC")

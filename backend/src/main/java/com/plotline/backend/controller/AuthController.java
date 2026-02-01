@@ -37,6 +37,7 @@ public class AuthController {
  
     @PostMapping("/signup")
     public ResponseEntity<AuthResponse> signUp(@RequestBody SignUpRequest request) {
+        String displayUsername = request.getUsername().trim();
         String normalized = authService.normalizeUsername(request.getUsername());
         String normalizedEmail = authService.normalizeEmail(request.getEmail());
         if (normalized.isBlank()) {
@@ -63,11 +64,12 @@ public class AuthController {
             AuthResponse response = new AuthResponse(false, null, "Email already exists");
             return ResponseEntity.ok(response);
         }
-        
+
         // add user to db
-        boolean created = authService.createUser(request.getPhone(), 
+        boolean created = authService.createUser(request.getPhone(),
                                                  request.getEmail(),
-                                                 request.getUsername(), 
+                                                 request.getUsername(),
+                                                 displayUsername,
                                                  request.getPassword(),
                                                  false);
         if (!created) {
@@ -115,6 +117,7 @@ public class AuthController {
     @PostMapping("/google-signin")
     public ResponseEntity<AuthResponse> googleSignIn(@RequestBody GoogleSigninRequest request) {
 
+        String displayUsername = request.getUsername().trim();
         String username = authService.normalizeUsername(request.getUsername());
         String tokenID = request.getIdToken();
 
@@ -154,7 +157,7 @@ public class AuthController {
                 // username does not exist, create new account for google user
                 // using google token as password, encrypting for database
     
-                boolean created = authService.createUser("", normalizedEmail, username, googleUserId, true);
+                boolean created = authService.createUser("", normalizedEmail, username, displayUsername, googleUserId, true);
                 if (!created) {
                     return ResponseEntity.ok(new AuthResponse(false, null, "Could not create user"));
                 }

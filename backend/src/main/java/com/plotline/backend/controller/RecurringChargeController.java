@@ -65,11 +65,7 @@ public class RecurringChargeController {
             Map<String, List<RecurringChargeRequest.ChargeEvent>> grouped = new HashMap<>();
             for (RecurringChargeRequest.ChargeEvent ev : events) {
                 if (ev == null || ev.getName() == null || ev.getDate() == null) continue;
-                LocalDate date;
-                try {
-                    date = LocalDate.parse(ev.getDate(), ISO);
-                } catch (Exception ignored) { continue; }
-                String key = normalize(ev.getName()) + "#" + date.getDayOfMonth();
+                String key = normalize(ev.getName());
                 grouped.computeIfAbsent(key, k -> new ArrayList<>()).add(ev);
             }
 
@@ -77,14 +73,23 @@ public class RecurringChargeController {
             for (var entry : grouped.entrySet()) {
                 String key = entry.getKey();
                 List<RecurringChargeRequest.ChargeEvent> list = entry.getValue();
-                if (list.size() < 3) continue;
+                if (list.size() < 2) continue;
 
                 Map<YearMonth, List<RecurringChargeRequest.ChargeEvent>> byMonth = list.stream()
                         .collect(Collectors.groupingBy(ev -> YearMonth.from(LocalDate.parse(ev.getDate(), ISO))));
 
                 List<YearMonth> months = byMonth.keySet().stream().sorted().toList();
                 int chain = trailingChain(months);
-                if (chain < 3) continue; // need three consecutive months
+                if (chain < 2) continue; // need two consecutive months
+
+                // Compare last two months for amount drift
+                YearMonth lastMonth = months.get(months.size() - 1);
+                YearMonth prevMonth = months.get(months.size() - 2);
+                if (!prevMonth.plusMonths(1).equals(lastMonth)) continue;
+
+                double avgLast = avgAmount(byMonth.get(lastMonth));
+                double avgPrev = avgAmount(byMonth.get(prevMonth));
+                if (!withinDrift(avgPrev, avgLast, 0.05)) continue;
 
                 LocalDate lastSeen = list.stream()
                         .map(ev -> LocalDate.parse(ev.getDate(), ISO))
@@ -108,7 +113,7 @@ public class RecurringChargeController {
                         .orElse(0.0);
 
                 String prettyName = entry.getValue().get(0).getName();
-                int day = Integer.parseInt(key.substring(key.indexOf('#') + 1));
+                int day = lastSeen.getDayOfMonth();
 
                 LocalDate nextReminder = today.plusMonths(remindAfterMonths);
                 prompts.add(new RecurringChargePrompt(
@@ -203,6 +208,23 @@ public class RecurringChargeController {
     }
 
     private static double round2(double v) { return Math.round(v * 100.0) / 100.0; }
+
+    private double avgAmount(List<RecurringChargeRequest.ChargeEvent> list) {
+        if (list == null || list.isEmpty()) return 0.0;
+        return list.stream()
+                .map(RecurringChargeRequest.ChargeEvent::getAmount)
+                .filter(Objects::nonNull)
+                .mapToDouble(Double::doubleValue)
+                .average()
+                .orElse(0.0);
+    }
+
+    private boolean withinDrift(double a, double b, double pct) {
+        if (a == 0 || b == 0) return false;
+        double diff = Math.abs(a - b);
+        double base = Math.max(Math.abs(a), Math.abs(b));
+        return (diff / base) <= pct;
+    }
 
     private int trailingChain(List<YearMonth> months) {
         if (months.isEmpty()) return 0;

@@ -72,17 +72,14 @@ struct WeeklyMonthlyCostView: View {
     
     @State private var budgetWarningMessage: String = ""
     
-    // Subscription Tracking
-    @State private var subscriptions: [SubscriptionItem] = []
-    @State private var newSubscriptionName: String = ""
-    @State private var newSubscriptionCost: String = ""
-    @State private var newSubscriptionDueDate: Date = Date()
-    //@State private var showSubscriptionSaveAlert: Bool = false
+    // Recurring subscription detection after Plaid sync
+    @State private var recurringPrompts: [RecurringChargePromptModel] = []
+    @State private var showRecurringPrompt = false
     
     // Tracker logic
     @State private var takeHomeMonthly: Double = 0
     private let trackerExclusions: Set<String> = [
-        "401(k)", "401k", "401(k) Contribution", "401k Contribution"
+        "401(k)", "401k", "401(k) Contribution", "401k Contribution", "Subscriptions"
     ]
     
     // Week strip
@@ -293,56 +290,7 @@ struct WeeklyMonthlyCostView: View {
                 }
                 
                 
-                // Subscriptions
-                VStack(alignment: .leading, spacing: PLSpacing.sm) {
-                    Text("📅 Subscription Tracker")
-                        .font(.headline)
-                    
-                    // Custom list for a consistent look
-                    LazyVStack(spacing: PLSpacing.sm) {
-                        ForEach($subscriptions) { $subscription in
-                            HStack(spacing: PLSpacing.sm) {
-                                Text(subscription.name)
-                                    .frame(width: 90, alignment: .leading)
-                                    .lineLimit(1)
-                                    .truncationMode(.tail)
-                                
-                                TextField("Cost ($)", text: $subscription.cost)
-                                    .keyboardType(.decimalPad)
-                                    .textFieldStyle(.roundedBorder)
-                                
-                                DatePicker("", selection: $subscription.dueDate, displayedComponents: .date)
-                                    .labelsHidden()
-                                
-                                Button {
-                                    deleteSubscription(subscription: subscription)
-                                } label: {
-                                    Image(systemName: "minus.circle.fill")
-                                        .foregroundColor(PLColor.danger)
-                                }
-                            }
-                        }
-                    }
-                    
-                    HStack(spacing: PLSpacing.sm) {
-                        TextField("Subscription Name", text: $newSubscriptionName)
-                            .textFieldStyle(.roundedBorder)
-                        TextField("Cost ($)", text: $newSubscriptionCost)
-                            .keyboardType(.decimalPad)
-                            .textFieldStyle(.roundedBorder)
-                        DatePicker("", selection: $newSubscriptionDueDate, displayedComponents: .date)
-                            .labelsHidden()
-                        Button {
-                            addSubscription()
-                        } label: {
-                            Image(systemName: "plus.circle.fill").foregroundColor(.green)
-                        }
-                    }
-                    
-                    Button("Save Subscriptions", action: saveSubscriptions)
-                        .buttonStyle(PrimaryButton())
-                }
-                .plCard()
+                // Subscriptions UI moved to SubsView (kept here intentionally blank)
             }
             .padding(.horizontal, PLSpacing.lg)
             .padding(.vertical, PLSpacing.lg)
@@ -444,13 +392,22 @@ struct WeeklyMonthlyCostView: View {
         } message: {
             Text("Your transactions have been synced and categorized.")
         }
+        .sheet(isPresented: $showRecurringPrompt) {
+            RecurringPromptSheet(
+                prompts: $recurringPrompts,
+                onAccept: { prompt in
+                    Task { await acceptRecurringPrompt(prompt) }
+                },
+                onDecline: { prompt in
+                    Task { await snoozeRecurringPrompt(prompt) }
+                }
+            )
+        }
         .onAppear {
             rebuildWeek(for: Date())
             selectedDay = Date()
             loadBudgetLimits()
             fetchMonthlyFeedback(for: selectedDay)
-            fetchSubscriptions()
-            checkForUpcomingSubscriptions()
             requestNotificationPermission()
             fetchTakeHomeMonthly()
         }
@@ -656,101 +613,6 @@ struct WeeklyMonthlyCostView: View {
         }
     }
     
-    // MARK: - Subscriptions
-    private func addSubscription() {
-        guard !newSubscriptionName.isEmpty, !newSubscriptionCost.isEmpty else { return }
-        let subItem = SubscriptionItem(name: newSubscriptionName, cost: newSubscriptionCost, dueDate: newSubscriptionDueDate)
-        subscriptions.append(subItem)
-        newSubscriptionName = ""
-        newSubscriptionCost = ""
-        newSubscriptionDueDate = Date()
-    }
-    
-    private func fetchSubscriptions() {
-        let urlString = "\(BackendConfig.baseURLString)/api/subscriptions/\(username)"
-        guard let url = URL(string: urlString) else { return }
-        
-        URLSession.shared.dataTask(with: url) { data, _, error in
-            if let error = error {
-                print("Error fetching subscription data:", error.localizedDescription)
-                DispatchQueue.main.async { self.subscriptions = [] }
-                return
-            }
-            guard let data = data, !data.isEmpty else {
-                DispatchQueue.main.async { self.subscriptions = [] }
-                return
-            }
-            do {
-                let decoded = try JSONDecoder().decode(SubscriptionMapResponse.self, from: data)
-                let list: [SubscriptionItem] = decoded.subscriptions.map { (name, subData) in
-                    SubscriptionItem(name: name, cost: subData.cost, dueDate: subData.dueDate)
-                }
-                DispatchQueue.main.async {
-                    self.subscriptions = list
-                    self.checkForUpcomingSubscriptions()
-                }
-            } catch {
-                print("Failed to decode subscription data:", error)
-                DispatchQueue.main.async { self.subscriptions = [] }
-            }
-        }.resume()
-    }
-    
-    private func deleteSubscription(subscription: SubscriptionItem) {
-        let urlString = "\(BackendConfig.baseURLString)/api/subscriptions/\(username)/\(subscription.name)"
-        guard let url = URL(string: urlString) else { return }
-        var request = URLRequest(url: url)
-        request.httpMethod = "DELETE"
-        DispatchQueue.main.async {
-            self.subscriptions.removeAll { $0.name == subscription.name }
-            calendarVM.deleteEventByType("subscription-\(subscription.name.lowercased())")
-        }
-        URLSession.shared.dataTask(with: request).resume()
-    }
-    
-    private func saveSubscriptions() {
-        var dict = [String: SubscriptionData]()
-        for sub in subscriptions {
-            dict[sub.name] = SubscriptionData(name: sub.name, cost: sub.cost, dueDate: sub.dueDate)
-            DispatchQueue.main.async {
-                calendarVM.createEvent(
-                    title: "\(sub.name) Subscription",
-                    description: "Monthly cost of $\(sub.cost)",
-                    startDate: sub.dueDate,
-                    endDate: sub.dueDate,
-                    eventType: "subscription-\(sub.name.lowercased())",
-                    recurrence: "monthly",
-                    invitedFriends: []
-                )
-            }
-        }
-        let payload = SubscriptionUpload(username: username, subscriptions: dict)
-        guard let json = try? JSONEncoder().encode(payload) else { return }
-        
-        var request = URLRequest(url: URL(string: "\(BackendConfig.baseURLString)/api/subscriptions")!)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = json
-        URLSession.shared.dataTask(with: request).resume()
-        //DispatchQueue.main.async { self.showSubscriptionSaveAlert = true }
-        DispatchQueue.main.async {
-            self.activeAlert = AppAlert(title: "Success", message: "Your subscriptions have been saved.")
-        }
-        
-    }
-    
-    private func checkForUpcomingSubscriptions() {
-        for sub in subscriptions {
-            let days = Calendar.current.dateComponents([.day], from: Date(), to: sub.dueDate).day ?? 0
-            if days <= 3, days >= 0 {
-                sendNotification(
-                    title: "📅 Subscription Due Soon!",
-                    message: "\(sub.name) is due in \(days) days."
-                )
-            }
-        }
-    }
-    
     // MARK: - Notifications
     private func requestNotificationPermission() {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) { granted, error in
@@ -771,6 +633,161 @@ struct WeeklyMonthlyCostView: View {
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 5, repeats: false)
         let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: trigger)
         UNUserNotificationCenter.current().add(request)
+    }
+
+    // MARK: - Recurring subscription prompts (Plaid)
+    private func fetchRecurringSubscriptionPrompts() async {
+        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/subscriptions/recurring/analyze/\(username)?months=3&remindAfterMonths=2") else { return }
+        do {
+            let (data, resp) = try await URLSession.shared.data(from: url)
+            if let http = resp as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+                return
+            }
+            let decoded = try JSONDecoder().decode(RecurringPromptResponse.self, from: data)
+            if !decoded.prompts.isEmpty {
+                await MainActor.run {
+                    self.recurringPrompts = decoded.prompts
+                    self.showRecurringPrompt = true
+                }
+                sendNotification(
+                    title: "Subscription detected",
+                    message: "We found recurring charges. Open the app to confirm."
+                )
+            }
+        } catch {
+            print("recurring prompt fetch error:", error)
+        }
+    }
+
+    private func acceptRecurringPrompt(_ prompt: RecurringChargePromptModel) async {
+        let dueDate = nextOccurrence(dayOfMonth: prompt.dayOfMonth)
+        let newSub = SubscriptionItem(name: prompt.name, cost: "", dueDate: dueDate)
+        await upsertSubscriptions([newSub])
+        await MainActor.run {
+            recurringPrompts.removeAll { $0.id == prompt.id }
+            showRecurringPrompt = !recurringPrompts.isEmpty
+        }
+    }
+
+    private func snoozeRecurringPrompt(_ prompt: RecurringChargePromptModel) async {
+        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/subscriptions/recurring/snooze") else { return }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let payload: [String: Any] = [
+            "username": username,
+            "snoozeKey": prompt.snoozeKey,
+            "months": 2
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
+        req.httpBody = data
+        do {
+            _ = try await URLSession.shared.data(for: req)
+        } catch {
+            print("snooze error:", error)
+        }
+        await MainActor.run {
+            recurringPrompts.removeAll { $0.id == prompt.id }
+            showRecurringPrompt = !recurringPrompts.isEmpty
+        }
+    }
+
+    private func upsertSubscriptions(_ newSubs: [SubscriptionItem]) async {
+        // Fetch existing subs from backend
+        var merged: [String: SubscriptionItem] = [:]
+        if let url = URL(string: "\(BackendConfig.baseURLString)/api/subscriptions/\(username)") {
+            do {
+                let (data, _) = try await URLSession.shared.data(from: url)
+                if let decoded = try? JSONDecoder().decode(SubscriptionMapResponse.self, from: data) {
+                    for (name, subData) in decoded.subscriptions {
+                        merged[name.lowercased()] = SubscriptionItem(name: name, cost: "", dueDate: subData.dueDate)
+                    }
+                }
+            } catch { }
+        }
+        for sub in newSubs {
+            merged[sub.name.lowercased()] = sub
+        }
+
+        var dict: [String: SubscriptionData] = [:]
+        for sub in merged.values {
+            dict[sub.name] = SubscriptionData(name: sub.name, cost: "", dueDate: sub.dueDate)
+            await MainActor.run {
+                ensureSubscriptionEvent(sub)
+                scheduleMonthlySubscriptionReminder(for: sub)
+            }
+        }
+
+        let payload = SubscriptionUpload(username: username, subscriptions: dict)
+        guard let body = try? JSONEncoder().encode(payload),
+              let postURL = URL(string: "\(BackendConfig.baseURLString)/api/subscriptions") else { return }
+        var req = URLRequest(url: postURL)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = body
+        do {
+            _ = try await URLSession.shared.data(for: req)
+        } catch {
+            print("save subs error:", error)
+        }
+    }
+
+    private func ensureSubscriptionEvent(_ sub: SubscriptionItem) {
+        let existing = calendarVM.events.first {
+            $0.eventType.lowercased().hasPrefix("subscription") &&
+            $0.title.caseInsensitiveCompare(sub.name) == .orderedSame
+        }
+        if existing == nil {
+            calendarVM.createEvent(
+                title: sub.name,
+                description: "Subscription reminder",
+                startDate: sub.dueDate,
+                endDate: sub.dueDate,
+                eventType: "subscription",
+                recurrence: "monthly",
+                invitedFriends: []
+            )
+        }
+    }
+
+    private func scheduleMonthlySubscriptionReminder(for sub: SubscriptionItem) {
+        let center = UNUserNotificationCenter.current()
+        let id = "subscription-reminder-\(sub.name.lowercased())"
+        center.removePendingNotificationRequests(withIdentifiers: [id])
+
+        var comps = Calendar.current.dateComponents([.day], from: sub.dueDate)
+        let day = comps.day ?? 1
+        if day == 1 {
+            comps.day = 1
+            comps.hour = 9
+            comps.minute = 0
+        } else {
+            comps.day = day - 1
+            comps.hour = 9
+            comps.minute = 0
+        }
+
+        let content = UNMutableNotificationContent()
+        content.title = "Subscription Reminder"
+        content.body = day == 1 ? "\(sub.name) is due today." : "\(sub.name) is due tomorrow."
+        content.sound = .default
+
+        let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: true)
+        let request = UNNotificationRequest(identifier: id, content: content, trigger: trigger)
+        center.add(request)
+    }
+
+    private func nextOccurrence(dayOfMonth: Int) -> Date {
+        let calendar = Calendar.current
+        let today = Date()
+        var comps = calendar.dateComponents([.year, .month], from: today)
+        let range = calendar.range(of: .day, in: .month, for: today) ?? 1..<28
+        let day = min(max(dayOfMonth, 1), range.count)
+        comps.day = day
+        let thisMonth = calendar.date(from: comps) ?? today
+        if thisMonth >= today { return thisMonth }
+        let nextMonth = calendar.date(byAdding: .month, value: 1, to: thisMonth) ?? thisMonth
+        return nextMonth
     }
     
     // MARK: - Income
@@ -967,6 +984,7 @@ struct WeeklyMonthlyCostView: View {
                     self.rebuildWeek(for: self.selectedDay)
                     self.loadWeeklyPeriod(for: self.selectedDay)
                     if self.selectedType == "Monthly" { self.fetchMonthlyFeedback(for: self.selectedDay) }
+                    Task { await fetchRecurringSubscriptionPrompts() }
                 } else {
                     self.showCategorizer = true
                 }
@@ -1025,6 +1043,7 @@ struct WeeklyMonthlyCostView: View {
                 if self.selectedType == "Monthly" { self.fetchMonthlyFeedback(for: self.selectedDay) }
                 NotificationCenter.default.post(name: .plaidSynced, object: nil)
             }
+            await fetchRecurringSubscriptionPrompts()
         } catch {
             print("assign error:", error)
             await MainActor.run {
@@ -1178,6 +1197,22 @@ struct SubscriptionData: Codable {
     @CodableDate var dueDate: Date
 }
 
+struct RecurringChargePromptModel: Identifiable, Codable {
+    let snoozeKey: String
+    let name: String
+    let averageAmount: Double
+    let dayOfMonth: Int
+    let consecutiveMonths: Int
+    let lastSeen: String
+    let nextReminderAfter: String
+    var id: String { snoozeKey }
+}
+
+struct RecurringPromptResponse: Codable {
+    let prompts: [RecurringChargePromptModel]
+    let remindAfterMonths: Int?
+}
+
 
 struct SubscriptionRequest: Codable {
     let username: String
@@ -1188,6 +1223,41 @@ private struct AppAlert: Identifiable {
     let id = UUID()
     let title: String
     let message: String
+}
+
+private struct RecurringPromptSheet: View {
+    @Binding var prompts: [RecurringChargePromptModel]
+    var onAccept: (RecurringChargePromptModel) -> Void
+    var onDecline: (RecurringChargePromptModel) -> Void
+
+    var body: some View {
+        NavigationView {
+            List {
+                ForEach(prompts) { prompt in
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(prompt.name)
+                            .font(.headline)
+                        Text("Seen \(prompt.consecutiveMonths)x, avg $\(prompt.averageAmount, specifier: "%.2f")")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                        HStack(spacing: 12) {
+                            Button("Add Subscription") {
+                                onAccept(prompt)
+                            }
+                            .buttonStyle(.borderedProminent)
+
+                            Button("Not a subscription") {
+                                onDecline(prompt)
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                    }
+                    .padding(.vertical, 6)
+                }
+            }
+            .navigationTitle("Recurring Charges")
+        }
+    }
 }
 
 // Models for Feedback
