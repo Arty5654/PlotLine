@@ -173,7 +173,6 @@ struct WeeklyMonthlyCostView: View {
                 // Week strip (only for Weekly)
                 if selectedType == "Weekly" {
                     weekHeader
-                        .padding(.vertical, 6)
                         .plCard()
                 }
                 
@@ -811,53 +810,54 @@ struct WeeklyMonthlyCostView: View {
     }
     
     private var weekHeader: some View {
-        HStack(spacing: PLSpacing.sm) {
+        HStack(spacing: 4) {
             Button {
                 selectedDay = selectedDay.addingDays(-7)
                 rebuildWeek(for: selectedDay)
                 loadWeeklyPeriod(for: selectedDay)
             } label: {
                 Image(systemName: "chevron.left")
-                    .frame(width: 28, height: 28)
+                    .font(.system(size: 12))
+                    .foregroundColor(PLColor.textPrimary)
+                    .frame(width: 20, height: 20)
                     .contentShape(Rectangle())
             }
-            
-            Spacer(minLength: PLSpacing.sm)
+
+            Spacer(minLength: 4)
             
             ForEach(weekDays, id: \.self) { d in
                 let isSelected = Calendar.current.isDate(d, inSameDayAs: selectedDay)
                 VStack(spacing: 1) {
                     Text(d.shortWeekday())
-                        .font(.caption2)
+                        .font(.system(size: 9))
                         .foregroundColor(PLColor.textSecondary)
                     Text(d.monthDay())
-                        //.font(.caption2)
-                        .font(.system(.body, design: .default))
-                        .minimumScaleFactor(0.5)
-                    //.bold()
+                        .font(.system(size: 11))
                         .foregroundColor(PLColor.textPrimary)
                 }
-                .frame(width: 24, height: 24)
-                .padding(.vertical, 2)
+                .frame(minWidth: 28)
+                .padding(.vertical, 3)
                 .padding(.horizontal, 2)
                 .background(isSelected ? PLColor.accent.opacity(0.12) : Color.clear)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .clipShape(RoundedRectangle(cornerRadius: 6))
                 .contentShape(Rectangle())
                 .onTapGesture {
                     selectedDay = d
                     loadCostsForSelectedDay()
                 }
             }
-            
-            Spacer(minLength: PLSpacing.sm)
-            
+
+            Spacer(minLength: 4)
+
             Button {
                 selectedDay = selectedDay.addingDays(+7)
                 rebuildWeek(for: selectedDay)
                 loadWeeklyPeriod(for: selectedDay)
             } label: {
                 Image(systemName: "chevron.right")
-                    .frame(width: 24, height: 24)
+                    .font(.system(size: 12))
+                    .foregroundColor(PLColor.textPrimary)
+                    .frame(width: 20, height: 20)
                     .contentShape(Rectangle())
             }
         }
