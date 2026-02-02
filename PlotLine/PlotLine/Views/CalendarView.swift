@@ -8,13 +8,19 @@
 import SwiftUI
 
 struct CalendarView: View {
-    
+
     @EnvironmentObject var viewModel: CalendarViewModel
     @EnvironmentObject var friendVM: FriendsViewModel
-    
+    @Environment(\.colorScheme) var colorScheme
+
     @State private var showingAddEventSheet = false
     // 7 columns for the 7 days of the week
     private let monthColumns = Array(repeating: GridItem(.flexible()), count: 7)
+
+    // Adaptive color: white in dark mode, blue in light mode
+    private var adaptiveTextColor: Color {
+        colorScheme == .dark ? .white : .blue
+    }
     
     var body: some View {
         
@@ -26,30 +32,36 @@ struct CalendarView: View {
                         if viewModel.displayMode == .month {
                             Button(action: { viewModel.previousMonth() }) {
                                 Image(systemName: "chevron.left")
+                                    .foregroundColor(adaptiveTextColor)
                             }
-                            
+
                             Text(monthTitle(for: viewModel.currentDate))
                                 .font(.headline)
-                            
+                                .foregroundColor(adaptiveTextColor)
+
                             Button(action: { viewModel.nextMonth() }) {
                                 Image(systemName: "chevron.right")
+                                    .foregroundColor(adaptiveTextColor)
                             }
                         } else {
-                            
+
                             Button(action: { viewModel.previousWeek() }) {
                                 Image(systemName: "chevron.left")
+                                    .foregroundColor(adaptiveTextColor)
                             }
-                            
+
                             Text(weekTitle(for: viewModel.currentDate))
                                 .font(.headline)
-                            
+                                .foregroundColor(adaptiveTextColor)
+
                             Button(action: { viewModel.nextWeek() }) {
                                 Image(systemName: "chevron.right")
+                                    .foregroundColor(adaptiveTextColor)
                             }
                         }
-                        
+
                         Spacer()
-                        
+
                         Button(action: {
                             if viewModel.displayMode == .month {
                                 viewModel.showWeekView()
@@ -58,6 +70,7 @@ struct CalendarView: View {
                             }
                         }) {
                             Text(viewModel.displayMode == .month ? "Week View" : "Month View")
+                                .foregroundColor(adaptiveTextColor)
                         }
                     }
                     .padding()
@@ -142,7 +155,13 @@ struct CalendarView: View {
 struct MonthContent: View {
     @ObservedObject var viewModel: CalendarViewModel
     @EnvironmentObject var friendVM: FriendsViewModel
+    @Environment(\.colorScheme) var colorScheme
     let monthColumns: [GridItem]
+
+    // Adaptive color: white in dark mode, blue in light mode
+    private var adaptiveTextColor: Color {
+        colorScheme == .dark ? .white : .blue
+    }
 
     var body: some View {
         VStack(alignment: .leading) {
@@ -152,7 +171,7 @@ struct MonthContent: View {
                 ForEach(dayNames, id: \.self) { dayName in
                     Text(dayName)
                         .font(.subheadline)
-                        .foregroundColor(.gray)
+                        .foregroundColor(adaptiveTextColor)
                         .frame(maxWidth: .infinity)
                 }
             }
@@ -173,7 +192,7 @@ struct MonthContent: View {
                     ForEach(daysInMonth, id: \.self) { day in
                         NavigationLink(destination: DayView(day: day, viewModel: viewModel).environmentObject(friendVM)) {
                             Text(dayNumber(day))
-                                .foregroundColor(.primary)
+                                .foregroundColor(adaptiveTextColor)
                                 .frame(width: 30, height: 30)
                                 .background(
                                     colorForDay(day)
@@ -219,23 +238,30 @@ struct MonthContent: View {
 struct WeekContent: View {
     @ObservedObject var viewModel: CalendarViewModel
     @EnvironmentObject var friendVM: FriendsViewModel
-    
+    @Environment(\.colorScheme) var colorScheme
+
+    // Adaptive color: white in dark mode, blue in light mode
+    private var adaptiveTextColor: Color {
+        colorScheme == .dark ? .white : .blue
+    }
+
     var body: some View {
         let start = startOfWeek(for: viewModel.currentDate)
-        
+
         ForEach(0..<7, id: \.self) { offset in
             let day = Calendar.current.date(byAdding: .day, value: offset, to: start)!
-            
+
             VStack(alignment: .leading, spacing: 4) {
-                
+
                 HStack {
                     Text(shortWeekdayName(for: day))
                         .font(.subheadline)
-                        .foregroundColor(.gray)
+                        .foregroundColor(adaptiveTextColor)
                     Text(dayNumber(day))
                         .font(.headline)
+                        .foregroundColor(adaptiveTextColor)
                 }
-                
+
                 let dayEvents = viewModel.eventsOnDay(day)
                 if dayEvents.isEmpty {
                     Text("No events")
@@ -260,8 +286,8 @@ struct WeekContent: View {
             .cornerRadius(8)
             .padding(.horizontal)
         }
-        
-        
+
+
     }
     
     // Helpers

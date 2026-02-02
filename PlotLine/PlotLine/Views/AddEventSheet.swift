@@ -3,6 +3,7 @@ import UserNotifications
 
 struct AddEventSheet: View {
     @Environment(\.presentationMode) var presentationMode
+    @Environment(\.colorScheme) var colorScheme
     @EnvironmentObject var friendVM: FriendsViewModel
 
     let defaultDate: Date
@@ -19,6 +20,11 @@ struct AddEventSheet: View {
 
     @State private var showFriendDropdown = false
     @State private var selectedFriends: [Friend] = []
+
+    // Adaptive color: white in dark mode, blue in light mode
+    private var adaptiveTextColor: Color {
+        colorScheme == .dark ? .white : .blue
+    }
 
     // Reminder selections
     struct ReminderOption: Identifiable {
@@ -69,23 +75,25 @@ struct AddEventSheet: View {
         NavigationView {
             Form {
                 // Event detail fields
-                Section(header: Text("Event Details")) {
+                Section(header: Text("Event Details").foregroundColor(adaptiveTextColor)) {
                     TextField("Title", text: $title)
                     TextField("Description", text: $description)
                 }
 
                 // Date selection fields
-                Section(header: Text("Dates & Times")) {
+                Section(header: Text("Dates & Times").foregroundColor(adaptiveTextColor)) {
                     Toggle("Multiple Days?", isOn: $isRange)
                     DatePicker("Start", selection: $startDate, displayedComponents: [.date, .hourAndMinute])
+                        .accentColor(adaptiveTextColor)
 
                     if isRange {
                         DatePicker("End", selection: $endDate, in: startDate..., displayedComponents: [.date, .hourAndMinute])
+                            .accentColor(adaptiveTextColor)
                     }
                 }
 
                 // Recurrence options
-                Section(header: Text("Repeat")) {
+                Section(header: Text("Repeat").foregroundColor(adaptiveTextColor)) {
                     Toggle("Recurring Event?", isOn: $isRecurring)
                         .onChange(of: isRecurring) { on in
                             if !on { recurrence = "none" }
@@ -100,11 +108,12 @@ struct AddEventSheet: View {
                             Text("Every Month").tag("monthly")
                             Text("Every Year").tag("yearly")
                         }
+                        .accentColor(adaptiveTextColor)
                     }
                 }
 
 
-                Section(header: Text("Invite Friends")) {
+                Section(header: Text("Invite Friends").foregroundColor(adaptiveTextColor)) {
                     // Button to toggle the friend dropdown
                     Button(action: {
                         withAnimation {
@@ -141,7 +150,7 @@ struct AddEventSheet: View {
                                                         .foregroundColor(.primary)
                                                     Spacer()
                                                     Image(systemName: "plus.circle.fill")
-                                                        .foregroundColor(.blue)
+                                                        .foregroundColor(adaptiveTextColor)
                                                 }
                                                 .padding(.vertical, 8)
                                                 .padding(.horizontal, 12)
@@ -191,7 +200,7 @@ struct AddEventSheet: View {
                 }
 
                 // Notifications
-                Section(header: Text("Reminders")) {
+                Section(header: Text("Reminders").foregroundColor(adaptiveTextColor)) {
                     ForEach(reminderOptions) { opt in
                         Toggle(isOn: Binding<Bool>(
                             get: { selectedReminders.contains(opt.id) },
@@ -202,12 +211,14 @@ struct AddEventSheet: View {
                         )) {
                             Text(opt.label)
                         }
+                        .tint(adaptiveTextColor)
                     }
                 }
             }
             .scrollDismissesKeyboard(.interactively)
             .onTapGesture { hideKeyboard() }
             .onAppear { requestNotificationPermission() }
+            .tint(adaptiveTextColor)
             .navigationBarTitle("Add Event", displayMode: .inline)
             .navigationBarItems(
                 leading: Button("Cancel") {
