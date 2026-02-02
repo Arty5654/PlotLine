@@ -17,8 +17,9 @@ class CalendarViewModel: ObservableObject {
     @Published var currentDate: Date = Date()  // current date
     @Published var displayMode: DisplayMode = .month
     @Published var events: [Event] = []
-    
+
     @Published var selectedDay: Date? = nil
+    @Published var navigateToDayView: Date? = nil // Set this to navigate to a specific day's event page
     
     enum DisplayMode {
         case month

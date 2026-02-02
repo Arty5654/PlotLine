@@ -49,6 +49,7 @@ struct ContentView: View {
 
     @State private var isProfilePresented = false
     @State private var isFriendsPresented = false
+    @State private var navigateToCalendar = false
 
     var body: some View {
         NavigationStack {
@@ -108,6 +109,40 @@ struct ContentView: View {
                 SocialTabView()
                     .environmentObject(friendsVM)
                     .environmentObject(chatVM)
+            }
+            .background(
+                NavigationLink(
+                    destination: CalendarView()
+                        .environmentObject(calendarVM)
+                        .environmentObject(friendsVM),
+                    isActive: $navigateToCalendar
+                ) {
+                    EmptyView()
+                }
+                .hidden()
+            )
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("NavigateToCalendar"))) { notification in
+                if let userInfo = notification.userInfo,
+                   let showDayView = userInfo["showDayView"] as? Bool,
+                   let eventDateStr = userInfo["eventDate"] as? String,
+                   let eventDate = ISO8601DateFormatter().date(from: eventDateStr) {
+
+                    // Set the calendar to show the event's date
+                    calendarVM.currentDate = eventDate
+                    calendarVM.selectedDay = eventDate
+
+                    // Show week view if 24+ hours, otherwise show month view and navigate to day
+                    if showDayView {
+                        calendarVM.showMonthView()
+                        // Navigate to the specific day's event page
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            calendarVM.navigateToDayView = eventDate
+                        }
+                    } else {
+                        calendarVM.showWeekView()
+                    }
+                }
+                navigateToCalendar = true
             }
         }
         .task {

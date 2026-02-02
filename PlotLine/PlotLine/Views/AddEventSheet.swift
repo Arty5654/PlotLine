@@ -77,7 +77,9 @@ struct AddEventSheet: View {
                 // Event detail fields
                 Section(header: Text("Event Details").foregroundColor(adaptiveTextColor)) {
                     TextField("Title", text: $title)
+                        .accentColor(adaptiveTextColor)
                     TextField("Description", text: $description)
+                        .accentColor(adaptiveTextColor)
                 }
 
                 // Date selection fields
@@ -211,14 +213,12 @@ struct AddEventSheet: View {
                         )) {
                             Text(opt.label)
                         }
-                        .tint(adaptiveTextColor)
                     }
                 }
             }
             .scrollDismissesKeyboard(.interactively)
             .onTapGesture { hideKeyboard() }
             .onAppear { requestNotificationPermission() }
-            .tint(adaptiveTextColor)
             .navigationBarTitle("Add Event", displayMode: .inline)
             .navigationBarItems(
                 leading: Button("Cancel") {
@@ -262,8 +262,32 @@ private extension AddEventSheet {
 
             let content = UNMutableNotificationContent()
             content.title = "Upcoming Event"
-            content.body = "\(eventTitle.isEmpty ? "Event" : eventTitle) starts soon."
+
+            // Create timing-specific message
+            let eventName = eventTitle.isEmpty ? "Event" : eventTitle
+            if opt.secondsBefore == 0 {
+                content.body = "\(eventName) is starting now!"
+            } else if opt.secondsBefore == 15 * 60 {
+                content.body = "\(eventName) starts in 15 minutes"
+            } else if opt.secondsBefore == 60 * 60 {
+                content.body = "\(eventName) starts in 1 hour"
+            } else if opt.secondsBefore == 24 * 60 * 60 {
+                content.body = "\(eventName) starts in 24 hours"
+            } else {
+                content.body = "\(eventName) starts soon"
+            }
+
             content.sound = .default
+
+            // Add userInfo to enable navigation to calendar when tapped
+            let dateFormatter = ISO8601DateFormatter()
+            content.userInfo = [
+                "eventTitle": eventTitle,
+                "eventDate": dateFormatter.string(from: start),
+                "navigateTo": "calendar",
+                "secondsBefore": opt.secondsBefore,
+                "showDayView": opt.secondsBefore < 24 * 60 * 60 // true if less than 24 hours
+            ]
 
             let request = UNNotificationRequest(
                 identifier: UUID().uuidString,

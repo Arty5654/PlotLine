@@ -23,12 +23,10 @@ struct CalendarView: View {
     }
     
     var body: some View {
-        
-        NavigationView {
-            ScrollView {
-                VStack(alignment: .leading) {
-                    
-                    HStack {
+        ScrollView {
+            VStack(alignment: .leading) {
+
+                HStack {
                         if viewModel.displayMode == .month {
                             Button(action: { viewModel.previousMonth() }) {
                                 Image(systemName: "chevron.left")
@@ -95,11 +93,11 @@ struct CalendarView: View {
                     }
                     .padding(.horizontal)
                     .padding(.vertical, 12)
-                    
+
                 }
                 .onAppear {
-                    // on first appearance, fetch events
-                    //viewModel.fetchEvents()
+                    // Reset to monthly view when opening calendar normally
+                    viewModel.showMonthView()
                 }
             }
             .sheet(isPresented: $showingAddEventSheet) {
@@ -115,9 +113,26 @@ struct CalendarView: View {
                     )
                 }.environmentObject(friendVM)
             }
-        }
+            .background(
+                // Programmatic navigation to DayView
+                NavigationLink(
+                    destination: Group {
+                        if let day = viewModel.navigateToDayView {
+                            DayView(day: day, viewModel: viewModel)
+                                .environmentObject(friendVM)
+                        }
+                    },
+                    isActive: Binding(
+                        get: { viewModel.navigateToDayView != nil },
+                        set: { if !$0 { viewModel.navigateToDayView = nil } }
+                    )
+                ) {
+                    EmptyView()
+                }
+                .hidden()
+            )
     }
-    
+
     private func monthTitle(for date: Date) -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "LLLL yyyy"
