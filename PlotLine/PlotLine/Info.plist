@@ -31,5 +31,9 @@
 	<string>$(STOCK_KEY)</string>
 	<key>BACKEND_BASE_URL</key>
 	<string>https://backend-small-dream-2434.fly.dev</string>
+	<key>NSCameraUsageDescription</key>
+	<string>PlotLine needs camera access to scan receipts for automatic expense tracking.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>PlotLine needs photo library access to select receipt images for expense tracking.</string>
 </dict>
 </plist>

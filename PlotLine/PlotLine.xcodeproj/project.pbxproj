@@ -53,7 +53,7 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		CD06D3222D664DA600838ECF /* Exceptions for "PlotLine" folder in "PlotLine" target */ = {
+		2A536AB22F31AAEF00CCF145 /* Exceptions for "PlotLine" folder in "PlotLine" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
@@ -66,7 +66,7 @@
 		CDA3CE632D5299930038ABC2 /* PlotLine */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				CD06D3222D664DA600838ECF /* Exceptions for "PlotLine" folder in "PlotLine" target */,
+				2A536AB22F31AAEF00CCF145 /* Exceptions for "PlotLine" folder in "PlotLine" target */,
 			);
 			path = PlotLine;
 			sourceTree = "<group>";

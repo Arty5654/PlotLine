@@ -98,15 +98,33 @@ public class SubscriptionController {
         try {
             String key = String.format(S3_BUCKET_PATH, username);
             byte[] data = s3Service.downloadFile(key);
-            List<SubscriptionRequest.SubscriptionItem> subscriptions = objectMapper.readValue(data, List.class);
 
-            // Remove the subscription with the matching name
-            subscriptions.removeIf(sub -> sub.getName().equalsIgnoreCase(subscriptionName));
+            // Deserialize as SubscriptionRequest (which contains a Map, not a List)
+            SubscriptionRequest request = objectMapper.readValue(data, SubscriptionRequest.class);
 
-            // Save the updated list
-            String jsonData = objectMapper.writeValueAsString(subscriptions);
+            if (request.getSubscriptions() == null) {
+                return ResponseEntity.ok("No subscriptions to delete.");
+            }
+
+            // Remove the subscription with the matching name (case-insensitive)
+            String keyToRemove = request.getSubscriptions().keySet().stream()
+                    .filter(k -> k.equalsIgnoreCase(subscriptionName))
+                    .findFirst()
+                    .orElse(null);
+
+            if (keyToRemove != null) {
+                request.getSubscriptions().remove(keyToRemove);
+            }
+
+            // Save the updated request back to S3
+            String jsonData = objectMapper.writeValueAsString(request);
             ByteArrayInputStream inputStream = new ByteArrayInputStream(jsonData.getBytes(StandardCharsets.UTF_8));
             s3Service.uploadFile(key, inputStream, jsonData.length());
+
+            // Update trophy progress
+            int count = request.getSubscriptions().size();
+            userProfileService.setTrophyProgress(username, "subscription-spender", 0);
+            userProfileService.incrementTrophy(username, "subscription-spender", count);
 
             return ResponseEntity.ok("Subscription deleted successfully.");
         } catch (Exception e) {

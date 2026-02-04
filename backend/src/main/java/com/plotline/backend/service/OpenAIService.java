@@ -105,26 +105,96 @@ public class OpenAIService {
 
   }
 
-  // public String analyzeReceiptFromImage(String base64Image, String prompt) {
-  //   try {
-  //       ResponseCreateParams params = ResponseCreateParams.builder()
-  //           .model(ChatModel.GPT_4O)
-  //           .input(List.of(
-  //             Content.imageUrl(url -> url.url("data:image/jpeg;base64," + base64Image)),
-  //             Content.text(prompt)
-  //           ))
-  //           .instructions("Extract items and prices from the receipt and categorize them.")
-  //           .build();
+  /**
+   * Analyze a receipt image using GPT-4o Vision API via direct HTTP call.
+   */
+  public String analyzeReceiptFromImage(String base64Image) {
+    try {
+      Dotenv dotenv = Dotenv.configure().ignoreIfMissing().load();
+      String apiKey = resolveEnv(dotenv, "OPENAI_API_KEY");
+      if (apiKey == null || apiKey.isBlank()) {
+        return "{\"error\": \"OpenAI API key not configured\"}";
+      }
 
-  //       Response response = openAIClient.responses().create(params);
-  //       ResponseOutputText rot = response.output().get(0).message().get().content().get(0).asOutputText();
-  //       return rot.text();
+      String systemPrompt = "You are a receipt analysis assistant. Analyze the receipt image and extract all items with their prices. "
+          + "Categorize each item into one of these categories: Groceries, Eating Out, Entertainment, Transportation, Utilities, Subscriptions, Miscellaneous. "
+          + "Return a JSON object where keys are category names and values are the total amount for that category. "
+          + "For example: {\"Groceries\": 45.50, \"Miscellaneous\": 12.99}. "
+          + "If an item cannot be categorized, put it in Miscellaneous. "
+          + "Only return the JSON object, no other text.";
 
-  //   } catch (OpenAIException e) {
-  //       e.printStackTrace();
-  //       return "Service Error: " + e.getMessage();
-  //   }
-  // }
+      // Build JSON properly using ObjectMapper to avoid escaping issues
+      Map<String, Object> imageUrl = Map.of("url", "data:image/jpeg;base64," + base64Image, "detail", "high");
+      Map<String, Object> imageContent = Map.of("type", "image_url", "image_url", imageUrl);
+      Map<String, Object> textContent = Map.of("type", "text", "text", "Please analyze this receipt image and extract the items with prices, categorized.");
+
+      Map<String, Object> systemMessage = Map.of("role", "system", "content", systemPrompt);
+      Map<String, Object> userMessage = Map.of("role", "user", "content", List.of(imageContent, textContent));
+
+      Map<String, Object> requestMap = Map.of(
+          "model", "gpt-4o",
+          "messages", List.of(systemMessage, userMessage),
+          "max_tokens", 1000
+      );
+
+      String requestBody = objectMapper.writeValueAsString(requestMap);
+
+      java.net.http.HttpClient client = java.net.http.HttpClient.newHttpClient();
+      java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
+          .uri(java.net.URI.create("https://api.openai.com/v1/chat/completions"))
+          .header("Content-Type", "application/json")
+          .header("Authorization", "Bearer " + apiKey)
+          .POST(java.net.http.HttpRequest.BodyPublishers.ofString(requestBody))
+          .build();
+
+      java.net.http.HttpResponse<String> response = client.send(request, java.net.http.HttpResponse.BodyHandlers.ofString());
+      String responseBody = response.body();
+
+      // Log response for debugging
+      System.out.println("OpenAI API response status: " + response.statusCode());
+
+      // Check HTTP status code
+      if (response.statusCode() != 200) {
+        System.err.println("OpenAI API returned non-200 status: " + response.statusCode() + " - " + responseBody);
+      }
+
+      // Parse response to extract content
+      com.fasterxml.jackson.databind.JsonNode root = objectMapper.readTree(responseBody);
+
+      // Check for API error response
+      if (root.has("error")) {
+        String errorMsg = root.path("error").path("message").asText("Unknown OpenAI error");
+        System.err.println("OpenAI API error: " + errorMsg);
+        return "{\"error\": \"OpenAI API error: " + errorMsg.replace("\"", "'") + "\"}";
+      }
+
+      // Check if choices exist
+      com.fasterxml.jackson.databind.JsonNode choices = root.path("choices");
+      if (choices.isMissingNode() || !choices.isArray() || choices.size() == 0) {
+        System.err.println("OpenAI returned unexpected response: " + responseBody);
+        return "{\"error\": \"Unexpected response from OpenAI\"}";
+      }
+
+      String content = choices.get(0).path("message").path("content").asText();
+
+      // Clean up the response - remove markdown code blocks if present
+      content = content.trim();
+      if (content.startsWith("```json")) {
+        content = content.substring(7);
+      } else if (content.startsWith("```")) {
+        content = content.substring(3);
+      }
+      if (content.endsWith("```")) {
+        content = content.substring(0, content.length() - 3);
+      }
+      content = content.trim();
+
+      return content;
+    } catch (Exception e) {
+      e.printStackTrace();
+      return "{\"error\": \"" + e.getMessage().replace("\"", "'") + "\"}";
+    }
+  }
 
 
 

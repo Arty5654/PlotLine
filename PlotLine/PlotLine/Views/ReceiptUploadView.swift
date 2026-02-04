@@ -80,7 +80,18 @@ struct ReceiptUploadView: View {
     @State private var userCorrections: [String: String] = [:]
     @State private var availableCategories: [String] = []
     @State private var errorText: String? = nil
-    
+
+    // For Undo/Edit functionality
+    @State private var lastAddedCosts: [String: Double] = [:]
+    @State private var lastAddedDate: String = ""
+    @State private var showEditSheet: Bool = false
+    @State private var editableCosts: [String: Double] = [:]
+    @State private var isUndoing: Bool = false
+
+    private var canUndoOrEdit: Bool {
+        !lastAddedCosts.isEmpty && resultMessage != nil
+    }
+
     private var username: String {
         UserDefaults.standard.string(forKey: "loggedInUsername") ?? "UnknownUser"
     }
@@ -181,13 +192,38 @@ struct ReceiptUploadView: View {
                 
                 // Result banner
                 if let result = resultMessage, !result.isEmpty {
-                    HStack(alignment: .top, spacing: 10) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundColor(PLColor.success)
-                        Text(result)
-                            .font(.subheadline)
-                            .foregroundColor(PLColor.textPrimary)
-                        Spacer(minLength: 0)
+                    VStack(spacing: PLSpacing.sm) {
+                        HStack(alignment: .top, spacing: 10) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(PLColor.success)
+                            Text(result)
+                                .font(.subheadline)
+                                .foregroundColor(PLColor.textPrimary)
+                            Spacer(minLength: 0)
+                        }
+
+                        // Undo and Edit buttons
+                        if canUndoOrEdit {
+                            HStack(spacing: PLSpacing.sm) {
+                                Button {
+                                    undoLastReceipt()
+                                } label: {
+                                    Label(isUndoing ? "Undoing..." : "Undo", systemImage: "arrow.uturn.backward")
+                                        .frame(maxWidth: .infinity)
+                                }
+                                .buttonStyle(OutlineButton(tint: PLColor.danger))
+                                .disabled(isUndoing)
+
+                                Button {
+                                    editableCosts = lastAddedCosts
+                                    showEditSheet = true
+                                } label: {
+                                    Label("Edit", systemImage: "pencil")
+                                        .frame(maxWidth: .infinity)
+                                }
+                                .buttonStyle(OutlineButton(tint: PLColor.accent))
+                            }
+                        }
                     }
                     .padding(PLSpacing.md)
                     .background(PLColor.success.opacity(0.12))
@@ -233,6 +269,15 @@ struct ReceiptUploadView: View {
                 corrections: $userCorrections,
                 categories: $availableCategories,
                 onConfirm: submitCorrections
+            )
+        }
+        .sheet(isPresented: $showEditSheet) {
+            EditReceiptCostsSheet(
+                costs: $editableCosts,
+                categories: $availableCategories,
+                onSave: { updatedCosts in
+                    applyEditedCosts(updatedCosts)
+                }
             )
         }
         .sheet(isPresented: $showCameraPicker) {
@@ -327,6 +372,14 @@ extension ReceiptUploadView {
         body.append("Content-Disposition: form-data; name=\"username\"\r\n\r\n".data(using: .utf8)!)
         body.append(username.data(using: .utf8)!)
         body.append("\r\n".data(using: .utf8)!)
+        // Local date (user's timezone)
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        let localDate = formatter.string(from: Date())
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"date\"\r\n\r\n".data(using: .utf8)!)
+        body.append(localDate.data(using: .utf8)!)
+        body.append("\r\n".data(using: .utf8)!)
         // Close
         body.append("--\(boundary)--\r\n".data(using: .utf8)!)
         request.httpBody = body
@@ -352,7 +405,27 @@ extension ReceiptUploadView {
                 if let raw = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
                     var parsed: [String: [[String: Any]]] = [:]
 
+                    // Extract metadata for undo/edit
+                    var addedCosts: [String: Double] = [:]
+                    var addedDate: String = ""
+
+                    if let costs = raw["_addedCosts"] as? [String: Any] {
+                        for (key, value) in costs {
+                            if let num = value as? Double {
+                                addedCosts[key] = num
+                            } else if let num = value as? Int {
+                                addedCosts[key] = Double(num)
+                            }
+                        }
+                    }
+                    if let date = raw["_date"] as? String {
+                        addedDate = date
+                    }
+
                     for (key, value) in raw {
+                        // Skip metadata keys
+                        if key.hasPrefix("_") { continue }
+
                         if key == "Unmatched", let array = value as? [[String: Any]] {
                             parsed[key] = array
                         } else if let amount = value as? Double {
@@ -361,6 +434,8 @@ extension ReceiptUploadView {
                     }
 
                     DispatchQueue.main.async {
+                        self.lastAddedCosts = addedCosts
+                        self.lastAddedDate = addedDate
                         handleParsedReceipt(parsed)
                     }
                 } else {
@@ -443,6 +518,160 @@ extension ReceiptUploadView {
             self.loadCategories()
             if !(okWeekly && okMonthly) { print("One of the merges failed (weekly:\(okWeekly), monthly:\(okMonthly))") }
         }
+    }
+
+    // MARK: - Undo Receipt
+    private func undoLastReceipt() {
+        guard !lastAddedCosts.isEmpty else { return }
+
+        isUndoing = true
+
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        let localDate = formatter.string(from: Date())
+
+        let payload: [String: Any] = [
+            "username": username,
+            "date": lastAddedDate.isEmpty ? localDate : lastAddedDate,
+            "costs": lastAddedCosts
+        ]
+
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: payload) else {
+            isUndoing = false
+            errorText = "Failed to create undo request"
+            return
+        }
+
+        var request = URLRequest(url: URL(string: "\(BackendConfig.baseURLString)/api/costs/undo-receipt")!)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = jsonData
+
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            DispatchQueue.main.async {
+                self.isUndoing = false
+
+                if let error = error {
+                    self.errorText = "Undo failed: \(error.localizedDescription)"
+                    return
+                }
+
+                if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+                    self.errorText = "Undo failed (status \(http.statusCode))"
+                    return
+                }
+
+                // Success - clear the state
+                self.resultMessage = "Receipt costs undone successfully"
+                self.lastAddedCosts = [:]
+                self.lastAddedDate = ""
+                self.selectedImage = nil
+            }
+        }.resume()
+    }
+
+    // MARK: - Apply Edited Costs
+    private func applyEditedCosts(_ updatedCosts: [String: Double]) {
+        // First undo the original costs, then add the new ones
+        guard !lastAddedCosts.isEmpty else {
+            errorText = "No costs to edit"
+            return
+        }
+
+        isUploading = true
+
+        // Step 1: Undo original costs
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        let localDate = formatter.string(from: Date())
+
+        let undoPayload: [String: Any] = [
+            "username": username,
+            "date": lastAddedDate.isEmpty ? localDate : lastAddedDate,
+            "costs": lastAddedCosts
+        ]
+
+        guard let undoData = try? JSONSerialization.data(withJSONObject: undoPayload) else {
+            isUploading = false
+            errorText = "Failed to create undo request"
+            return
+        }
+
+        var undoRequest = URLRequest(url: URL(string: "\(BackendConfig.baseURLString)/api/costs/undo-receipt")!)
+        undoRequest.httpMethod = "POST"
+        undoRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        undoRequest.httpBody = undoData
+
+        URLSession.shared.dataTask(with: undoRequest) { _, _, error in
+            if error != nil {
+                DispatchQueue.main.async {
+                    self.isUploading = false
+                    self.errorText = "Failed to undo before edit"
+                }
+                return
+            }
+
+            // Step 2: Add new costs using merge-dated
+            let addPayload: [String: Any] = [
+                "username": self.username,
+                "type": "weekly",
+                "date": localDate,
+                "costs": updatedCosts
+            ]
+
+            guard let addData = try? JSONSerialization.data(withJSONObject: addPayload) else {
+                DispatchQueue.main.async {
+                    self.isUploading = false
+                    self.errorText = "Failed to create add request"
+                }
+                return
+            }
+
+            var addRequest = URLRequest(url: URL(string: "\(BackendConfig.baseURLString)/api/costs/add-dated")!)
+            addRequest.httpMethod = "POST"
+            addRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            addRequest.httpBody = addData
+
+            let group = DispatchGroup()
+            var weeklyOk = false
+            var monthlyOk = false
+
+            // Add to weekly
+            group.enter()
+            URLSession.shared.dataTask(with: addRequest) { _, resp, _ in
+                if let http = resp as? HTTPURLResponse, (200...299).contains(http.statusCode) {
+                    weeklyOk = true
+                }
+                group.leave()
+            }.resume()
+
+            // Add to monthly
+            var monthlyPayload = addPayload
+            monthlyPayload["type"] = "monthly"
+            if let monthlyData = try? JSONSerialization.data(withJSONObject: monthlyPayload) {
+                var monthlyRequest = addRequest
+                monthlyRequest.httpBody = monthlyData
+                group.enter()
+                URLSession.shared.dataTask(with: monthlyRequest) { _, resp, _ in
+                    if let http = resp as? HTTPURLResponse, (200...299).contains(http.statusCode) {
+                        monthlyOk = true
+                    }
+                    group.leave()
+                }.resume()
+            }
+
+            group.notify(queue: .main) {
+                self.isUploading = false
+                self.showEditSheet = false
+
+                if weeklyOk && monthlyOk {
+                    self.lastAddedCosts = updatedCosts
+                    self.resultMessage = "Updated costs:\n" + updatedCosts.map { "\($0.key): $\(String(format: "%.2f", $0.value))" }.joined(separator: "\n")
+                } else {
+                    self.errorText = "Failed to save edited costs"
+                }
+            }
+        }.resume()
     }
 }
 
@@ -597,4 +826,115 @@ struct ReceiptItem: Identifiable {
     let id = UUID()
     let name: String
     let amount: Double
+}
+
+// MARK: - Edit Receipt Costs Sheet
+private struct EditReceiptCostsSheet: View {
+    @Binding var costs: [String: Double]
+    @Binding var categories: [String]
+    var onSave: ([String: Double]) -> Void
+
+    @Environment(\.dismiss) var dismiss
+    @State private var editedCosts: [EditableCost] = []
+    @State private var newCategoryName: String = ""
+    @State private var newCategoryAmount: String = ""
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: PLSpacing.lg) {
+                // Add new category section
+                VStack(alignment: .leading, spacing: PLSpacing.sm) {
+                    Text("Add Category")
+                        .font(.headline)
+                    HStack(spacing: PLSpacing.sm) {
+                        Picker("Category", selection: $newCategoryName) {
+                            Text("— Select —").tag("")
+                            ForEach(categories.filter { cat in !editedCosts.contains { $0.category == cat } }, id: \.self) { cat in
+                                Text(cat).tag(cat)
+                            }
+                        }
+                        .pickerStyle(.menu)
+
+                        TextField("Amount", text: $newCategoryAmount)
+                            .keyboardType(.decimalPad)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 100)
+
+                        Button {
+                            guard !newCategoryName.isEmpty,
+                                  let amount = Double(newCategoryAmount), amount > 0 else { return }
+                            editedCosts.append(EditableCost(category: newCategoryName, amount: amount))
+                            newCategoryName = ""
+                            newCategoryAmount = ""
+                        } label: {
+                            Image(systemName: "plus.circle.fill")
+                        }
+                        .tint(.green)
+                    }
+                }
+                .plCard()
+
+                // Existing costs
+                ScrollView {
+                    VStack(spacing: PLSpacing.sm) {
+                        ForEach($editedCosts) { $cost in
+                            HStack {
+                                Text(cost.category)
+                                    .font(.headline)
+                                Spacer()
+                                Text("$")
+                                TextField("Amount", value: $cost.amount, format: .number)
+                                    .keyboardType(.decimalPad)
+                                    .textFieldStyle(.roundedBorder)
+                                    .frame(width: 80)
+                                Button {
+                                    editedCosts.removeAll { $0.id == cost.id }
+                                } label: {
+                                    Image(systemName: "trash")
+                                        .foregroundColor(PLColor.danger)
+                                }
+                            }
+                            .plCard()
+                        }
+                    }
+                    .padding(.bottom, 80)
+                }
+            }
+            .padding(.horizontal, PLSpacing.lg)
+            .padding(.top, PLSpacing.lg)
+            .safeAreaInset(edge: .bottom) {
+                VStack(spacing: 0) {
+                    Divider()
+                    HStack(spacing: PLSpacing.sm) {
+                        Button("Cancel") { dismiss() }
+                            .buttonStyle(OutlineButton(tint: PLColor.accent))
+                        Button("Save Changes") {
+                            var result: [String: Double] = [:]
+                            for cost in editedCosts where cost.amount > 0 {
+                                result[cost.category] = cost.amount
+                            }
+                            onSave(result)
+                        }
+                        .buttonStyle(PrimaryButton())
+                        .disabled(editedCosts.isEmpty)
+                    }
+                    .padding(.horizontal, PLSpacing.lg)
+                    .padding(.vertical, PLSpacing.md)
+                    .background(.regularMaterial)
+                }
+            }
+            .navigationTitle("Edit Receipt Costs")
+            .navigationBarTitleDisplayMode(.inline)
+            .tint(PLColor.accent)
+            .onAppear {
+                editedCosts = costs.map { EditableCost(category: $0.key, amount: $0.value) }
+            }
+        }
+    }
+}
+
+private struct EditableCost: Identifiable {
+    let id = UUID()
+    var category: String
+    var amount: Double
 }

@@ -4,7 +4,6 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.plotline.backend.dto.WeeklyMonthlyCostRequest;
 import com.plotline.backend.service.S3Service;
-import com.plotline.backend.service.OCRService;
 import com.plotline.backend.service.OpenAIService;
 import static com.plotline.backend.util.UsernameUtils.normalize;
 
@@ -119,59 +118,56 @@ public class WeeklyMonthlyCostController {
     @PostMapping("/upload-receipt")
     public ResponseEntity<Map<String, Object>> handleReceiptUpload(
             @RequestParam("image") MultipartFile image,
-            @RequestParam("username") String username) {
+            @RequestParam("username") String username,
+            @RequestParam(value = "date", required = false) String dateStr) {
         try {
             String normUser = normalize(username);
-            File tempFile = File.createTempFile("receipt-", ".jpg");
-            image.transferTo(tempFile);
 
-            String ocrText = OCRService.extractTextFromImage(tempFile);
-            System.out.println("Extracted OCR Text:\n" + ocrText);
+            // Convert image to base64 for GPT-4o Vision
+            byte[] imageBytes = image.getBytes();
+            String base64Image = java.util.Base64.getEncoder().encodeToString(imageBytes);
 
-            String safeText = ocrText.replace("\"", "");
-            String prompt = """
-            You are a budgeting assistant. Based on the following receipt text, extract line items and their prices.
+            System.out.println("Sending receipt image to GPT-4o Vision (size: " + imageBytes.length + " bytes)");
 
-            Then categorize each item into one of the following budget categories:
-            [Groceries, Eating Out, Transportation, Utilities, Subscriptions, Entertainment, Miscellaneous]
-            If a line item doesn't clearly match a category, put it under "Unmatched".
+            // Use GPT-4o Vision to analyze the receipt directly (much more accurate than OCR)
+            String response = openAIService.analyzeReceiptFromImage(base64Image);
+            System.out.println("GPT-4o Vision Response:\n" + response);
 
-            Return your answer as JSON like this:
-            {
-            "Groceries": 23.99,
-            "Eating Out": 12.50,
-            "Unmatched": [
-                { "item": "Yoga Mat", "amount": 30.00 }
-            ]
-            }
-            Only include a category in the JSON if the total amount for that category is greater than 0.
-            Do not include categories with a value of 0.
-
-            Receipt text:
-            """ + safeText;
-
-            String response = openAIService.generateResponse(prompt);
-            System.out.println("GPT Response:\n" + response);
-
-            // Clean up response to parse
+            // Clean up response to parse (remove markdown code blocks if present)
             String cleanedJson = response
                 .replaceAll("(?s)```json\\s*", "")  // remove ```json
                 .replaceAll("(?s)```", "")          // remove closing ```
                 .trim();
 
-            // Parse
+            // Parse the JSON result
             Map<String, Object> result = new ObjectMapper().readValue(cleanedJson, new TypeReference<>() {});
+
+            // Check for error in response
+            if (result.containsKey("error")) {
+                return ResponseEntity.status(500).body(result);
+            }
+
+            // Extract numeric values for updating costs
             Map<String, Double> parsed = result.entrySet().stream()
                     .filter(e -> e.getValue() instanceof Number)
                     .map(e -> Map.entry(e.getKey(), ((Number) e.getValue()).doubleValue()))
                     .filter(e -> e.getValue() > 0) // prevent 0 values from being passed into updates
                     .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
 
-            updateWeeklyCosts(normUser, parsed);
+            // Update both weekly and monthly dated costs (use client date if provided)
+            LocalDate today = (dateStr != null && !dateStr.isBlank())
+                ? LocalDate.parse(dateStr)
+                : LocalDate.now();
+            updateDatedCosts(normUser, "weekly", today, parsed);
+            updateDatedCosts(normUser, "monthly", today, parsed);
 
-            //return ResponseEntity.ok("Receipt parsed and weekly budget updated!");
-            System.out.println("Result: " + result);
-            return ResponseEntity.ok(result);
+            System.out.println("Receipt processed successfully: " + result);
+
+            // Return the parsed costs so iOS can use them for undo/edit
+            Map<String, Object> responseWithMeta = new HashMap<>(result);
+            responseWithMeta.put("_addedCosts", parsed);
+            responseWithMeta.put("_date", today.toString());
+            return ResponseEntity.ok(responseWithMeta);
 
         } catch (Exception e) {
             e.printStackTrace();
@@ -244,6 +240,89 @@ public class WeeklyMonthlyCostController {
         }
     }
 
+    /**
+     * Update dated costs (weekly or monthly) by adding delta values.
+     * This creates the category if it doesn't exist.
+     */
+    private void updateDatedCosts(String username, String type, LocalDate date, Map<String, Double> delta) {
+        try {
+            String periodKey = "weekly".equalsIgnoreCase(type) ? weekKey(date) : monthKey(date);
+            String key = "users/%s/costs/%s/%s.json".formatted(username, type.toLowerCase(), periodKey);
+
+            System.out.println("[DEBUG] updateDatedCosts: Loading from S3 key: " + key);
+            Map<String, Object> period = loadJsonOrEmpty(key);
+            System.out.println("[DEBUG] Loaded period: " + period);
+
+            // Initialize fields if new
+            period.putIfAbsent("periodKey", periodKey);
+            period.putIfAbsent("days", new LinkedHashMap<String, Object>());
+            period.putIfAbsent("totals", new LinkedHashMap<String, Object>());
+
+            @SuppressWarnings("unchecked")
+            Map<String, Object> days = (Map<String, Object>) period.get("days");
+            @SuppressWarnings("unchecked")
+            Map<String, Object> totals = (Map<String, Object>) period.get("totals");
+
+            System.out.println("[DEBUG] Current totals before update: " + totals);
+
+            String dayKey = date.toString();
+            @SuppressWarnings("unchecked")
+            Map<String, Object> dayCostsRaw = (Map<String, Object>) days.getOrDefault(dayKey, new LinkedHashMap<>());
+
+            System.out.println("[DEBUG] Current day costs for " + dayKey + ": " + dayCostsRaw);
+            System.out.println("[DEBUG] Delta to add: " + delta);
+
+            // Add delta to existing values (or create new categories)
+            for (var entry : delta.entrySet()) {
+                String cat = entry.getKey();
+                double addAmount = round2(entry.getValue());
+
+                // Add to day's costs (handle Integer or Double from Jackson)
+                double currentDay = 0.0;
+                Object dayVal = dayCostsRaw.get(cat);
+                if (dayVal instanceof Number) {
+                    currentDay = round2(((Number) dayVal).doubleValue());
+                }
+                double newDayVal = round2(currentDay + addAmount);
+                System.out.println("[DEBUG] " + cat + ": currentDay=" + currentDay + " + addAmount=" + addAmount + " = " + newDayVal);
+                dayCostsRaw.put(cat, newDayVal);
+
+                // Add to totals (handle Integer or Double from Jackson)
+                double currentTotal = 0.0;
+                Object totalVal = totals.get(cat);
+                if (totalVal instanceof Number) {
+                    currentTotal = round2(((Number) totalVal).doubleValue());
+                }
+                double newTotalVal = round2(currentTotal + addAmount);
+                System.out.println("[DEBUG] " + cat + " totals: current=" + currentTotal + " + add=" + addAmount + " = " + newTotalVal);
+                totals.put(cat, newTotalVal);
+            }
+
+            days.put(dayKey, dayCostsRaw);
+
+            System.out.println("[DEBUG] Final totals after update: " + totals);
+            System.out.println("[DEBUG] Final day costs: " + dayCostsRaw);
+
+            // Store start/end for weekly/monthly
+            if ("weekly".equalsIgnoreCase(type)) {
+                LocalDate start = date.minusDays((date.getDayOfWeek().getValue() % 7));
+                LocalDate end = start.plusDays(6);
+                period.put("start", start.toString());
+                period.put("end", end.toString());
+            } else {
+                YearMonth ym = YearMonth.from(date);
+                period.put("start", ym.atDay(1).toString());
+                period.put("end", ym.atEndOfMonth().toString());
+            }
+
+            saveJson(key, period);
+            System.out.println("Updated " + type + " costs for " + username + ": " + delta);
+        } catch (Exception e) {
+            System.err.println("updateDatedCosts error: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
     @PostMapping("/merge")
         public ResponseEntity<String> merge(@RequestBody WeeklyMonthlyCostRequest req){
         try {
@@ -252,6 +331,132 @@ public class WeeklyMonthlyCostController {
         } catch (Exception e){
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
         .body("Error merging: "+e.getMessage());
+        }
+    }
+
+    /**
+     * Add costs to dated file (for edit flow). This ADDS to existing values, not sets.
+     */
+    @PostMapping(value = "/add-dated", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<?> addDatedCosts(@RequestBody Map<String, Object> body) {
+        try {
+            String username = normalize(String.valueOf(body.get("username")));
+            String type = String.valueOf(body.get("type")); // weekly|monthly
+            String dateStr = String.valueOf(body.getOrDefault("date", LocalDate.now().toString()));
+            @SuppressWarnings("unchecked")
+            Map<String, Number> costs = (Map<String, Number>) body.get("costs");
+
+            LocalDate date = LocalDate.parse(dateStr);
+
+            // Convert to double map
+            Map<String, Double> delta = new HashMap<>();
+            for (var e : costs.entrySet()) {
+                double val = e.getValue() == null ? 0.0 : e.getValue().doubleValue();
+                if (val > 0) {
+                    delta.put(e.getKey(), val);
+                }
+            }
+
+            // Use updateDatedCosts which ADDS to existing values
+            updateDatedCosts(username, type, date, delta);
+
+            return ResponseEntity.ok(Map.of("success", true, "added", delta));
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * Undo/subtract costs from dated weekly AND monthly costs.
+     * Used by receipt undo functionality.
+     */
+    @PostMapping("/undo-receipt")
+    public ResponseEntity<?> undoReceiptCosts(@RequestBody Map<String, Object> body) {
+        try {
+            String username = normalize(String.valueOf(body.get("username")));
+            String dateStr = String.valueOf(body.getOrDefault("date", LocalDate.now().toString()));
+            @SuppressWarnings("unchecked")
+            Map<String, Number> costs = (Map<String, Number>) body.get("costs");
+
+            LocalDate date = LocalDate.parse(dateStr);
+
+            // Convert to double map with negative values for subtraction
+            Map<String, Double> negativeDelta = new HashMap<>();
+            for (var e : costs.entrySet()) {
+                double val = e.getValue() == null ? 0.0 : e.getValue().doubleValue();
+                negativeDelta.put(e.getKey(), -val);
+            }
+
+            // Subtract from both weekly and monthly
+            subtractDatedCosts(username, "weekly", date, negativeDelta);
+            subtractDatedCosts(username, "monthly", date, negativeDelta);
+
+            return ResponseEntity.ok(Map.of("success", true, "message", "Receipt costs undone"));
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * Subtract costs from dated file (for undo). Prevents negative values.
+     */
+    private void subtractDatedCosts(String username, String type, LocalDate date, Map<String, Double> negativeDelta) {
+        try {
+            String periodKey = "weekly".equalsIgnoreCase(type) ? weekKey(date) : monthKey(date);
+            String key = "users/%s/costs/%s/%s.json".formatted(username, type.toLowerCase(), periodKey);
+
+            Map<String, Object> period = loadJsonOrEmpty(key);
+            if (period.isEmpty()) return; // Nothing to subtract from
+
+            @SuppressWarnings("unchecked")
+            Map<String, Object> days = (Map<String, Object>) period.get("days");
+            @SuppressWarnings("unchecked")
+            Map<String, Object> totals = (Map<String, Object>) period.get("totals");
+
+            if (days == null || totals == null) return;
+
+            String dayKey = date.toString();
+            @SuppressWarnings("unchecked")
+            Map<String, Object> dayCosts = (Map<String, Object>) days.getOrDefault(dayKey, new LinkedHashMap<>());
+
+            for (var entry : negativeDelta.entrySet()) {
+                String cat = entry.getKey();
+                double subtractAmount = Math.abs(entry.getValue()); // Make positive for subtraction
+
+                // Subtract from day's costs (don't go below 0) - handle Integer or Double
+                double currentDay = 0.0;
+                Object dayVal = dayCosts.get(cat);
+                if (dayVal instanceof Number) {
+                    currentDay = ((Number) dayVal).doubleValue();
+                }
+                double newDay = Math.max(0, round2(currentDay - subtractAmount));
+                if (newDay == 0) {
+                    dayCosts.remove(cat);
+                } else {
+                    dayCosts.put(cat, newDay);
+                }
+
+                // Subtract from totals (don't go below 0) - handle Integer or Double
+                double currentTotal = 0.0;
+                Object totalVal = totals.get(cat);
+                if (totalVal instanceof Number) {
+                    currentTotal = ((Number) totalVal).doubleValue();
+                }
+                double newTotal = Math.max(0, round2(currentTotal - subtractAmount));
+                if (newTotal == 0) {
+                    totals.remove(cat);
+                } else {
+                    totals.put(cat, newTotal);
+                }
+            }
+
+            days.put(dayKey, dayCosts);
+            saveJson(key, period);
+            System.out.println("Subtracted " + type + " costs for " + username + ": " + negativeDelta);
+        } catch (Exception e) {
+            System.err.println("subtractDatedCosts error: " + e.getMessage());
         }
     }
 
@@ -343,33 +548,44 @@ public class WeeklyMonthlyCostController {
 
             // init fields if new
             period.putIfAbsent("periodKey", periodKey);
-            period.putIfAbsent("days", new LinkedHashMap<String, Map<String, Double>>());
-            period.putIfAbsent("totals", new LinkedHashMap<String, Double>());
+            period.putIfAbsent("days", new LinkedHashMap<String, Object>());
+            period.putIfAbsent("totals", new LinkedHashMap<String, Object>());
 
             @SuppressWarnings("unchecked")
-            Map<String, Map<String, Double>> days = (Map<String, Map<String, Double>>) period.get("days");
+            Map<String, Object> days = (Map<String, Object>) period.get("days");
             @SuppressWarnings("unchecked")
-            Map<String, Double> totals = (Map<String, Double>) period.get("totals");
+            Map<String, Object> totals = (Map<String, Object>) period.get("totals");
 
             String dayKey = date.toString();
-            Map<String, Double> dayCosts = days.getOrDefault(dayKey, new LinkedHashMap<>());
+            @SuppressWarnings("unchecked")
+            Map<String, Object> dayCosts = (Map<String, Object>) days.getOrDefault(dayKey, new LinkedHashMap<>());
 
             // merge
             for (var e : costs.entrySet()) {
                 String cat = e.getKey();
                 double incoming = e.getValue() == null ? 0.0 : round2(e.getValue().doubleValue());
-                double prev = round2(dayCosts.getOrDefault(cat, 0.0));
+
+                // Handle Integer or Double from Jackson
+                double prev = 0.0;
+                Object prevVal = dayCosts.get(cat);
+                if (prevVal instanceof Number) {
+                    prev = round2(((Number) prevVal).doubleValue());
+                }
                 double delta = round2(incoming - prev);
 
                 if (incoming == 0.0) {
-                    // treat zero as “clear this category for the day”
+                    // treat zero as "clear this category for the day"
                     if (prev != 0.0) {
                         dayCosts.remove(cat);
-                        totals.put(cat, round2(totals.getOrDefault(cat, 0.0) - prev));
+                        Object totalVal = totals.get(cat);
+                        double currentTotal = (totalVal instanceof Number) ? ((Number) totalVal).doubleValue() : 0.0;
+                        totals.put(cat, round2(currentTotal - prev));
                     }
                 } else {
                     dayCosts.put(cat, incoming);
-                    totals.put(cat, round2(totals.getOrDefault(cat, 0.0) + delta));
+                    Object totalVal = totals.get(cat);
+                    double currentTotal = (totalVal instanceof Number) ? ((Number) totalVal).doubleValue() : 0.0;
+                    totals.put(cat, round2(currentTotal + delta));
                 }
             }
 
