@@ -18,12 +18,10 @@ struct InvestmentHomeView: View {
                 .tabItem {
                     Label("Portfolio", systemImage: "chart.pie.fill")
                 }
-                
-
-            WatchlistView()
-                .tabItem {
-                    Label("Watchlist", systemImage: "eye.fill")
-                }
+            // WatchlistView()
+            //     .tabItem {
+            //         Label("Watchlist", systemImage: "eye.fill")
+            //     }
             StockNewsView()
                 .tabItem {
                     Label("Stock News", systemImage: "newspaper.fill")
