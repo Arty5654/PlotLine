@@ -31,6 +31,7 @@ class MealViewModel: ObservableObject {
         }
         
         var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
         request.httpMethod = "GET"
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         

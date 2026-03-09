@@ -27,6 +27,7 @@ struct ProfileAPI {
         }
 
         var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
         request.httpMethod = "PUT"
         request.httpBody = jsonData
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -49,6 +50,7 @@ struct ProfileAPI {
         }
 
         var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
         request.httpMethod = "GET"
         request.setValue("application/json", forHTTPHeaderField: "Accept")
 
@@ -71,6 +73,7 @@ struct ProfileAPI {
         }
 
         var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
         request.httpMethod = "GET"
         request.setValue("application/json", forHTTPHeaderField: "Accept")
 
@@ -88,6 +91,7 @@ struct ProfileAPI {
         }
         
         var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
         request.httpMethod = "GET"
         request.setValue("application/json", forHTTPHeaderField: "Accept")
 
@@ -106,6 +110,7 @@ struct ProfileAPI {
 
         let url = URL(string: "\(baseURL)/profile/upload-profile-pic?username=\(username)")!
         var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
         request.httpMethod = "POST"
 
         let boundary = UUID().uuidString
@@ -149,7 +154,12 @@ struct ProfileAPI {
             throw URLError(.badURL)
         }
 
-        let (data, response) = try await URLSession.shared.data(from: url)
+        var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
             throw URLError(.badServerResponse)

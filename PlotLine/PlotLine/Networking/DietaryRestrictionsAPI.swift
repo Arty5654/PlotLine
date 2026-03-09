@@ -22,6 +22,7 @@ class DietaryRestrictionsAPI {
         }
         
         var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
         request.httpMethod = "GET"
         
         // Start the network request
@@ -57,6 +58,7 @@ class DietaryRestrictionsAPI {
         }
         
         var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
         request.httpMethod = "PUT"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         

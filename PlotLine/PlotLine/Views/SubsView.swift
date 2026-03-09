@@ -332,9 +332,12 @@ struct SubsView: View {
         let costValue = newCost.trimmingCharacters(in: .whitespacesAndNewlines)
 
         if !subscriptions.contains(where: { $0.name.caseInsensitiveCompare(trimmed) == .orderedSame }) {
-            subscriptions.append(SubscriptionItem(name: trimmed, cost: costValue, dueDate: newDueDate))
+            let newSub = SubscriptionItem(name: trimmed, cost: costValue, dueDate: newDueDate)
+            subscriptions.append(newSub)
             saveSubscriptions()
             checkCostWarning()
+            ensureCalendarEvent(for: newSub)
+            scheduleMonthlyReminder(for: newSub)
         }
         newName = ""
         newCost = ""
@@ -349,9 +352,12 @@ struct SubsView: View {
         let costString = String(format: "%.2f", prompt.averageAmount)
 
         if !subscriptions.contains(where: { $0.name.caseInsensitiveCompare(prompt.name) == .orderedSame }) {
-            subscriptions.append(SubscriptionItem(name: prompt.name, cost: costString, dueDate: dueDate))
+            let newSub = SubscriptionItem(name: prompt.name, cost: costString, dueDate: dueDate)
+            subscriptions.append(newSub)
             saveSubscriptions()
             checkCostWarning()
+            ensureCalendarEvent(for: newSub)
+            scheduleMonthlyReminder(for: newSub)
         }
     }
 
@@ -382,7 +388,10 @@ struct SubsView: View {
 
     private func fetchSubscriptions() {
         guard let url = URL(string: "\(BackendConfig.baseURLString)/api/subscriptions/\(username)") else { return }
-        URLSession.shared.dataTask(with: url) { data, _, _ in
+        var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
+        request.httpMethod = "GET"
+        URLSession.shared.dataTask(with: request) { data, _, _ in
             guard let data = data, !data.isEmpty,
                   let decoded = try? JSONDecoder().decode(SubscriptionMapResponse.self, from: data) else {
                 return
@@ -408,7 +417,10 @@ struct SubsView: View {
         let currentMonth = formatter.string(from: Date())
 
         guard let url = URL(string: "\(BackendConfig.baseURLString)/api/costs/monthly/\(username)?month=\(currentMonth)") else { return }
-        URLSession.shared.dataTask(with: url) { data, _, _ in
+        var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
+        request.httpMethod = "GET"
+        URLSession.shared.dataTask(with: request) { data, _, _ in
             guard let data = data,
                   let decoded = try? JSONDecoder().decode(MonthlyCostsResponse.self, from: data) else {
                 // If no costs exist yet, set to 0
@@ -429,7 +441,10 @@ struct SubsView: View {
         guard let url = URL(string: "\(BackendConfig.baseURLString)/api/subscriptions/recurring/analyze/\(username)?months=6&remindAfterMonths=2") else { return }
 
         do {
-            let (data, _) = try await URLSession.shared.data(from: url)
+            var request = URLRequest(url: url)
+            BackendConfig.addApiKey(to: &request)
+            request.httpMethod = "GET"
+            let (data, _) = try await URLSession.shared.data(for: request)
             let decoded = try JSONDecoder().decode(RecurringPromptsResponse.self, from: data)
 
             await MainActor.run {
@@ -451,6 +466,7 @@ struct SubsView: View {
         guard let url = URL(string: "\(BackendConfig.baseURLString)/api/subscriptions/recurring/snooze") else { return }
 
         var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
@@ -483,6 +499,7 @@ struct SubsView: View {
         guard let body = try? JSONSerialization.data(withJSONObject: payload) else { return }
 
         var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = body
@@ -503,7 +520,12 @@ struct SubsView: View {
         var merged = subscriptions
         for ev in calendarSubs {
             if !merged.contains(where: { $0.name.caseInsensitiveCompare(ev.title) == .orderedSame }) {
-                merged.append(SubscriptionItem(name: ev.title, cost: "", dueDate: ev.startDate))
+                // Extract cost from description (format: "Subscription reminder ($10.99)")
+                var cost = ""
+                if let range = ev.description.range(of: #"\$(\d+\.?\d*)"#, options: .regularExpression) {
+                    cost = String(ev.description[range].dropFirst()) // drop the $
+                }
+                merged.append(SubscriptionItem(name: ev.title, cost: cost, dueDate: ev.startDate))
             }
         }
         if merged.count != subscriptions.count {
@@ -524,6 +546,7 @@ struct SubsView: View {
         guard let body = try? JSONEncoder().encode(payload),
               let url = URL(string: "\(BackendConfig.baseURLString)/api/subscriptions") else { return }
         var req = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &req)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = body
@@ -533,31 +556,71 @@ struct SubsView: View {
     }
 
     private func ensureCalendarEvent(for sub: SubscriptionItem) {
-        let exists = calendarVM.events.contains {
-            $0.eventType.lowercased().hasPrefix("subscription") &&
-            $0.title.caseInsensitiveCompare(sub.name) == .orderedSame
-        }
-        if !exists {
-            let costInfo = Double(sub.cost).map { " ($\(String(format: "%.2f", $0)))" } ?? ""
-            calendarVM.createEvent(
-                title: sub.name,
-                description: "Subscription reminder\(costInfo)",
-                startDate: sub.dueDate,
-                endDate: sub.dueDate,
-                eventType: "subscription",
-                recurrence: "monthly",
-                invitedFriends: []
-            )
+        // Check against freshly fetched events from backend instead of stale local state
+        Task {
+            do {
+                let username = UserDefaults.standard.string(forKey: "loggedInUsername") ?? ""
+                let freshEvents = try await CalendarAPI.getEvents(username: username)
+                let exists = freshEvents.contains {
+                    $0.eventType.lowercased().hasPrefix("subscription") &&
+                    $0.title.caseInsensitiveCompare(sub.name) == .orderedSame
+                }
+                if !exists {
+                    let costInfo = Double(sub.cost).map { " ($\(String(format: "%.2f", $0)))" } ?? ""
+                    await MainActor.run {
+                        calendarVM.createEvent(
+                            title: sub.name,
+                            description: "Subscription reminder\(costInfo)",
+                            startDate: sub.dueDate,
+                            endDate: sub.dueDate,
+                            eventType: "subscription",
+                            recurrence: "monthly",
+                            invitedFriends: []
+                        )
+                    }
+                }
+            } catch {
+                // If fetch fails, create the event anyway to avoid silent failure
+                let costInfo = Double(sub.cost).map { " ($\(String(format: "%.2f", $0)))" } ?? ""
+                await MainActor.run {
+                    calendarVM.createEvent(
+                        title: sub.name,
+                        description: "Subscription reminder\(costInfo)",
+                        startDate: sub.dueDate,
+                        endDate: sub.dueDate,
+                        eventType: "subscription",
+                        recurrence: "monthly",
+                        invitedFriends: []
+                    )
+                }
+            }
         }
     }
 
     private func removeCalendarEvent(for sub: SubscriptionItem) {
-        let matches = calendarVM.events.filter {
-            $0.eventType.lowercased().hasPrefix("subscription") &&
-            $0.title.caseInsensitiveCompare(sub.name) == .orderedSame
-        }
-        for ev in matches {
-            calendarVM.deleteEvent(ev.id)
+        Task {
+            do {
+                let username = UserDefaults.standard.string(forKey: "loggedInUsername") ?? ""
+                let freshEvents = try await CalendarAPI.getEvents(username: username)
+                let matches = freshEvents.filter {
+                    $0.eventType.lowercased().hasPrefix("subscription") &&
+                    $0.title.caseInsensitiveCompare(sub.name) == .orderedSame
+                }
+                await MainActor.run {
+                    for ev in matches {
+                        calendarVM.deleteEvent(ev.id)
+                    }
+                }
+            } catch {
+                // Fallback to local events if fetch fails
+                let matches = calendarVM.events.filter {
+                    $0.eventType.lowercased().hasPrefix("subscription") &&
+                    $0.title.caseInsensitiveCompare(sub.name) == .orderedSame
+                }
+                for ev in matches {
+                    calendarVM.deleteEvent(ev.id)
+                }
+            }
         }
     }
 

@@ -98,16 +98,17 @@ struct CalendarView: View {
                 .onAppear {
                     // Reset to monthly view when opening calendar normally
                     viewModel.showMonthView()
+                    viewModel.fetchEvents()
                 }
             }
             .sheet(isPresented: $showingAddEventSheet) {
-                AddEventSheet(defaultDate: viewModel.selectedDay ?? viewModel.currentDate) { title, description, start, end, recurrence, friends in
+                AddEventSheet(defaultDate: viewModel.selectedDay ?? viewModel.currentDate, existingEvents: viewModel.events) { title, description, start, end, recurrence, friends, eventType in
                     viewModel.createEvent(
                         title: title,
                         description: description,
                         startDate: start,
                         endDate: end,
-                        eventType: "user",
+                        eventType: eventType,
                         recurrence: recurrence,
                         invitedFriends: friends
                     )

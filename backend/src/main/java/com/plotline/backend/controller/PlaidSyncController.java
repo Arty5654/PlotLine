@@ -11,6 +11,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -46,17 +47,29 @@ public ResponseEntity<?> sync(@RequestBody Map<String, Object> body) {
     @SuppressWarnings("unchecked")
     List<String> accountIdsFilter = (List<String>) body.get("account_ids");
 
+    System.out.println("=== Starting Plaid sync for user: " + username + " ===");
+
+    // Clear cached categories so we get fresh user categories
+    categorizer.clearCategoryCache(username);
+
     Map<String, String> tokens = tokenStore.listAccessTokens(username);
     if (tokens.isEmpty()) {
+      System.out.println("No linked items for user: " + username);
       return ResponseEntity.badRequest().body(Map.of("error", "no linked items"));
     }
 
     int totalAdded = 0, totalModified = 0, totalRemoved = 0, daysUpdated = 0;
+    int skippedPending = 0, skippedSeen = 0, skippedOld = 0, skippedNegative = 0;
     List<Map<String,Object>> uncategorized = new ArrayList<>();
+
+    // Aggregate costs across ALL items (bank links) before writing
+    Map<String, Map<String, Double>> dayMap = new LinkedHashMap<>();
 
     for (Map.Entry<String, String> entry : tokens.entrySet()) {
       final String itemId = entry.getKey();
       final String accessToken = entry.getValue();
+
+      System.out.println("Processing item: " + itemId);
 
       // decide which account IDs we care about
       List<String> targetAccountIds =
@@ -64,7 +77,17 @@ public ResponseEntity<?> sync(@RequestBody Map<String, Object> body) {
               ? accountIdsFilter
               : tokenStore.getSelectedAccounts(username, itemId);
 
-      String cursor = cursorStore.getCursor(username, itemId);
+      // Check if we're filtering to specific accounts
+      boolean isFilteringByAccount = targetAccountIds != null && !targetAccountIds.isEmpty();
+
+      // If filtering by specific accounts, start from the BEGINNING (null cursor)
+      // to ensure we get all transactions. We rely on hasSeenTxn to skip duplicates.
+      // If syncing all accounts, use the saved cursor for incremental sync.
+      String cursor = isFilteringByAccount ? null : cursorStore.getCursor(username, itemId);
+
+      if (isFilteringByAccount) {
+        System.out.println("Filtering to specific accounts - starting from beginning (ignoring saved cursor)");
+      }
       boolean hasMore = true;
 
       List<Transaction> added = new ArrayList<>();
@@ -79,7 +102,7 @@ public ResponseEntity<?> sync(@RequestBody Map<String, Object> body) {
 
         // Ask Plaid to include Personal Finance Categories in the response
         TransactionsSyncRequestOptions opts = new TransactionsSyncRequestOptions();
-        opts.setIncludePersonalFinanceCategory(Boolean.TRUE);  // or opts.includePersonalFinanceCategory(true) on some versions
+        opts.setIncludePersonalFinanceCategory(Boolean.TRUE);
         req.setOptions(opts);
 
         TransactionsSyncResponse res = plaid.transactionsSync(req).execute().body();
@@ -93,33 +116,72 @@ public ResponseEntity<?> sync(@RequestBody Map<String, Object> body) {
         hasMore = Boolean.TRUE.equals(res.getHasMore());
       }
 
-      // Save per-item cursor here (it's in scope)
-      cursorStore.saveCursor(username, itemId, cursor);
+      System.out.println("Fetched from Plaid - added: " + added.size() +
+          ", modified: " + modified.size() + ", removed: " + removed.size());
+
+      // Only save cursor if we're NOT filtering by specific accounts.
+      // When filtering, we need to keep the cursor unchanged so other accounts
+      // from the same item can be synced later without missing transactions.
+      if (!isFilteringByAccount) {
+        cursorStore.saveCursor(username, itemId, cursor);
+        System.out.println("Saved cursor for item: " + itemId);
+      } else {
+        System.out.println("Not saving cursor (filtering by specific accounts)");
+      }
 
       // If caller selected accounts, filter results here
       if (targetAccountIds != null && !targetAccountIds.isEmpty()) {
+        int beforeAdded = added.size();
+        int beforeModified = modified.size();
         added.removeIf(t -> !targetAccountIds.contains(t.getAccountId()));
         modified.removeIf(t -> !targetAccountIds.contains(t.getAccountId()));
         removed.removeIf(t -> !targetAccountIds.contains(t.getAccountId()));
+        System.out.println("After account filter - added: " + added.size() +
+            " (was " + beforeAdded + "), modified: " + modified.size() + " (was " + beforeModified + ")");
       }
 
-      // Aggregate only categorized; collect uncategorized to return to client
-      Map<String, Map<String, Double>> dayMap = new LinkedHashMap<>();
+      // Only sync transactions from the last 30 days
+      LocalDate cutoffDate = LocalDate.now().minusDays(30);
 
+      // Process ADDED transactions
       for (Transaction t : added) {
-        if (Boolean.TRUE.equals(t.getPending())) continue;
-        if (cursorStore.hasSeenTxn(username, itemId, t.getTransactionId())) continue;
+        String txnName = t.getMerchantName() != null ? t.getMerchantName() : t.getName();
         double amount = t.getAmount().doubleValue();
-        if (amount == 0.0) continue;
+        String plaidCat = t.getPersonalFinanceCategory() != null ?
+            t.getPersonalFinanceCategory().getDetailed() : "none";
+
+        if (Boolean.TRUE.equals(t.getPending())) {
+          skippedPending++;
+          continue;
+        }
+        if (cursorStore.hasSeenTxn(username, itemId, t.getTransactionId())) {
+          skippedSeen++;
+          continue;
+        }
+        if (t.getDate().isBefore(cutoffDate)) {
+          skippedOld++;
+          continue;
+        }
+        if (amount <= 0.0) {
+          cursorStore.markSeenTxn(username, itemId, t.getTransactionId());
+          skippedNegative++;
+          continue;
+        }
+
+        System.out.println("Processing txn: " + txnName + " | $" + amount +
+            " | date: " + t.getDate() + " | plaidCat: " + plaidCat);
 
         String bucket = categorizer.map(username, t);
+        System.out.println("  → Categorized as: " + bucket);
+
         if (bucket == null || bucket.isBlank() || "UNCATEGORIZED".equalsIgnoreCase(bucket)) {
           uncategorized.add(Map.of(
               "id", t.getTransactionId(),
               "date", t.getDate().toString(),
               "name", t.getName(),
               "amount", amount,
-              "accountId", t.getAccountId()
+              "accountId", t.getAccountId(),
+              "plaidCategory", plaidCat != null ? plaidCat : ""
           ));
         } else {
           String date = t.getDate().toString();
@@ -130,12 +192,27 @@ public ResponseEntity<?> sync(@RequestBody Map<String, Object> body) {
         }
       }
 
+      // Process MODIFIED transactions (use same categorizer.map)
       for (Transaction t : modified) {
-        if (Boolean.TRUE.equals(t.getPending())) continue;
+        String txnName = t.getMerchantName() != null ? t.getMerchantName() : t.getName();
         double amount = t.getAmount().doubleValue();
-        if (amount == 0.0) continue;
 
-        String bucket = bucketFromPlaidOrFallback(username, t);
+        if (Boolean.TRUE.equals(t.getPending())) {
+          skippedPending++;
+          continue;
+        }
+        if (t.getDate().isBefore(cutoffDate)) {
+          skippedOld++;
+          continue;
+        }
+        if (amount <= 0.0) {
+          skippedNegative++;
+          continue;
+        }
+
+        // Use the same categorizer.map for modified transactions (not bucketFromPlaidOrFallback)
+        String bucket = categorizer.map(username, t);
+
         if (bucket == null || bucket.isBlank() || "UNCATEGORIZED".equalsIgnoreCase(bucket)) {
           uncategorized.add(Map.of(
               "id", t.getTransactionId(),
@@ -152,17 +229,26 @@ public ResponseEntity<?> sync(@RequestBody Map<String, Object> body) {
         }
       }
 
-      for (var e : dayMap.entrySet()) {
-        if (e.getValue().isEmpty()) continue;
-        String dayIso = e.getKey();
-        Map<String, Double> costs = e.getValue();
-        costsWriter.mergeDated(username, "weekly",  dayIso, costs);
-        costsWriter.mergeDated(username, "monthly", dayIso, costs);
-        daysUpdated++;
-      }
-
       totalRemoved += removed.size();
     }
+
+    // Write aggregated costs to storage (after processing ALL items)
+    for (var e : dayMap.entrySet()) {
+      if (e.getValue().isEmpty()) continue;
+      String dayIso = e.getKey();
+      Map<String, Double> costs = e.getValue();
+      System.out.println("Writing costs for " + dayIso + ": " + costs);
+      costsWriter.mergeDated(username, "weekly",  dayIso, costs);
+      costsWriter.mergeDated(username, "monthly", dayIso, costs);
+      daysUpdated++;
+    }
+
+    System.out.println("=== Sync complete for " + username + " ===");
+    System.out.println("Added: " + totalAdded + ", Modified: " + totalModified +
+        ", Removed: " + totalRemoved + ", Days updated: " + daysUpdated);
+    System.out.println("Skipped - pending: " + skippedPending + ", seen: " + skippedSeen +
+        ", old: " + skippedOld + ", negative: " + skippedNegative);
+    System.out.println("Uncategorized: " + uncategorized.size());
 
     return ResponseEntity.ok(Map.of(
         "added", totalAdded,
@@ -172,24 +258,85 @@ public ResponseEntity<?> sync(@RequestBody Map<String, Object> body) {
         "uncategorized", uncategorized
     ));
   } catch (Exception e) {
+    System.err.println("Sync error for user: " + body.get("username"));
+    System.err.println("Error type: " + e.getClass().getName());
+    System.err.println("Error message: " + e.getMessage());
     e.printStackTrace();
-    return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+    String errorMsg = e.getMessage() != null ? e.getMessage() : "Unknown error during sync";
+    return ResponseEntity.status(500).body(Map.of("error", errorMsg));
   }
 }
 
 
 
-  private static double round2(double v) { return Math.round(v * 100.0) / 100.0; }
+  /**
+   * Skip (ignore) transactions - marks them as seen without adding to costs.
+   * Use this when user doesn't want to categorize certain transactions.
+   */
+  @PostMapping("/skip-transactions")
+  public ResponseEntity<?> skipTransactions(@RequestBody Map<String, Object> body) {
+    try {
+      String username = (String) body.get("username");
+      @SuppressWarnings("unchecked")
+      List<String> transactionIds = (List<String>) body.get("transaction_ids");
 
-  private String bucketFromPlaidOrFallback(String username, Transaction t) {
-    PersonalFinanceCategory pfc = t.getPersonalFinanceCategory();
-    if (pfc != null) {
-      String detailed = pfc.getDetailed();
-      String primary  = pfc.getPrimary();
-      if (detailed != null && !detailed.isBlank()) return detailed;  // e.g., "COFFEE_SHOP"
-      if (primary  != null && !primary.isBlank())  return primary;   // e.g., "FOOD_AND_DRINK"
+      if (username == null || transactionIds == null || transactionIds.isEmpty()) {
+        return ResponseEntity.badRequest().body(Map.of("error", "Missing username or transaction_ids"));
+      }
+
+      // Get all items for this user to mark transactions as seen
+      Map<String, String> tokens = tokenStore.listAccessTokens(username);
+      int skipped = 0;
+
+      for (String txnId : transactionIds) {
+        // Mark as seen in all items (we don't know which item the txn belongs to)
+        for (String itemId : tokens.keySet()) {
+          cursorStore.markSeenTxn(username, itemId, txnId);
+        }
+        skipped++;
+      }
+
+      System.out.println("Skipped " + skipped + " transactions for user: " + username);
+      return ResponseEntity.ok(Map.of("skipped", skipped));
+    } catch (Exception e) {
+      System.err.println("Error skipping transactions: " + e.getMessage());
+      return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
     }
-    // Fallback to your existing heuristic
-    return categorizer.map(username, t);
   }
+
+  /**
+   * Reset sync state - clears cursors and seen transactions.
+   * This allows a full re-sync of all transactions from Plaid.
+   * Use this when transactions seem to be missing or you want to start fresh.
+   */
+  @PostMapping("/reset-sync")
+  public ResponseEntity<?> resetSync(@RequestBody Map<String, Object> body) {
+    try {
+      String username = (String) body.get("username");
+
+      if (username == null || username.isBlank()) {
+        return ResponseEntity.badRequest().body(Map.of("error", "Missing username"));
+      }
+
+      System.out.println("=== Resetting sync state for user: " + username + " ===");
+
+      // Clear all cursor and seen transaction state
+      cursorStore.clearSyncState(username);
+
+      // Also clear the categorizer cache
+      categorizer.clearCategoryCache(username);
+
+      System.out.println("Sync state reset complete for: " + username);
+      return ResponseEntity.ok(Map.of(
+          "success", true,
+          "message", "Sync state cleared. Next sync will fetch all transactions from the last 30 days."
+      ));
+    } catch (Exception e) {
+      System.err.println("Error resetting sync state: " + e.getMessage());
+      e.printStackTrace();
+      return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+    }
+  }
+
+  private static double round2(double v) { return Math.round(v * 100.0) / 100.0; }
 }

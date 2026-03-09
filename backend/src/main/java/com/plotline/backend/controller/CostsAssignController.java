@@ -32,10 +32,10 @@ public class CostsAssignController {
         cats.put(a.category(), round2(cats.getOrDefault(a.category(), 0.0) + a.amount()));
       }
 
-      // write to weekly & monthly per day
+      // write to weekly & monthly per day (ADD, not set)
       for (var e : dayMap.entrySet()) {
-        costsWriter.mergeDated(body.username(), "weekly",  e.getKey(), e.getValue());
-        costsWriter.mergeDated(body.username(), "monthly", e.getKey(), e.getValue());
+        costsWriter.addDated(body.username(), "weekly",  e.getKey(), e.getValue());
+        costsWriter.addDated(body.username(), "monthly", e.getKey(), e.getValue());
       }
 
       return ResponseEntity.ok(Map.of("ok", true, "days", dayMap.keySet()));

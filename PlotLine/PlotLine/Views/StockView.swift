@@ -157,7 +157,9 @@ struct StockView: View {
 
         guard let url = components.url else { return }
 
-        URLSession.shared.dataTask(with: url) { data, resp, _ in
+        var req = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &req)
+        URLSession.shared.dataTask(with: req) { data, resp, _ in
             if let http = resp as? HTTPURLResponse, http.statusCode == 200, let data = data {
                 decodeAndSet(data)
             } else {
@@ -166,13 +168,14 @@ struct StockView: View {
             }
         }.resume()
     }
-    
+
     func revertToLLMGeneratedPortfolio(for account: ViewAccount) {
         var components = URLComponents(string: "\(BackendConfig.baseURLString)/api/llm/portfolio/revert/\(username)")!
         components.queryItems = [URLQueryItem(name: "account", value: account.apiValue)]
         guard let url = components.url else { return }
 
         var req = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &req)
         req.httpMethod = "POST"
 
         URLSession.shared.dataTask(with: req) { _, _, _ in

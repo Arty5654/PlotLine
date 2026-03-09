@@ -27,6 +27,7 @@ struct FriendsAPI {
         }
         
         var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
         request.httpMethod = "PUT"
         request.httpBody = jsonData
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -52,6 +53,7 @@ struct FriendsAPI {
         }
 
         var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
         request.httpMethod = "GET"
         request.setValue("application/json", forHTTPHeaderField: "Accept")
 
@@ -74,6 +76,7 @@ struct FriendsAPI {
         }
 
         var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
         request.httpMethod = "GET"
         request.setValue("application/json", forHTTPHeaderField: "Accept")
 
@@ -96,6 +99,7 @@ struct FriendsAPI {
         }
         
         var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
         request.httpMethod = "GET"
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         
@@ -115,6 +119,7 @@ struct FriendsAPI {
             throw URLError(.badURL)
         }
         var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
         request.httpMethod = "GET"
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         
@@ -141,6 +146,7 @@ struct FriendsAPI {
         let payload = FriendRequest(senderUsername: username, receiverUsername: friendUsername, status: "REMOVE")
         let data = try JSONEncoder().encode(payload)
         var req = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &req)
         req.httpMethod = "POST"
         req.httpBody = data
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")

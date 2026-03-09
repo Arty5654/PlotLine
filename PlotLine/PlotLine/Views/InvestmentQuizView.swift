@@ -366,7 +366,9 @@ struct InvestmentQuizView: View {
         for urlStr in candidates {
             guard let url = URL(string: urlStr) else { continue }
             do {
-                let (data, response) = try await URLSession.shared.data(from: url)
+                var req = URLRequest(url: url)
+                BackendConfig.addApiKey(to: &req)
+                let (data, response) = try await URLSession.shared.data(for: req)
                 guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode), !data.isEmpty else { continue }
 
                 struct BudgetResponse: Decodable { let budget: [String: Double] }
@@ -419,6 +421,7 @@ struct InvestmentQuizView: View {
         guard let jsonData = try? JSONEncoder().encode(payload) else { return }
 
         var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = jsonData
@@ -449,6 +452,7 @@ struct InvestmentQuizView: View {
         guard let jsonData = try? JSONEncoder().encode(payload) else { return }
 
         var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = jsonData

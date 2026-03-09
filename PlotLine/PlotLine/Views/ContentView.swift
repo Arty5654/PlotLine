@@ -149,6 +149,33 @@ struct ContentView: View {
             calendarVM.fetchEvents()
             await friendsVM.loadFriends(for: username)
         }
+        .onAppear {
+            // Handle pending notification navigation from cold start
+            if let userInfo = AppDelegate.pendingNotificationUserInfo {
+                AppDelegate.pendingNotificationUserInfo = nil // Clear it
+
+                if let showDayView = userInfo["showDayView"] as? Bool,
+                   let eventDateStr = userInfo["eventDate"] as? String,
+                   let eventDate = ISO8601DateFormatter().date(from: eventDateStr) {
+
+                    // Set the calendar to show the event's date
+                    calendarVM.currentDate = eventDate
+                    calendarVM.selectedDay = eventDate
+
+                    // Show week view if 24+ hours, otherwise show month view and navigate to day
+                    if showDayView {
+                        calendarVM.showMonthView()
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            calendarVM.navigateToDayView = eventDate
+                        }
+                    } else {
+                        calendarVM.showWeekView()
+                    }
+
+                    navigateToCalendar = true
+                }
+            }
+        }
     }
 }
 
@@ -225,6 +252,7 @@ struct SpendingPreviewWidget: View {
     @State private var points: [DayPoint] = []
     @State private var isLoading = false
     @State private var errorText: String?
+    @State private var reloadTrigger = UUID()
 
     private var username: String { UserDefaults.standard.string(forKey: "loggedInUsername") ?? "UnknownUser" }
 
@@ -287,7 +315,10 @@ struct SpendingPreviewWidget: View {
                 .animation(.easeInOut, value: points.count)   // <— no Equatable requirement
             }
         }
-        .task { await reloadWeek() }
+        .task(id: reloadTrigger) { await reloadWeek() }
+        .onReceive(NotificationCenter.default.publisher(for: .plaidSynced)) { _ in
+            reloadTrigger = UUID()
+        }
     }
 
     private func reloadWeek() async {
@@ -316,7 +347,9 @@ struct SpendingPreviewWidget: View {
         guard let url = URL(string: "\(BackendConfig.baseURLString)/api/costs/weekly/\(username)?week_start=\(startStr)") else {
             return []
         }
-        let (data, _) = try await URLSession.shared.data(from: url)
+        var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
+        let (data, _) = try await URLSession.shared.data(for: request)
 
         struct Period: Decodable { let days: [String:[String:Double]]? }
         let period = try JSONDecoder().decode(Period.self, from: data)
@@ -394,6 +427,7 @@ struct GoalsWidget: View {
     private func fetchGoals() async {
         guard let url = URL(string: "\(BackendConfig.baseURLString)/api/goals/\(username)") else { return }
         var request = URLRequest(url: url); request.httpMethod = "GET"
+        BackendConfig.addApiKey(to: &request)
 
         do {
             let (data, _) = try await URLSession.shared.data(for: request)

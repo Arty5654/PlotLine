@@ -78,9 +78,9 @@ public class AuthController {
         
         // create jwt token
         String token = authService.generateToken(request.getUsername());
-        
-        // signup successful
-        return ResponseEntity.ok(new AuthResponse(true, token, "Needs Verification"));
+
+        // signup successful - return the original display username
+        return ResponseEntity.ok(new AuthResponse(true, token, "Needs Verification", displayUsername));
     }
 
     @PostMapping("/signin")
@@ -105,13 +105,14 @@ public class AuthController {
         
         // create jwt token
         String token = authService.generateToken(request.getUsername());
+        String displayUsername = authService.getDisplayUsername(request.getUsername());
 
         if (loginResult.equals("Needs Verification")) {
-            return ResponseEntity.ok(new AuthResponse(true, token, "Needs Verification"));
+            return ResponseEntity.ok(new AuthResponse(true, token, "Needs Verification", displayUsername));
         }
-        
+
         // signin successful
-        return ResponseEntity.ok(new AuthResponse(true, token, null));
+        return ResponseEntity.ok(new AuthResponse(true, token, null, displayUsername));
     }
 
     @PostMapping("/google-signin")
@@ -163,9 +164,9 @@ public class AuthController {
                 }
 
                 System.out.println("Google user CREATED");
-    
+
                 String token = authService.generateToken(username);
-                return ResponseEntity.ok(new AuthResponse(true, token, "Needs Verification"));
+                return ResponseEntity.ok(new AuthResponse(true, token, "Needs Verification", displayUsername));
     
             } else {
                 // username exists already, try signing the google user back in
@@ -193,12 +194,13 @@ public class AuthController {
                 }
     
                 String token = authService.generateToken(username);
+                String returnDisplayUsername = authService.getDisplayUsername(username);
 
                 if (loginResult.equals("Needs Verification")) {
-                    return ResponseEntity.ok(new AuthResponse(true, token, "Needs Verification"));
+                    return ResponseEntity.ok(new AuthResponse(true, token, "Needs Verification", returnDisplayUsername));
                 }
 
-                return ResponseEntity.ok(new AuthResponse(true, token, null));
+                return ResponseEntity.ok(new AuthResponse(true, token, null, returnDisplayUsername));
     
             }
     

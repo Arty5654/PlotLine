@@ -34,6 +34,7 @@ struct GroceryListAPI {
         }
         
         var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = jsonData
@@ -56,6 +57,7 @@ struct GroceryListAPI {
         }
         
         var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
         request.httpMethod = "GET"
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         
@@ -83,6 +85,7 @@ struct GroceryListAPI {
         }
         
         var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
         request.httpMethod = "GET"
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         
@@ -110,6 +113,7 @@ struct GroceryListAPI {
         let groceryItem = item
         
         var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(groceryItem)
@@ -133,6 +137,7 @@ struct GroceryListAPI {
         }
         
         var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
         request.httpMethod = "DELETE"
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         
@@ -156,6 +161,7 @@ struct GroceryListAPI {
         }
         
         var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
         request.httpMethod = "PATCH"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         
@@ -182,6 +188,7 @@ struct GroceryListAPI {
         }
         
         var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
         request.httpMethod = "PUT"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(reorderedItems)
@@ -206,6 +213,7 @@ struct GroceryListAPI {
         }
         
         var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
         request.httpMethod = "PUT"  // Using PUT to update the item
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         
@@ -229,6 +237,7 @@ struct GroceryListAPI {
     static func archiveGroceryList(username: String, groceryList: GroceryList, completion: @escaping (Result<String, Error>) -> Void) {
         let url = URL(string: "\(baseURL)/archive/\(username)")!
         var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         
@@ -265,6 +274,7 @@ struct GroceryListAPI {
     static func getArchivedGroceryLists(username: String, completion: @escaping (Result<[GroceryList], Error>) -> Void) {
         let url = URL(string: "\(baseURL)/archived/\(username)")!
         var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
         request.httpMethod = "GET"
         
         let task = URLSession.shared.dataTask(with: request) { data, response, error in
@@ -297,6 +307,7 @@ struct GroceryListAPI {
     static func restoreGroceryList(username: String, groceryList: GroceryList, completion: @escaping (Result<String, Error>) -> Void) {
         let url = URL(string: "\(baseURL)/restore/\(username)")!
         var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         
@@ -338,6 +349,7 @@ struct GroceryListAPI {
         let url = URL(string: "\(baseURL)/generate-from-meal")!
         
         var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         
@@ -387,6 +399,7 @@ struct GroceryListAPI {
         let url = URL(string: "\(baseURL)/generate-meal-from-list")!
 
         var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
@@ -435,6 +448,7 @@ struct GroceryListAPI {
         let url = URL(string: "\(baseURL)/generate-list-from-goal")!
         
         var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         

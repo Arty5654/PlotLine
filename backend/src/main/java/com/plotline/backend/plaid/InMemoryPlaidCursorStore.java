@@ -1,9 +1,12 @@
 package com.plotline.backend.plaid;
 
-import org.springframework.stereotype.Component;
 import java.util.*;
 
-@Component
+/**
+ * In-memory cursor store - replaced by S3PlaidCursorStore for production.
+ * Kept for reference/testing only.
+ */
+// @Component  // Disabled - using S3PlaidCursorStore instead
 public class InMemoryPlaidCursorStore implements PlaidCursorStore {
   private final Map<String, String> cursorByUserItem = new HashMap<>();
   private final Set<String> seen = new HashSet<>(); // key: user|item|txn
@@ -29,5 +32,12 @@ public class InMemoryPlaidCursorStore implements PlaidCursorStore {
   @Override
   public synchronized void markSeenTxn(String username, String itemId, String transactionId) {
     seen.add(tkey(username, itemId, transactionId));
+  }
+
+  @Override
+  public synchronized void clearSyncState(String username) {
+    String prefix = username + "|";
+    cursorByUserItem.entrySet().removeIf(e -> e.getKey().startsWith(prefix));
+    seen.removeIf(k -> k.startsWith(prefix));
   }
 }

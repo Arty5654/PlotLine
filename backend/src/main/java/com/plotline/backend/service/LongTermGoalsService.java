@@ -17,6 +17,7 @@ import com.plotline.backend.dto.ChatMessage;
 import com.plotline.backend.dto.LongTermGoal;
 import com.plotline.backend.dto.LongTermStep;
 
+import static com.plotline.backend.util.UsernameUtils.normalize;
 import io.github.cdimascio.dotenv.Dotenv;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
@@ -52,6 +53,7 @@ public class LongTermGoalsService {
   }
 
   public boolean addLongTermGoalToS3(String username, LongTermGoal newGoal) {
+    username = normalize(username);
     try {
       String key = "users/" + username + "/long-term-goals.json";
 
@@ -104,6 +106,7 @@ public class LongTermGoalsService {
   }
 
   public Map<String, Object> getLongTermGoals(String username) {
+    username = normalize(username);
     try {
       String key = "users/" + username + "/long-term-goals.json";
 
@@ -136,6 +139,7 @@ public class LongTermGoalsService {
   }
 
   public boolean updateStepCompletionInS3(String username, UUID goalId, UUID stepId, boolean isCompleted) {
+    username = normalize(username);
     try {
       String key = "users/" + username + "/long-term-goals.json";
       GetObjectRequest getObjectRequest = GetObjectRequest.builder()
@@ -201,6 +205,7 @@ public class LongTermGoalsService {
   }
 
   public boolean resetLongTermGoalsInS3(String username) {
+    username = normalize(username);
     try {
       String key = "users/" + username + "/long-term-goals.json";
       System.out.println("📡 Resetting long-term goals for: " + key);
@@ -229,6 +234,7 @@ public class LongTermGoalsService {
 
   /* Archive a long term goal */
   public boolean archiveLongTermGoalInS3(String username, UUID goalId) {
+    username = normalize(username);
     try {
       String key = "users/" + username + "/long-term-goals.json";
       GetObjectRequest getObjectRequest = GetObjectRequest.builder()
@@ -280,6 +286,7 @@ public class LongTermGoalsService {
 
   /* Unarchive a long term goal */
   public boolean unarchiveLongTermGoalInS3(String username, UUID goalId) {
+    username = normalize(username);
     try {
       String key = "users/" + username + "/long-term-goals.json";
       GetObjectRequest getObjectRequest = GetObjectRequest.builder()

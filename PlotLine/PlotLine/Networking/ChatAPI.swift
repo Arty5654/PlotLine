@@ -26,7 +26,10 @@ class ChatAPI {
     func fetchFeed(userId: String) async throws -> [ChatMessage] {
         var components = URLComponents(url: baseURL.appendingPathComponent("get-feed"), resolvingAgainstBaseURL: false)!
         components.queryItems = [URLQueryItem(name: "userId", value: userId)]
-        let (data, _) = try await URLSession.shared.data(from: components.url!)
+        var request = URLRequest(url: components.url!)
+        BackendConfig.addApiKey(to: &request)
+        request.httpMethod = "GET"
+        let (data, _) = try await URLSession.shared.data(for: request)
         return try decoder.decode([ChatMessage].self, from: data)
     }
 
@@ -41,6 +44,7 @@ class ChatAPI {
         }
 
         var req = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &req)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         let msg = ChatMessage(
@@ -66,6 +70,7 @@ class ChatAPI {
             .appendingPathComponent(messageId)
             .appendingPathComponent("reactions")
         var req = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &req)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = try encoder.encode(["emoji": emoji])
@@ -84,6 +89,7 @@ class ChatAPI {
         ]
 
         var req = URLRequest(url: components.url!)
+        BackendConfig.addApiKey(to: &req)
         req.httpMethod = "DELETE"
 
         let (_, response) = try await URLSession.shared.data(for: req)
@@ -105,6 +111,7 @@ class ChatAPI {
             .appendingPathComponent("replies")
 
         var req = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &req)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
 

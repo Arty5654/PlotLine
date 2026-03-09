@@ -1,9 +1,12 @@
 package com.plotline.backend.plaid;
 
-import org.springframework.stereotype.Component;
 import java.util.*;
 
-@Component
+/**
+ * In-memory token store - replaced by S3TokenStore for production.
+ * Kept for reference/testing only.
+ */
+// @Component  // Disabled - using S3TokenStore instead
 public class InMemoryTokenStore implements TokenStore {
   private final Map<String, Map<String, String>> byUser = new HashMap<>(); // user -> (itemId->token)
   private final Map<String, String> itemToUser = new HashMap<>();

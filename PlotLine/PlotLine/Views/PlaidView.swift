@@ -27,8 +27,13 @@ struct PlaidView: View {
     }
 
     private func link() async {
-        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/plaid/link_token?username=\(currentUsername())"),
-              let (data, _) = try? await URLSession.shared.data(from: url),
+        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/plaid/link_token?username=\(currentUsername())") else {
+            print("Failed to fetch link_token - invalid URL"); return
+        }
+        var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
+        request.httpMethod = "GET"
+        guard let (data, _) = try? await URLSession.shared.data(for: request),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let linkToken = obj["link_token"] as? String
         else { print("Failed to fetch link_token"); return }
@@ -41,6 +46,7 @@ struct PlaidView: View {
     private func syncPlaid() async {
         guard let url = URL(string: "\(BackendConfig.baseURLString)/api/plaid/sync?username=\(currentUsername())") else { return }
         var req = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &req)
         req.httpMethod = "POST"
         _ = try? await URLSession.shared.data(for: req)
     }
@@ -48,6 +54,7 @@ struct PlaidView: View {
     private func exchange(publicToken: String, selectedAccountIds: [String]) async {
         guard let url = URL(string: "\(BackendConfig.baseURLString)/api/plaid/exchange") else { return }
         var req = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &req)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
 

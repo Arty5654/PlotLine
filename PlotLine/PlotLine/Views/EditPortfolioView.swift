@@ -135,6 +135,7 @@ struct EditPortfolioView: View {
               let url = URL(string: "\(BackendConfig.baseURLString)/api/llm/portfolio/save") else { return }
 
         var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = jsonData

@@ -11,6 +11,7 @@ import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 
+import static com.plotline.backend.util.UsernameUtils.normalize;
 import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.util.Calendar;
@@ -30,7 +31,7 @@ public class SleepScheduleService {
 
     // Helper function to construct the S3 path for the sleep schedule
     private String getSleepScheduleS3Path(String username) {
-        return "users/" + username + "/health-entries/sleep_schedule.json";
+        return "users/" + normalize(username) + "/health-entries/sleep_schedule.json";
     }
 
     // Method to get sleep schedule for a user

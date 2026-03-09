@@ -218,6 +218,7 @@ struct BudgetCompareView: View {
               let url = URL(string: "\(BackendConfig.baseURLString)/api/llm/budget") else { return }
 
         var req = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &req)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = data
@@ -250,7 +251,9 @@ struct BudgetCompareView: View {
         guard let url = URL(string: "\(BackendConfig.baseURLString)/api/budget/\(username)/monthly") else { return }
 
         do {
-            let (data, _) = try await URLSession.shared.data(from: url)
+            var req = URLRequest(url: url)
+            BackendConfig.addApiKey(to: &req)
+            let (data, _) = try await URLSession.shared.data(for: req)
 
             if let decoded = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                let budget = decoded["budget"] as? [String: Double] {
@@ -272,7 +275,9 @@ struct BudgetCompareView: View {
     private func loadQuizData() async {
         guard let url = URL(string: "\(BackendConfig.baseURLString)/api/llm/budget/last/\(username)") else { return }
         do {
-            let (data, resp) = try await URLSession.shared.data(from: url)
+            var req = URLRequest(url: url)
+            BackendConfig.addApiKey(to: &req)
+            let (data, resp) = try await URLSession.shared.data(for: req)
             guard let http = resp as? HTTPURLResponse, (200...299).contains(http.statusCode) else { return }
             if let dict = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
                 await MainActor.run {
@@ -302,10 +307,11 @@ struct BudgetCompareView: View {
         ]
         guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
         var req = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &req)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = data
-        
+
         do {
             _ = try await URLSession.shared.data(for: req)
             // also save weekly scaled version
@@ -317,6 +323,7 @@ struct BudgetCompareView: View {
             ]
             if let wdata = try? JSONSerialization.data(withJSONObject: weeklyPayload) {
                 var wreq = URLRequest(url: url)
+                BackendConfig.addApiKey(to: &wreq)
                 wreq.httpMethod = "POST"
                 wreq.setValue("application/json", forHTTPHeaderField: "Content-Type")
                 wreq.httpBody = wdata

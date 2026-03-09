@@ -88,18 +88,20 @@ class AuthViewModel: ObservableObject {
                 if let token = response.token {
                     KeychainManager.saveToken(token)
                     // Save username so we can connect data to the user in different views
-                    UserDefaults.standard.set(username, forKey: "loggedInUsername")
+                    // Use displayUsername from server (original case) or fall back to typed username
+                    let usernameToStore = response.displayUsername ?? username
+                    UserDefaults.standard.set(usernameToStore, forKey: "loggedInUsername")
                     self.phoneNumber = phone
                 }
                 self.authToken = response.token
                 self.isLoggedIn = true
                 self.signupErrorMessage = nil
-                
+
                 // trigger phone verification
                 if response.error == "Needs Verification" {
                     self.needVerification = true
                 }
-                
+
             } catch {
                 // Handle errors from AuthAPI
                 if let authError = error as? AuthError {
@@ -171,14 +173,15 @@ class AuthViewModel: ObservableObject {
                     //TODO make this use username instead of email
                     
                     if let token = response.token {
-                        
                         KeychainManager.saveToken(token)
-                        UserDefaults.standard.set(username, forKey: "loggedInUsername")
-                        
+                        // Use displayUsername from server (original case) or fall back to typed username
+                        let usernameToStore = response.displayUsername ?? username
+                        UserDefaults.standard.set(usernameToStore, forKey: "loggedInUsername")
+
                         self.authToken = token
-                        
+
                         self.isLoggedIn = true
-                        
+
                         // trigger phone verification
                         if response.error == "Needs Verification" {
                             self.needVerification = true
@@ -208,32 +211,35 @@ class AuthViewModel: ObservableObject {
                 )
                 
     
+                // Use displayUsername from server (original case) or fall back to typed username
+                let usernameToStore = response.displayUsername ?? username
+
                 // edge case where user still hasnt verified
                 if response.error == "Needs Verification" {
                     self.needVerification = true
                     self.isLoggedIn = true
                     self.loginErrorMessage = nil
-                    
+
                     if let token = response.token {
                         KeychainManager.saveToken(token)
                         // Save username so we can connect data to the user in different views
-                        UserDefaults.standard.set(username, forKey: "loggedInUsername")
+                        UserDefaults.standard.set(usernameToStore, forKey: "loggedInUsername")
                     }
                     self.authToken = response.token
-                    
+
                     return
                 }
-                
+
                 // On success
                 if let token = response.token {
                     KeychainManager.saveToken(token)
                     // Save username so we can connect data to the user in different views
-                    UserDefaults.standard.set(username, forKey: "loggedInUsername")
+                    UserDefaults.standard.set(usernameToStore, forKey: "loggedInUsername")
                 }
                 self.authToken = response.token
                 self.isLoggedIn = true
                 self.loginErrorMessage = nil
-                
+
                 if response.error == "Needs Verification" {
                     self.needVerification = true
                 }

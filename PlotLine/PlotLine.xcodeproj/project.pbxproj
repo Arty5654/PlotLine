@@ -454,8 +454,10 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = PlotLine/Info.plist;
+				INFOPLIST_KEY_NSCameraUsageDescription = "PlotLine needs camera access to scan receipts for automatic expense tracking.";
 				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "This app needs your location to customize your budget recommendations.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "This app needs your location to customize your budget recommendations.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "PlotLine needs photo library access to select receipt images for expense tracking.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -486,8 +488,10 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = PlotLine/Info.plist;
+				INFOPLIST_KEY_NSCameraUsageDescription = "PlotLine needs camera access to scan receipts for automatic expense tracking.";
 				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "This app needs your location to customize your budget recommendations.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "This app needs your location to customize your budget recommendations.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "PlotLine needs photo library access to select receipt images for expense tracking.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

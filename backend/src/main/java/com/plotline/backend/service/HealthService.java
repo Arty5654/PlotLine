@@ -14,6 +14,7 @@ import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 
+import static com.plotline.backend.util.UsernameUtils.normalize;
 import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.util.*;
@@ -34,12 +35,12 @@ public class HealthService {
 
     // Helper function to construct the S3 path for weekly health entries
     private String getWeeklyEntriesS3Path(String username, String sundayDateString) {
-        return "users/" + username + "/health-entries/" + sundayDateString + "/entries.json";
+        return "users/" + normalize(username) + "/health-entries/" + sundayDateString + "/entries.json";
     }
 
     // Helper function to construct the S3 prefix for all health entries of a user
     private String getUserHealthEntriesPrefix(String username) {
-        return "users/" + username + "/health-entries/";
+        return "users/" + normalize(username) + "/health-entries/";
     }
 
     // Method to retrieve health entries for a specific week

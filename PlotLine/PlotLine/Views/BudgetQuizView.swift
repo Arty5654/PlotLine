@@ -572,10 +572,11 @@ struct BudgetQuizView: View {
         }
         
         var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = jsonData
-        
+
         do {
             let (data, _) = try await URLSession.shared.data(for: request)
             if let decoded = try? JSONDecoder().decode([String: Double].self, from: data) {
@@ -635,17 +636,20 @@ struct BudgetQuizView: View {
         ]
         let jsonData = try JSONSerialization.data(withJSONObject: payload)
         var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = jsonData
         _ = try await URLSession.shared.data(for: request)
     }
-    
+
     func loadSavedQuiz() {
         guard let url = URL(string: "\(BackendConfig.baseURLString)/api/llm/budget/last/\(username)") else { return }
         Task {
             do {
-                let (data, resp) = try await URLSession.shared.data(from: url)
+                var request = URLRequest(url: url)
+                BackendConfig.addApiKey(to: &request)
+                let (data, resp) = try await URLSession.shared.data(for: request)
                 guard let http = resp as? HTTPURLResponse, http.statusCode == 200 else { return }
                 if let dict = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
                     await MainActor.run {
@@ -719,12 +723,13 @@ struct BudgetQuizView: View {
         ]
         let data = try JSONSerialization.data(withJSONObject: payload)
         var req = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &req)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = data
         _ = try await URLSession.shared.data(for: req)
     }
-    
+
     func resetCostsToSelectedCategories() async {
         var zeros = Dictionary(
             uniqueKeysWithValues: selectedCategories

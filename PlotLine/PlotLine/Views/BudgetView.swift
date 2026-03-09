@@ -164,7 +164,7 @@ struct BudgetSection: View {
                         WeeklyMonthlyCostView().environmentObject(calendarVM)
                     }
                     .buttonStyle(AdaptivePrimaryButton())
-                    ActionRow(title: "Create Weekly/Monthly Budget", system: "list.bullet.rectangle.portrait") {
+                    ActionRow(title: "Weekly/Monthly Budget", system: "list.bullet.rectangle.portrait") {
                         BudgetInputView()
                     }
                     .buttonStyle(AdaptivePrimaryButton())
@@ -213,7 +213,9 @@ struct BudgetSection: View {
         await MainActor.run { hasQuiz = nil }  // show spinner
 
         do {
-            let (data, resp) = try await URLSession.shared.data(from: url)
+            var request = URLRequest(url: url)
+            BackendConfig.addApiKey(to: &request)
+            let (data, resp) = try await URLSession.shared.data(for: request)
             guard let http = resp as? HTTPURLResponse else {
                 await MainActor.run { hasQuiz = false }
                 return
@@ -236,20 +238,34 @@ struct BudgetSection: View {
     }
 
     private func startPlaidLink() async {
-        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/plaid/link_token?username=\(currentUsername())"),
-              let (data, _) = try? await URLSession.shared.data(from: url),
-              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let linkToken = obj["link_token"] as? String
-        else { print("Failed to fetch link_token"); return }
+        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/plaid/link_token?username=\(currentUsername())")
+        else { print("Failed to build link_token URL"); return }
+        var linkReq = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &linkReq)
+        do {
+            let (data, response) = try await URLSession.shared.data(for: linkReq)
+            if let http = response as? HTTPURLResponse {
+                print("Plaid link_token response status: \(http.statusCode)")
+            }
+            if let str = String(data: data, encoding: .utf8) {
+                print("Plaid link_token response: \(str)")
+            }
+            guard let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let linkToken = obj["link_token"] as? String
+            else { print("Failed to parse link_token from response"); return }
 
-        await presentPlaidLink(linkToken: linkToken, coordinator: plaidCoordinator) { publicToken, accountIds in
-            Task { await exchange(publicToken: publicToken, selectedAccountIds: accountIds) }
+            await presentPlaidLink(linkToken: linkToken, coordinator: plaidCoordinator) { publicToken, accountIds in
+                Task { await exchange(publicToken: publicToken, selectedAccountIds: accountIds) }
+            }
+        } catch {
+            print("Failed to fetch link_token: \(error)")
         }
     }
-    
+
     private func exchange(publicToken: String, selectedAccountIds: [String]) async {
         guard let url = URL(string: "\(BackendConfig.baseURLString)/api/plaid/exchange") else { return }
         var req = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &req)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
@@ -301,6 +317,7 @@ struct SpendingTrendChartView: View {
     @State private var budgetTarget: Double = 0
     @State private var isLoading = false
     @State private var loadError: String?
+    @State private var reloadTrigger = UUID() // Used to force reload
 
     // Computed helpers (so the compiler doesn’t choke)
     private var pts: [TrendPoint] { points }
@@ -397,6 +414,11 @@ struct SpendingTrendChartView: View {
             }
         }
         .task(id: chartType) { await reload() }
+        .task(id: reloadTrigger) { await reload() }
+        .onReceive(NotificationCenter.default.publisher(for: .plaidSynced)) { _ in
+            // Reload chart when transactions are synced
+            reloadTrigger = UUID()
+        }
     }
 
     // MARK: - Data loading
@@ -435,7 +457,9 @@ struct SpendingTrendChartView: View {
         for urlStr in candidates {
             guard let url = URL(string: urlStr) else { continue }
             do {
-                let (data, resp) = try await URLSession.shared.data(from: url)
+                var request = URLRequest(url: url)
+                BackendConfig.addApiKey(to: &request)
+                let (data, resp) = try await URLSession.shared.data(for: request)
                 guard let http = resp as? HTTPURLResponse, (200...299).contains(http.statusCode), !data.isEmpty else { continue }
 
                 // Primary decode
@@ -512,7 +536,9 @@ struct SpendingTrendChartView: View {
     private func fetchWeeklyPoint(for start: Date) async throws -> TrendPoint? {
         let weekStart = start.ymd()
         guard let url = URL(string: "\(BackendConfig.baseURLString)/api/costs/weekly/\(username)?week_start=\(weekStart)") else { return nil }
-        let (data, _) = try await URLSession.shared.data(from: url)
+        var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
+        let (data, _) = try await URLSession.shared.data(for: request)
         let resp = try JSONDecoder().decode(PeriodFile.self, from: data)
         let total = (resp.totals?.values.reduce(0, +)) ?? 0
         return TrendPoint(date: start, total: total)
@@ -522,7 +548,9 @@ struct SpendingTrendChartView: View {
         let f = DateFormatter(); f.calendar = .init(identifier: .gregorian); f.dateFormat = "yyyy-MM"
         let monthStr = f.string(from: date)
         guard let url = URL(string: "\(BackendConfig.baseURLString)/api/costs/monthly/\(username)?month=\(monthStr)") else { return nil }
-        let (data, _) = try await URLSession.shared.data(from: url)
+        var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
+        let (data, _) = try await URLSession.shared.data(for: request)
         let resp = try JSONDecoder().decode(PeriodFile.self, from: data)
         let total = (resp.totals?.values.reduce(0, +)) ?? 0
         // place at end-of-month for spacing

@@ -10,8 +10,7 @@ enum BackendConfig {
                 return val
             }
         }
-        
-        print("Backend URL:", BackendConfig.baseURLString)
+
         fatalError("BACKEND_BASE_URL is missing or still a placeholder in Info.plist. Set it per build config.")
     }()
 
@@ -24,4 +23,31 @@ enum BackendConfig {
         }
         return url
     }()
+
+    /// API key for authenticating requests. Set `PLOTLINE_API_KEY` in Info.plist.
+    static let apiKey: String? = {
+        if let raw = Bundle.main.object(forInfoDictionaryKey: "PLOTLINE_API_KEY") as? String {
+            let val = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !val.isEmpty && !val.contains("$(") {
+                return val
+            }
+        }
+        return nil
+    }()
+
+    /// Creates a URLRequest with the API key header already set
+    static func authenticatedRequest(url: URL) -> URLRequest {
+        var request = URLRequest(url: url)
+        if let key = apiKey {
+            request.setValue(key, forHTTPHeaderField: "X-API-Key")
+        }
+        return request
+    }
+
+    /// Adds API key header to an existing URLRequest
+    static func addApiKey(to request: inout URLRequest) {
+        if let key = apiKey {
+            request.setValue(key, forHTTPHeaderField: "X-API-Key")
+        }
+    }
 }

@@ -133,7 +133,7 @@ public class AuthService {
         try {
             String hashedPassword = BCrypt.hashpw(rawPassword, BCrypt.gensalt());
 
-            S3UserRecord userRecord = new S3UserRecord(norm, phone, normEmail, hashedPassword, isGoogle, false);
+            S3UserRecord userRecord = new S3UserRecord(norm, displayUsername, phone, normEmail, hashedPassword, isGoogle, false);
             String userJson = objectMapper.writeValueAsString(userRecord);
 
             PutObjectRequest putRequest = PutObjectRequest.builder().
@@ -356,6 +356,29 @@ public class AuthService {
 
     public String normalizeUsername(String username) {
         return username == null ? "" : username.trim().toLowerCase();
+    }
+
+    // Get the original case-sensitive username from signup
+    public String getDisplayUsername(String username) {
+        String norm = normalizeUsername(username);
+        String key = userAccKey(norm);
+        try {
+            GetObjectRequest getRequest = GetObjectRequest.builder()
+                    .bucket(bucketName)
+                    .key(key)
+                    .build();
+
+            ResponseBytes<GetObjectResponse> objectBytes = s3Client.getObjectAsBytes(getRequest);
+            String userJson = new String(objectBytes.asByteArray(), StandardCharsets.UTF_8);
+
+            S3UserRecord userRecord = objectMapper.readValue(userJson, S3UserRecord.class);
+
+            // Return displayUsername if it exists, otherwise fall back to normalized username
+            String display = userRecord.getDisplayUsername();
+            return (display != null && !display.isBlank()) ? display : norm;
+        } catch (Exception e) {
+            return norm; // Fallback to normalized username
+        }
     }
 
     public String normalizeEmail(String email) {

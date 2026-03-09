@@ -4,7 +4,10 @@ import UserNotifications
 //import LinkKit
 
 class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
-    
+
+    // Store pending notification navigation for cold starts
+    static var pendingNotificationUserInfo: [AnyHashable: Any]? = nil
+
     func application(
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
@@ -55,7 +58,10 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
 
         // Check if this is a calendar event notification
         if let navigateTo = userInfo["navigateTo"] as? String, navigateTo == "calendar" {
-            // Post a notification to navigate to calendar
+            // Store for cold start case (when ContentView isn't ready yet)
+            AppDelegate.pendingNotificationUserInfo = userInfo
+
+            // Post a notification to navigate to calendar (for warm start case)
             NotificationCenter.default.post(
                 name: NSNotification.Name("NavigateToCalendar"),
                 object: nil,

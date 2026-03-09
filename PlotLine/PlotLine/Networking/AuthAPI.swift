@@ -21,6 +21,7 @@ struct AuthAPI {
         let jsonData = try JSONEncoder().encode(requestBody)
 
         var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
         request.httpMethod = "POST"
         request.httpBody = jsonData
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -38,8 +39,8 @@ struct AuthAPI {
 
         return authResponse
     }
-    
-    
+
+
     static func signIn(username: String, password: String) async throws -> AuthResponse {
         guard let url = URL(string: "\(baseURL)/auth/signin") else {
             throw AuthError.invalidURL
@@ -50,6 +51,7 @@ struct AuthAPI {
         let jsonData = try JSONEncoder().encode(requestBody)
 
         var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
         request.httpMethod = "POST"
         request.httpBody = jsonData
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -68,7 +70,7 @@ struct AuthAPI {
 
         return authResponse
     }
-    
+
     static func googleSignIn(idToken: String, username: String, email: String) async throws -> AuthResponse {
         guard let url = URL(string: "\(baseURL)/auth/google-signin") else {
             throw AuthError.invalidURL
@@ -78,6 +80,7 @@ struct AuthAPI {
         let jsonData = try JSONEncoder().encode(requestBody)
 
         var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
         request.httpMethod = "POST"
         request.httpBody = jsonData
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -106,6 +109,7 @@ struct AuthAPI {
         let jsonData = try JSONEncoder().encode(requestBody)
         
         var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
         request.httpMethod = "POST"
         request.httpBody = jsonData
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -135,6 +139,7 @@ struct AuthAPI {
         let jsonData = try JSONEncoder().encode(requestBody)
         
         var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
         request.httpMethod = "POST"
         request.httpBody = jsonData
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -162,6 +167,7 @@ struct AuthAPI {
         let jsonData = try JSONEncoder().encode(requestBody)
 
         var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
         request.httpMethod = "POST"
         request.httpBody = jsonData
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -190,6 +196,7 @@ struct AuthAPI {
         let jsonData = try JSONEncoder().encode(requestBody)
 
         var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
         request.httpMethod = "POST"
         request.httpBody = jsonData
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")

@@ -13,7 +13,10 @@ enum PaymentAPI {
         guard let url = URL(string: "\(baseURL)/api/payments/status/\(username)") else {
             throw PaymentAPIError.invalidURL
         }
-        let (data, response) = try await URLSession.shared.data(from: url)
+        var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
+        request.httpMethod = "GET"
+        let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
             throw PaymentAPIError.serverError
         }
@@ -25,6 +28,7 @@ enum PaymentAPI {
             throw PaymentAPIError.invalidURL
         }
         var req = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &req)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         let body = ["username": username]
@@ -41,6 +45,7 @@ enum PaymentAPI {
             throw PaymentAPIError.invalidURL
         }
         var req = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &req)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         let body = ["username": username]
@@ -59,6 +64,7 @@ enum PaymentAPI {
             throw PaymentAPIError.invalidURL
         }
         var req = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &req)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         let payload: [String: Any] = [

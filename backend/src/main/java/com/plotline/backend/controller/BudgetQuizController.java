@@ -476,7 +476,11 @@ public class BudgetQuizController {
       int start = text.indexOf('{');
       int end = text.lastIndexOf('}');
       if (start != -1 && end != -1 && end > start) {
-          return text.substring(start, end + 1);
+          String json = text.substring(start, end + 1);
+          // Remove commas from numbers (e.g., "1,200" -> "1200")
+          // Pattern: digit, comma, digit(s) - replace comma with nothing
+          json = json.replaceAll("(\\d),(\\d)", "$1$2");
+          return json;
       }
       throw new IllegalArgumentException("No valid JSON object found in LLM response.");
     }

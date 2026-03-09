@@ -293,6 +293,11 @@ struct BudgetInputView: View {
                 fetchBudgetData()
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .budgetQuizCompleted)) { _ in
+            // Refresh budget data after quiz generates new budget
+            fetchTakeHomeFromLastQuiz()
+            fetchBudgetData()
+        }
     }
 }
 
@@ -374,6 +379,7 @@ extension BudgetInputView {
         ]
         guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
         var req = URLRequest(url: URL(string: "\(BackendConfig.baseURLString)/api/llm/budget/regen")!)
+        BackendConfig.addApiKey(to: &req)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = data
@@ -429,7 +435,9 @@ extension BudgetInputView {
     private func fetchBudgetData() {
         let urlString = "\(BackendConfig.baseURLString)/api/budget/\(username)/\(backendType)"
         guard let url = URL(string: urlString) else { return }
-        URLSession.shared.dataTask(with: url) { data, _, error in
+        var req = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &req)
+        URLSession.shared.dataTask(with: req) { data, _, error in
             if let error = error {
                 print("❌ fetch budget:", error.localizedDescription)
                 DispatchQueue.main.async { self.budgetItems = Self.defaultBudgetCategories }
@@ -457,7 +465,9 @@ extension BudgetInputView {
     private func fetchIncomeData() {
         let urlString = "\(BackendConfig.baseURLString)/api/income/\(username)"
         guard let url = URL(string: urlString) else { return }
-        URLSession.shared.dataTask(with: url) { data, _, error in
+        var req = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &req)
+        URLSession.shared.dataTask(with: req) { data, _, error in
             if let error = error { print("❌ income:", error.localizedDescription); return }
             guard let data = data, !data.isEmpty else { return }
             do {
@@ -482,6 +492,7 @@ extension BudgetInputView {
         ]
         guard let json = try? JSONSerialization.data(withJSONObject: payload) else { return }
         var req = URLRequest(url: URL(string: "\(BackendConfig.baseURLString)/api/budget")!)
+        BackendConfig.addApiKey(to: &req)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = json
@@ -514,6 +525,7 @@ extension BudgetInputView {
         let urlString = "\(BackendConfig.baseURLString)/api/budget/\(username)/\(backendType)"
         guard let url = URL(string: urlString) else { return }
         var req = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &req)
         req.httpMethod = "DELETE"
         URLSession.shared.dataTask(with: req) { _,_,_ in
             DispatchQueue.main.async {
@@ -527,6 +539,7 @@ extension BudgetInputView {
         let urlString = "\(BackendConfig.baseURLString)/api/llm/budget/revert/\(username)/\(backendType)"
         guard let url = URL(string: urlString) else { return }
         var req = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &req)
         req.httpMethod = "POST"
         URLSession.shared.dataTask(with: req) { _,_,_ in
             DispatchQueue.main.async { self.fetchBudgetData() }
@@ -552,7 +565,9 @@ extension BudgetInputView {
     
     private func fetchTakeHomeFromLastQuiz() {
         let url = URL(string: "\(BackendConfig.baseURLString)/api/llm/budget/last/\(username)")!
-        URLSession.shared.dataTask(with: url) { data, response, error in
+        var req = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &req)
+        URLSession.shared.dataTask(with: req) { data, response, error in
             if let error = error { print("quiz err:", error.localizedDescription); self.fetchIncomeData(); return }
             guard let http = response as? HTTPURLResponse, http.statusCode == 200, let data = data, !data.isEmpty else {
                 self.fetchIncomeData(); return

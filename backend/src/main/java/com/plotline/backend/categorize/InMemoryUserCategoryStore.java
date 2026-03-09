@@ -1,9 +1,12 @@
 package com.plotline.backend.categorize;
 
-import org.springframework.stereotype.Component;
 import java.util.*;
 
-@Component
+/**
+ * In-memory category store - replaced by S3UserCategoryStore for production.
+ * Kept for reference/testing only.
+ */
+// @Component  // Disabled - using S3UserCategoryStore instead
 public class InMemoryUserCategoryStore implements UserCategoryStore {
   private final Map<String, Map<String,String>> byUser = new HashMap<>();
 

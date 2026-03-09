@@ -7,6 +7,8 @@ struct AddEventSheet: View {
     @EnvironmentObject var friendVM: FriendsViewModel
 
     let defaultDate: Date
+    let existingEvents: [Event]
+    let editingEventId: String? // nil for new events, set for editing
 
     @State private var title: String = ""
     @State private var description: String = ""
@@ -18,8 +20,12 @@ struct AddEventSheet: View {
 
     @State private var isRange: Bool = false
 
+    @State private var isSubscription: Bool = false
+    @State private var monthlyCost: String = ""
+
     @State private var showFriendDropdown = false
     @State private var selectedFriends: [Friend] = []
+    @State private var showDuplicateAlert = false
 
     // Adaptive color: white in dark mode, blue in light mode
     private var adaptiveTextColor: Color {
@@ -41,11 +47,13 @@ struct AddEventSheet: View {
     @State private var selectedReminders: Set<UUID> = []
 
 
-    let onSave: (String, String, Date, Date, String, [String]) -> Void
+    let onSave: (String, String, Date, Date, String, [String], String) -> Void
 
     // MARK: - Init for creating a new event
-    init(defaultDate: Date, onSave: @escaping (String, String, Date, Date, String, [String]) -> Void) {
+    init(defaultDate: Date, existingEvents: [Event] = [], onSave: @escaping (String, String, Date, Date, String, [String], String) -> Void) {
         self.defaultDate = defaultDate
+        self.existingEvents = existingEvents
+        self.editingEventId = nil
         self.onSave = onSave
 
         _title = State(initialValue: "")
@@ -56,30 +64,99 @@ struct AddEventSheet: View {
     }
 
     // MARK: - Init for editing an existing event
-    init(existingEvent: Event, onSave: @escaping (String, String, Date, Date, String, [String]) -> Void) {
+    init(existingEvent: Event, existingEvents: [Event] = [], onSave: @escaping (String, String, Date, Date, String, [String], String) -> Void) {
         self.defaultDate = existingEvent.startDate
+        self.existingEvents = existingEvents
+        self.editingEventId = existingEvent.id
         self.onSave = onSave
 
+        let isSub = existingEvent.eventType.lowercased().hasPrefix("subscription")
         _title = State(initialValue: existingEvent.title)
-        _description = State(initialValue: existingEvent.description)
         _startDate = State(initialValue: existingEvent.startDate)
         _endDate = State(initialValue: existingEvent.endDate)
         _isRange = State(initialValue: !Calendar.current.isDate(existingEvent.startDate, inSameDayAs: existingEvent.endDate))
         _isRecurring = State(initialValue: existingEvent.recurrence != "none")
         _recurrence = State(initialValue: existingEvent.recurrence)
+        _isSubscription = State(initialValue: isSub)
         // Prepopulate selected friends if the event already has invited friends
         _selectedFriends = State(initialValue: existingEvent.invitedFriends.filter { !$0.contains("-creator-user-") }
-            .map { Friend(username: $0) })    }
+            .map { Friend(username: $0) })
+
+        // Extract cost and description from existing subscription events
+        if isSub {
+            // Description format: "Subscription reminder ($10.99)" or user text
+            let desc = existingEvent.description
+            if let range = desc.range(of: #"\$(\d+\.?\d*)"#, options: .regularExpression) {
+                _monthlyCost = State(initialValue: String(desc[range].dropFirst())) // drop the $
+                // Description without the cost part
+                let cleanDesc = desc.replacingOccurrences(of: #"Subscription reminder\s*\(\$\d+\.?\d*\)"#, with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
+                _description = State(initialValue: cleanDesc)
+            } else {
+                _monthlyCost = State(initialValue: "")
+                _description = State(initialValue: desc)
+            }
+        } else {
+            _description = State(initialValue: existingEvent.description)
+        }
+    }
+
+    // Check if an event with the same title exists on the same day
+    private var hasDuplicateTitle: Bool {
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedTitle.isEmpty else { return false }
+
+        let startOfDay = Calendar.current.startOfDay(for: startDate)
+        guard let endOfDay = Calendar.current.date(byAdding: .day, value: 1, to: startOfDay) else { return false }
+
+        return existingEvents.contains { event in
+            // Skip the event we're editing
+            if let editingId = editingEventId, event.id == editingId { return false }
+
+            // Check if event is on the same day
+            let eventOnSameDay = event.startDate < endOfDay && event.endDate >= startOfDay
+
+            // Check if title matches (case-insensitive)
+            let titleMatches = event.title.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) == trimmedTitle.lowercased()
+
+            return eventOnSameDay && titleMatches
+        }
+    }
+
+    private var canSave: Bool {
+        !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !hasDuplicateTitle
+    }
 
     var body: some View {
         NavigationView {
             Form {
+                // Event type
+                Section(header: Text("Event Type").foregroundColor(adaptiveTextColor)) {
+                    Toggle("Subscription", isOn: $isSubscription)
+                        .onChange(of: isSubscription) { on in
+                            if on {
+                                isRecurring = true
+                                recurrence = "monthly"
+                            }
+                        }
+                    if isSubscription {
+                        HStack {
+                            Text("$")
+                                .foregroundColor(.secondary)
+                            TextField("Monthly cost", text: $monthlyCost)
+                                .keyboardType(.decimalPad)
+                                .accentColor(adaptiveTextColor)
+                        }
+                    }
+                }
+
                 // Event detail fields
                 Section(header: Text("Event Details").foregroundColor(adaptiveTextColor)) {
                     TextField("Title", text: $title)
                         .accentColor(adaptiveTextColor)
-                    TextField("Description", text: $description)
-                        .accentColor(adaptiveTextColor)
+                    if !isSubscription {
+                        TextField("Description", text: $description)
+                            .accentColor(adaptiveTextColor)
+                    }
                 }
 
                 // Date selection fields
@@ -225,13 +302,34 @@ struct AddEventSheet: View {
                     presentationMode.wrappedValue.dismiss()
                 },
                 trailing: Button("Save") {
-                    let finalEndDate = isRange ? endDate : startDate
-                    scheduleRemindersIfNeeded(eventTitle: title, start: startDate)
-                    // Pass the selected friend IDs along with other parameters.
-                    onSave(title, description, startDate, finalEndDate, recurrence, selectedFriends.map { $0.id })
-                    presentationMode.wrappedValue.dismiss()
+                    if hasDuplicateTitle {
+                        showDuplicateAlert = true
+                    } else {
+                        let finalEndDate = isRange ? endDate : startDate
+                        scheduleRemindersIfNeeded(eventTitle: title, start: startDate)
+
+                        let eventType = isSubscription ? "subscription" : "user"
+                        var finalDescription = description
+                        if isSubscription {
+                            let costStr = monthlyCost.trimmingCharacters(in: .whitespacesAndNewlines)
+                            if let cost = Double(costStr), cost > 0 {
+                                finalDescription = "Subscription reminder ($\(String(format: "%.2f", cost)))"
+                            } else {
+                                finalDescription = "Subscription reminder"
+                            }
+                        }
+
+                        onSave(title, finalDescription, startDate, finalEndDate, recurrence, selectedFriends.map { $0.id }, eventType)
+                        presentationMode.wrappedValue.dismiss()
+                    }
                 }
+                .disabled(!canSave)
             )
+            .alert("Duplicate Event", isPresented: $showDuplicateAlert) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("An event with this name already exists on this day. Please choose a different name.")
+            }
         }
     }
 }

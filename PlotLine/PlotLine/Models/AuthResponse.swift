@@ -10,6 +10,7 @@ struct AuthResponse: Codable {
     let success: Bool
     let token: String?
     let error: String?
+    let displayUsername: String?
 }
 
 struct SmsResponse: Codable {

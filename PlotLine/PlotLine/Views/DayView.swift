@@ -49,13 +49,13 @@ struct DayView: View {
             }
         }
         .sheet(isPresented: $showingAddEventSheet) {
-            AddEventSheet(defaultDate: day) { title, description, start, end, recur, friends in
+            AddEventSheet(defaultDate: day, existingEvents: viewModel.events) { title, description, start, end, recur, friends, eventType in
                 viewModel.createEvent(
                     title: title,
                     description: description,
                     startDate: start,
                     endDate: end,
-                    eventType: "user",
+                    eventType: eventType,
                     recurrence: recur,
                     invitedFriends: friends
                 )
@@ -63,8 +63,8 @@ struct DayView: View {
         }
 
         .sheet(item: $selectedEvent) { eventToEdit in
-            AddEventSheet(existingEvent: eventToEdit) { newTitle, newDesc, newStart, newEnd, newRecurrence, newFriends in
-                
+            AddEventSheet(existingEvent: eventToEdit, existingEvents: viewModel.events) { newTitle, newDesc, newStart, newEnd, newRecurrence, newFriends, newEventType in
+
                 var updatedEvent = eventToEdit
                 updatedEvent.title = newTitle
                 updatedEvent.description = newDesc
@@ -72,7 +72,8 @@ struct DayView: View {
                 updatedEvent.endDate = newEnd
                 updatedEvent.recurrence = newRecurrence
                 updatedEvent.invitedFriends = newFriends
-                        
+                updatedEvent.eventType = newEventType
+
                 viewModel.updateEvent(event: updatedEvent)
             }.environmentObject(friendVM)
         }
@@ -95,7 +96,7 @@ struct DayView: View {
         
         offsets.forEach { index in
             let eventToDelete = dayEvents[index]
-            if (eventToDelete.eventType == "user") {
+            if eventToDelete.eventType == "user" || eventToDelete.eventType.hasPrefix("subscription") {
                 viewModel.deleteEvent(eventToDelete.id)
             }
         }

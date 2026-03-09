@@ -22,26 +22,48 @@ import java.util.Map;
     }
 
   @GetMapping("/link_token")
-  public Map<String, Object> createLinkToken(@RequestParam String username) throws Exception {
-    var user = new LinkTokenCreateRequestUser().clientUserId(username);
+  public ResponseEntity<?> createLinkToken(@RequestParam String username) {
+    try {
+      var user = new LinkTokenCreateRequestUser().clientUserId(username);
 
-    Dotenv dotenv = Dotenv.configure().ignoreIfMissing().load();
-    String redirectUri = dotenv.get("PLAID_REDIRECT_URI");
+      String redirectUri = System.getenv("PLAID_REDIRECT_URI");
+      if (redirectUri == null || redirectUri.isBlank()) {
+        Dotenv dotenv = Dotenv.configure().ignoreIfMissing().load();
+        redirectUri = dotenv.get("PLAID_REDIRECT_URI");
+      }
 
-    var req = new LinkTokenCreateRequest()
-        .user(user)
-        .clientName("PlotLine")
-        .products(List.of(Products.TRANSACTIONS))
-        .countryCodes(List.of(CountryCode.US))
-        .language("en");
+      System.out.println("Creating link token for user: " + username);
+      System.out.println("Redirect URI: " + redirectUri);
 
-    // iOS OAuth: include redirect_uri; Android: include android_package_name
-    if (redirectUri != null && !redirectUri.isBlank()) {
-      req.redirectUri(redirectUri);
+      var req = new LinkTokenCreateRequest()
+          .user(user)
+          .clientName("PlotLine")
+          .products(List.of(Products.TRANSACTIONS))
+          .countryCodes(List.of(CountryCode.US))
+          .language("en");
+
+      // iOS OAuth: include redirect_uri
+      if (redirectUri != null && !redirectUri.isBlank()) {
+        req.redirectUri(redirectUri);
+      }
+
+      var response = plaid.linkTokenCreate(req).execute();
+
+      if (!response.isSuccessful()) {
+        String errorBody = response.errorBody() != null ? response.errorBody().string() : "No error body";
+        System.err.println("Plaid error: " + response.code() + " - " + errorBody);
+        return ResponseEntity.status(response.code())
+            .body(Map.of("error", "Plaid API error", "details", errorBody));
+      }
+
+      var body = response.body();
+      return ResponseEntity.ok(Map.of("link_token", body.getLinkToken()));
+    } catch (Exception e) {
+      System.err.println("Exception creating link token: " + e.getMessage());
+      e.printStackTrace();
+      return ResponseEntity.status(500)
+          .body(Map.of("error", "Failed to create link token", "message", e.getMessage()));
     }
-
-    var res = plaid.linkTokenCreate(req).execute().body();
-    return Map.of("link_token", res.getLinkToken());
   }
 
 

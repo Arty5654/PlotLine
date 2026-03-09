@@ -2,20 +2,22 @@ package com.plotline.backend.dto;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
-@JsonIgnoreProperties(value = {"displayUsername"})
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class S3UserRecord {
     private String username;
+    private String displayUsername; // Original case-sensitive username from signup
     private String phone;
     private String email;
     private String password;
     private Boolean isGoogle;
     private Boolean isVerified;
-    
+
     public S3UserRecord() {
     }
-    
-    public S3UserRecord(String username, String phone, String email, String password, Boolean isGoogle, Boolean isVerified) {
+
+    public S3UserRecord(String username, String displayUsername, String phone, String email, String password, Boolean isGoogle, Boolean isVerified) {
         this.username = username;
+        this.displayUsername = displayUsername;
         this.phone = phone;
         this.email = email;
         this.password = password;
@@ -30,7 +32,15 @@ public class S3UserRecord {
     public void setUsername(String username) {
         this.username = username;
     }
-    
+
+    public String getDisplayUsername() {
+        return displayUsername;
+    }
+
+    public void setDisplayUsername(String displayUsername) {
+        this.displayUsername = displayUsername;
+    }
+
     public String getPhone() {
         return phone;
     }

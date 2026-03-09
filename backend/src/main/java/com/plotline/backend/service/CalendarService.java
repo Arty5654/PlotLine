@@ -71,7 +71,7 @@ public class CalendarService {
             // if it is rent, subscription, or goal, avoid duplication
             if (!"user".equals(newEvent.getEventType())) {
                 System.out.println("Type: " + newEvent.getEventType());
-                newEvent = avoidDupe(newEvent, existingEvents, username, newEvent.getEventType());
+                newEvent = avoidDupe(newEvent, existingEvents, normUser, newEvent.getEventType());
                 return newEvent;
             }
             
@@ -114,9 +114,10 @@ public class CalendarService {
     }
 
     public EventDto updateEvent(EventDto updated, String username) throws Exception {
-        List<EventDto> existingEvents = getEvents(username);
+        String normUser = normalize(username);
+        List<EventDto> existingEvents = getEvents(normUser);
         boolean found = false;
-    
+
         for (int i = 0; i < existingEvents.size(); i++) {
             EventDto e = existingEvents.get(i);
             if (e.getId().equals(updated.getId())) {
@@ -125,17 +126,18 @@ public class CalendarService {
                 break;
             }
         }
-    
+
         if (!found) {
             throw new Exception("Event not found for ID: " + updated.getId());
         }
-    
-        saveEventsToS3(username, existingEvents);
-    
+
+        saveEventsToS3(normUser, existingEvents);
+
         // update or create the event copy for each invited friend
         if (updated.getInvitedFriends() != null) {
             for (String friend : updated.getInvitedFriends()) {
-                List<EventDto> friendEvents = getEvents(friend);
+                String normFriend = normalize(friend);
+                List<EventDto> friendEvents = getEvents(normFriend);
                 boolean eventExistsForFriend = false;
     
                 for (int i = 0; i < friendEvents.size(); i++) {
@@ -172,10 +174,10 @@ public class CalendarService {
                     friendEvents.add(newFriendEvent);
                 }
     
-                saveEventsToS3(friend, friendEvents);
+                saveEventsToS3(normFriend, friendEvents);
             }
         }
-    
+
         return updated;
     }
     
@@ -183,7 +185,8 @@ public class CalendarService {
 
 
     public void deleteEvent(String eventId, String username) throws Exception {
-        List<EventDto> existing = getEvents(username);
+        String normUser = normalize(username);
+        List<EventDto> existing = getEvents(normUser);
 
         // get event to delete by id
         EventDto eventToDelete = null;
@@ -199,22 +202,21 @@ public class CalendarService {
         } else if (eventToDelete.getInvitedFriends().contains("c-123-creator-user-c-987")) {
             // remove the event from each invited friend
             for (String friend : eventToDelete.getInvitedFriends()) {
-                List<EventDto> friendEvents = getEvents(friend);
+                String normFriend = normalize(friend);
+                List<EventDto> friendEvents = getEvents(normFriend);
                 friendEvents.removeIf(event -> event.getId().equals(eventId));
-                saveEventsToS3(friend, friendEvents);
+                saveEventsToS3(normFriend, friendEvents);
             }
         }
 
         existing.removeIf(event -> event.getId().equals(eventId));
-        saveEventsToS3(username, existing);
-
-
+        saveEventsToS3(normUser, existing);
     }
 
     // write to s3 func
     private void saveEventsToS3(String username, List<EventDto> events) throws Exception {
         try {
-            String key = "users/" + username + "/calendar.json";
+            String key = "users/" + normalize(username) + "/calendar.json";
             String eventsJson = objectMapper.writeValueAsString(events);
     
             //System.out.println("Preparing to save to S3: " + eventsJson);
@@ -281,10 +283,11 @@ public class CalendarService {
 
 
     public void deleteEventsByType(String username, String type) throws Exception {
-      List<EventDto> existing = getEvents(username);
+      String normUser = normalize(username);
+      List<EventDto> existing = getEvents(normUser);
 
       existing.removeIf(event -> event.getEventType().equals(type));
-      saveEventsToS3(username, existing);
+      saveEventsToS3(normUser, existing);
     }
   
 }

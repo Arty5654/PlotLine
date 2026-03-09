@@ -5,4 +5,10 @@ public interface PlaidCursorStore {
   void saveCursor(String username, String itemId, String cursor);
   boolean hasSeenTxn(String username, String itemId, String transactionId);
   void markSeenTxn(String username, String itemId, String transactionId);
+
+  /**
+   * Clears all sync state for a user (cursors and seen transactions).
+   * This allows a full re-sync of all transactions.
+   */
+  void clearSyncState(String username);
 }
