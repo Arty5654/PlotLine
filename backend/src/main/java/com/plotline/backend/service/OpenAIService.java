@@ -199,6 +199,77 @@ public class OpenAIService {
 
 
 
+  /**
+   * Analyze a food photo using GPT-4o Vision and return nutritional info as JSON array.
+   */
+  public String analyzeFoodFromImage(String base64Image) {
+    try {
+      Dotenv dotenv = Dotenv.configure().ignoreIfMissing().load();
+      String apiKey = resolveEnv(dotenv, "OPENAI_API_KEY");
+      if (apiKey == null || apiKey.isBlank()) {
+        return "[{\"error\": \"OpenAI API key not configured\"}]";
+      }
+
+      String systemPrompt = "You are a nutrition analysis assistant. Analyze the food photo and identify each food item visible. "
+          + "For each food item, estimate the nutritional information per serving. "
+          + "Return a JSON array of objects with these fields: "
+          + "\"name\" (string, the food name), "
+          + "\"servingSize\" (string, e.g. \"1 cup\", \"1 slice\", \"100g\"), "
+          + "\"servings\" (number, estimated number of servings visible), "
+          + "\"calories\" (number, total kcal for the servings), "
+          + "\"protein\" (number, grams), "
+          + "\"carbs\" (number, grams), "
+          + "\"fat\" (number, grams), "
+          + "\"source\" (always \"photo\"). "
+          + "Be as accurate as possible with portion estimates. "
+          + "Return ONLY the JSON array, no other text.";
+
+      Map<String, Object> imageUrl = Map.of("url", "data:image/jpeg;base64," + base64Image, "detail", "high");
+      Map<String, Object> imageContent = Map.of("type", "image_url", "image_url", imageUrl);
+      Map<String, Object> textContent = Map.of("type", "text", "text", "Please identify all foods in this photo and estimate their nutritional values.");
+
+      Map<String, Object> systemMessage = Map.of("role", "system", "content", systemPrompt);
+      Map<String, Object> userMessage = Map.of("role", "user", "content", List.of(imageContent, textContent));
+
+      Map<String, Object> requestMap = Map.of(
+          "model", "gpt-4o",
+          "messages", List.of(systemMessage, userMessage),
+          "max_tokens", 1500
+      );
+
+      String requestBody = objectMapper.writeValueAsString(requestMap);
+
+      java.net.http.HttpClient client = java.net.http.HttpClient.newHttpClient();
+      java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
+          .uri(java.net.URI.create("https://api.openai.com/v1/chat/completions"))
+          .header("Content-Type", "application/json")
+          .header("Authorization", "Bearer " + apiKey)
+          .POST(java.net.http.HttpRequest.BodyPublishers.ofString(requestBody))
+          .build();
+
+      java.net.http.HttpResponse<String> response = client.send(request, java.net.http.HttpResponse.BodyHandlers.ofString());
+
+      if (response.statusCode() != 200) {
+        System.err.println("OpenAI food analysis error: " + response.statusCode() + " - " + response.body());
+        return "[]";
+      }
+
+      com.fasterxml.jackson.databind.JsonNode root = objectMapper.readTree(response.body());
+      String content = root.path("choices").get(0).path("message").path("content").asText();
+
+      // Clean markdown fences
+      content = content.trim();
+      if (content.startsWith("```json")) content = content.substring(7);
+      else if (content.startsWith("```")) content = content.substring(3);
+      if (content.endsWith("```")) content = content.substring(0, content.length() - 3);
+
+      return content.trim();
+    } catch (Exception e) {
+      e.printStackTrace();
+      return "[]";
+    }
+  }
+
   // Response for Estimating Groccery Costs
   public String generateResponseGC(String userMessage) {
     if (openAIClient == null) {

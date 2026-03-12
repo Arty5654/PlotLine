@@ -98,11 +98,24 @@ public class UserProfileService {
     0, 0, new int[]{3, 10, 20, 50}, ZonedDateTime.now(ZoneOffset.UTC).format(formatter)),
 
   //sleep
-    new Trophy("sleep-tracker", "Someone's Sleepy", "Logged sleep data!", 
+    new Trophy("sleep-tracker", "Someone's Sleepy", "Logged sleep data!",
     0, 0, new int[]{3, 10, 30, 100}, ZonedDateTime.now(ZoneOffset.UTC).format(formatter)),
 
-    new Trophy("sleep-goal", "Well Rested", "Slept for over 8 hours!", 
+    new Trophy("sleep-goal", "Well Rested", "Slept for over 8 hours!",
     0, 0, new int[]{5, 15, 25, 100}, ZonedDateTime.now(ZoneOffset.UTC).format(formatter)),
+
+  //nutrition
+    new Trophy("nutrition-logger", "Calorie Counter", "Log food to your nutrition diary!",
+    0, 0, new int[]{5, 15, 50, 150}, ZonedDateTime.now(ZoneOffset.UTC).format(formatter)),
+
+    new Trophy("nutrition-photo", "Food Photographer", "Analyze food with AI photo recognition!",
+    0, 0, new int[]{3, 10, 25, 50}, ZonedDateTime.now(ZoneOffset.UTC).format(formatter)),
+
+    new Trophy("nutrition-barcode", "Barcode Pro", "Scan food barcodes!",
+    0, 0, new int[]{5, 15, 40, 100}, ZonedDateTime.now(ZoneOffset.UTC).format(formatter)),
+
+    new Trophy("nutrition-meal-creator", "Meal Master", "Create saved meals!",
+    0, 0, new int[]{1, 5, 10, 25}, ZonedDateTime.now(ZoneOffset.UTC).format(formatter)),
 
   //special trophies
 
@@ -376,6 +389,8 @@ public class UserProfileService {
         return "groceries";
     } else if (trophyId.startsWith("sleep")) {
         return "sleep";
+    } else if (trophyId.startsWith("nutrition")) {
+        return "nutrition";
     }
 
     return null; // if not part of a known category
@@ -393,7 +408,7 @@ public class UserProfileService {
         }
     }
     Set<String> requiredCategories = Set.of(
-        "goals", "calendar", "budget", "groceries", "sleep"
+        "goals", "calendar", "budget", "groceries", "sleep", "nutrition"
     );
     return earnedCategories.containsAll(requiredCategories);
   }

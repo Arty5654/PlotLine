@@ -83,6 +83,11 @@ struct ContentView: View {
                             GoalsWidget().environmentObject(calendarVM).plCard()
                         }
                         .buttonStyle(PlainButtonStyle())
+
+                        NavigationLink { NutritionView() } label: {
+                            NutritionWidget().plCard()
+                        }
+                        .buttonStyle(PlainButtonStyle())
                     }
                     .padding(.horizontal, PLSpacing.lg)
                     .padding(.bottom, PLSpacing.lg)
@@ -500,6 +505,95 @@ struct GroceryListWidget: View {
             await MainActor.run { self.groceryLists = lists; self.isLoading = false }
         } catch {
             await MainActor.run { self.isLoading = false }
+        }
+    }
+}
+
+// MARK: - Nutrition Widget
+struct NutritionWidget: View {
+    @State private var todayEntry: NutritionEntry?
+    @State private var userData: NutritionUserData?
+    @State private var isLoading = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: PLSpacing.sm) {
+            HStack {
+                Label("Nutrition", systemImage: "leaf.fill")
+                    .labelStyle(.titleAndIcon)
+                    .font(.headline)
+                Spacer()
+            }
+
+            if isLoading {
+                HStack { Spacer(); ProgressView(); Spacer() }.padding(.vertical, 6)
+            } else if let entry = todayEntry, !entry.foods.isEmpty {
+                if let goal = userData?.goals, goal.calorieGoal > 0 {
+                    // Goal-aware display
+                    let remaining = max(0, goal.calorieGoal - entry.totalCalories)
+                    let progress = min(entry.totalCalories / goal.calorieGoal, 1.0)
+                    HStack(spacing: 12) {
+                        ZStack {
+                            Circle()
+                                .stroke(Color.blue.opacity(0.15), lineWidth: 6)
+                            Circle()
+                                .trim(from: 0, to: progress)
+                                .stroke(entry.totalCalories > goal.calorieGoal ? Color.red : Color.blue,
+                                        style: StrokeStyle(lineWidth: 6, lineCap: .round))
+                                .rotationEffect(.degrees(-90))
+                            Text("\(Int(remaining))")
+                                .font(.system(.caption, design: .rounded).bold())
+                        }
+                        .frame(width: 50, height: 50)
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("\(Int(remaining)) cal remaining")
+                                .font(.subheadline.bold())
+                            Text("\(Int(entry.totalCalories)) / \(Int(goal.calorieGoal)) cal")
+                                .font(.caption).foregroundColor(PLColor.textSecondary)
+                        }
+                        Spacer()
+                    }
+                } else {
+                    // No goal
+                    HStack(spacing: PLSpacing.lg) {
+                        VStack {
+                            Text("\(Int(entry.totalCalories))")
+                                .font(.system(.title2, design: .rounded).bold())
+                                .foregroundColor(PLColor.accent)
+                            Text("cal").font(.caption).foregroundColor(PLColor.textSecondary)
+                        }
+                        Spacer()
+                        VStack {
+                            Text("\(Int(entry.totalProtein))g").font(.subheadline.bold())
+                            Text("Protein").font(.caption2).foregroundColor(PLColor.textSecondary)
+                        }
+                        VStack {
+                            Text("\(Int(entry.totalCarbs))g").font(.subheadline.bold())
+                            Text("Carbs").font(.caption2).foregroundColor(PLColor.textSecondary)
+                        }
+                        VStack {
+                            Text("\(Int(entry.totalFat))g").font(.subheadline.bold())
+                            Text("Fat").font(.caption2).foregroundColor(PLColor.textSecondary)
+                        }
+                    }
+                }
+                Text("\(entry.foods.count) food\(entry.foods.count == 1 ? "" : "s") logged today")
+                    .font(.caption).foregroundColor(PLColor.textSecondary)
+            } else {
+                Text("No foods logged today")
+                    .foregroundColor(PLColor.textSecondary)
+                    .italic()
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, 6)
+            }
+        }
+        .task {
+            isLoading = true
+            async let entryTask = NutritionAPI.shared.fetchEntries(for: Date())
+            async let userDataTask = NutritionAPI.shared.fetchUserData()
+            todayEntry = try? await entryTask
+            userData = try? await userDataTask
+            isLoading = false
         }
     }
 }

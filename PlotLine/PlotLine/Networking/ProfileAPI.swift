@@ -148,6 +148,14 @@ struct ProfileAPI {
     }
     
     
+    static func incrementTrophy(username: String, trophyId: String, amount: Int = 1) async {
+        guard let url = URL(string: "\(baseURL)/profile/increment-trophies?username=\(username)&trophyId=\(trophyId)&amount=\(amount)") else { return }
+        var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
+        request.httpMethod = "POST"
+        _ = try? await URLSession.shared.data(for: request)
+    }
+
     //fetch trophies and decode
     static func fetchTrophies(username: String) async throws -> [Trophy] {
         guard let url = URL(string: "\(baseURL)/profile/get-trophies?username=\(username)") else {
