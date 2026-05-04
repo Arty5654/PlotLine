@@ -256,6 +256,8 @@ struct WeekContent: View {
     @EnvironmentObject var friendVM: FriendsViewModel
     @Environment(\.colorScheme) var colorScheme
 
+    @State private var selectedEvent: Event? = nil
+
     // Adaptive color: white in dark mode, blue in light mode
     private var adaptiveTextColor: Color {
         colorScheme == .dark ? .white : .blue
@@ -264,46 +266,78 @@ struct WeekContent: View {
     var body: some View {
         let start = startOfWeek(for: viewModel.currentDate)
 
-        ForEach(0..<7, id: \.self) { offset in
-            let day = Calendar.current.date(byAdding: .day, value: offset, to: start)!
+        VStack(spacing: 0) {
+            ForEach(0..<7, id: \.self) { offset in
+                let day = Calendar.current.date(byAdding: .day, value: offset, to: start)!
 
-            VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 4) {
 
-                HStack {
-                    Text(shortWeekdayName(for: day))
-                        .font(.subheadline)
-                        .foregroundColor(adaptiveTextColor)
-                    Text(dayNumber(day))
-                        .font(.headline)
-                        .foregroundColor(adaptiveTextColor)
-                }
+                    HStack {
+                        Text(shortWeekdayName(for: day))
+                            .font(.subheadline)
+                            .foregroundColor(adaptiveTextColor)
+                        Text(dayNumber(day))
+                            .font(.headline)
+                            .foregroundColor(adaptiveTextColor)
+                    }
 
-                let dayEvents = viewModel.eventsOnDay(day)
-                if dayEvents.isEmpty {
-                    Text("No events")
-                        .foregroundColor(.secondary)
-                        .font(.caption)
-                } else {
-                    ForEach(dayEvents) { event in
-                        HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            Text("•")
-                            Text(event.title)
-                                .fontWeight(.bold)
+                    let dayEvents = viewModel.eventsOnDay(day)
+                    if dayEvents.isEmpty {
+                        Text("No events")
+                            .foregroundColor(.secondary)
+                            .font(.caption)
+                    } else {
+                        ForEach(dayEvents) { event in
+                            Button {
+                                selectedEvent = event
+                            } label: {
+                                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                                    Text("•")
+                                    Text(event.title)
+                                        .fontWeight(.bold)
+                                    Spacer()
+                                }
+                                .font(.body)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                            .contextMenu {
+                                Button {
+                                    selectedEvent = event
+                                } label: {
+                                    Label("Edit", systemImage: "pencil")
+                                }
+                                Button(role: .destructive) {
+                                    viewModel.deleteEvent(event.id)
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                            }
                         }
-                        .font(.body)
                     }
                 }
+                .padding(.vertical, 8)
+                .padding(.horizontal)
+                .background(
+                    viewModel.hasEvent(on: day) ? colorForDay(day) : Color.clear
+                )
+                .cornerRadius(8)
+                .padding(.horizontal)
             }
-            .padding(.vertical, 8)
-            .padding(.horizontal)
-            .background(
-                viewModel.hasEvent(on: day) ? colorForDay(day) : Color.clear
-            )
-            .cornerRadius(8)
-            .padding(.horizontal)
         }
-
-
+        .sheet(item: $selectedEvent) { eventToEdit in
+            AddEventSheet(existingEvent: eventToEdit, existingEvents: viewModel.events) { newTitle, newDesc, newStart, newEnd, newRecurrence, newFriends, newEventType in
+                var updatedEvent = eventToEdit
+                updatedEvent.title = newTitle
+                updatedEvent.description = newDesc
+                updatedEvent.startDate = newStart
+                updatedEvent.endDate = newEnd
+                updatedEvent.recurrence = newRecurrence
+                updatedEvent.invitedFriends = newFriends
+                updatedEvent.eventType = newEventType
+                viewModel.updateEvent(event: updatedEvent)
+            }.environmentObject(friendVM)
+        }
     }
     
     // Helpers

@@ -98,6 +98,9 @@ struct NutritionView: View {
         .navigationTitle("Nutrition")
         .onAppear { loadEntry(); loadUserData() }
         .onChange(of: selectedDate) { _ in loadEntry() }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
+            loadEntry(); loadUserData()
+        }
         .sheet(isPresented: $showFoodSearch) { FoodSearchSheet { food in addFood(food) } }
         .sheet(isPresented: $showManualEntry) { ManualFoodEntrySheet { food in addFood(food) } }
         .sheet(isPresented: $showBarcodeScanner) { barcodeScannerSheet }

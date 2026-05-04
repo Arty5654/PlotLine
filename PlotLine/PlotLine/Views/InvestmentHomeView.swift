@@ -18,6 +18,10 @@ struct InvestmentHomeView: View {
                 .tabItem {
                     Label("Portfolio", systemImage: "chart.pie.fill")
                 }
+            PortfolioRatingView()
+                .tabItem {
+                    Label("AI Rating", systemImage: "star.fill")
+                }
             // WatchlistView()
             //     .tabItem {
             //         Label("Watchlist", systemImage: "eye.fill")

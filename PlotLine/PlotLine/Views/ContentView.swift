@@ -231,6 +231,7 @@ struct CalendarWidget: View {
                     }
                 }
             }
+            .contentShape(Rectangle())
         }
         .buttonStyle(PlainButtonStyle())
     }
@@ -322,6 +323,9 @@ struct SpendingPreviewWidget: View {
         }
         .task(id: reloadTrigger) { await reloadWeek() }
         .onReceive(NotificationCenter.default.publisher(for: .plaidSynced)) { _ in
+            reloadTrigger = UUID()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
             reloadTrigger = UUID()
         }
     }
@@ -423,6 +427,9 @@ struct GoalsWidget: View {
         }
         .buttonStyle(PlainButtonStyle())
         .task { await fetchGoals() }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
+            Task { await fetchGoals() }
+        }
     }
 
     private func formatDate(_ d: Date?) -> String {
@@ -497,6 +504,9 @@ struct GroceryListWidget: View {
             }
         }
         .task { await fetchGroceryLists() }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
+            Task { await fetchGroceryLists() }
+        }
     }
 
     private func fetchGroceryLists() async {
@@ -588,12 +598,21 @@ struct NutritionWidget: View {
                     .padding(.vertical, 6)
             }
         }
-        .task {
-            isLoading = true
-            async let entryTask = NutritionAPI.shared.fetchEntries(for: Date())
-            async let userDataTask = NutritionAPI.shared.fetchUserData()
-            todayEntry = try? await entryTask
-            userData = try? await userDataTask
+        .task { await reloadNutrition() }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
+            Task { await reloadNutrition() }
+        }
+    }
+
+    private func reloadNutrition() async {
+        await MainActor.run { isLoading = true }
+        async let entryTask = NutritionAPI.shared.fetchEntries(for: Date())
+        async let userDataTask = NutritionAPI.shared.fetchUserData()
+        let entry = try? await entryTask
+        let data = try? await userDataTask
+        await MainActor.run {
+            todayEntry = entry
+            userData = data
             isLoading = false
         }
     }

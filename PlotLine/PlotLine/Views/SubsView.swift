@@ -83,6 +83,10 @@ struct SubsView: View {
                 await fetchRecurringPrompts()
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
+            fetchSubscriptions()
+            fetchInputtedMonthlyCosts()
+        }
         .alert("Saved", isPresented: $showSavedAlert) {
             Button("OK", role: .cancel) {}
         }

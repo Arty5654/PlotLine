@@ -686,7 +686,56 @@ public class OpenAIService {
     }
   }
 
-    public String generateGroceryListFromGoal(String goal, String username) {
+    public String ratePortfolio(String portfolioText, String accountType) {
+    if (openAIClient == null) {
+      return "{\"error\": \"OpenAI not configured\"}";
+    }
+    try {
+      String accountHint = "ROTH_IRA".equalsIgnoreCase(accountType)
+          ? "This is a Roth IRA portfolio (tax-free qualified withdrawals, long-term growth focus)."
+          : "This is a taxable brokerage portfolio (tax efficiency matters, liquidity may be needed).";
+
+      String systemMessage = """
+          You are an expert investment portfolio analyst. Rate the given portfolio and return ONLY a JSON object in this exact format with no extra text or markdown:
+          {
+            "overallScore": <number 1-10>,
+            "letter": "<A+/A/A-/B+/B/B-/C+/C/C-/D/F>",
+            "summary": "<2-3 sentence overall assessment>",
+            "breakdown": {
+              "diversification": {"score": <1-10>, "comment": "<brief comment>"},
+              "riskBalance": {"score": <1-10>, "comment": "<brief comment>"},
+              "growthPotential": {"score": <1-10>, "comment": "<brief comment>"},
+              "costEfficiency": {"score": <1-10>, "comment": "<brief comment>"},
+              "accountFit": {"score": <1-10>, "comment": "<brief comment>"}
+            },
+            "suggestions": ["<suggestion 1>", "<suggestion 2>", "<suggestion 3>"]
+          }
+          """;
+
+      String userMessage = accountHint + "\n\nPortfolio:\n" + portfolioText;
+
+      ResponseCreateParams params = ResponseCreateParams.builder()
+          .input(userMessage)
+          .instructions(systemMessage)
+          .model(ChatModel.GPT_4O_MINI)
+          .build();
+
+      Response response = openAIClient.responses().create(params);
+      ResponseOutputText rot = response.output().get(0).message().get().content().get(0).asOutputText();
+      String output = rot.text().trim();
+
+      if (output.startsWith("```json")) output = output.substring(7);
+      else if (output.startsWith("```")) output = output.substring(3);
+      if (output.endsWith("```")) output = output.substring(0, output.length() - 3);
+
+      return output.trim();
+    } catch (OpenAIException e) {
+      e.printStackTrace();
+      return "{\"error\": \"Service Error\"}";
+    }
+  }
+
+  public String generateGroceryListFromGoal(String goal, String username) {
         try {
             // Get the user's dietary restrictions
             DietaryRestrictions dietaryRestrictions = null;

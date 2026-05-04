@@ -280,6 +280,24 @@ public class PortfolioController {
         return ResponseEntity.ok("Reverted to original portfolio");
     }
 
+    @PostMapping("/portfolio/rate")
+    public ResponseEntity<String> ratePortfolio(@RequestBody Map<String, String> body) {
+        try {
+            String portfolioText = body.get("portfolio");
+            String accountType = body.getOrDefault("accountType", "BROKERAGE");
+
+            if (portfolioText == null || portfolioText.isBlank()) {
+                return ResponseEntity.badRequest().body("Portfolio text is required");
+            }
+
+            String rating = openAIService.ratePortfolio(portfolioText, accountType);
+            return ResponseEntity.ok(rating);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.status(500).body("Error rating portfolio");
+        }
+    }
+
     // For Stock News
     @GetMapping("/portfolio/risk/{username}")
     public ResponseEntity<String> getRiskTolerance(@PathVariable String username, @RequestParam(name = "account", defaultValue = "BROKERAGE") AccountType account) {

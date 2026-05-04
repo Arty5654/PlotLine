@@ -250,6 +250,11 @@ struct WeeklyMonthlyCostView: View {
             fetchMonthlyFeedback(for: selectedMonth)
             requestNotificationPermission()
         }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
+            loadMonthlyData()
+            fetchFixedCosts()
+            fetchMonthlyFeedback(for: selectedMonth)
+        }
 
         .sheet(isPresented: $showCategorizer, onDismiss: {
             pendingAssignments = []
