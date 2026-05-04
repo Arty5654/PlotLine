@@ -103,7 +103,7 @@ struct ReceiptUploadView: View {
                 VStack(alignment: .leading, spacing: PLSpacing.xs) {
                     Text("Receipt Scanner")
                         .font(.headline).bold()
-                    Text("Snap or pick a receipt. We’ll categorize it and add to your weekly (and monthly) costs.")
+                    Text("Snap or pick a receipt. We’ll categorize it and add to your monthly costs.")
                         .font(.subheadline)
                         .foregroundColor(PLColor.textSecondary)
                 }
@@ -310,11 +310,7 @@ extension ReceiptUploadView {
         func add(_ arr: [String]?) { if let arr { buckets.append(Set(arr)) } }
 
         group.enter()
-        fetchCategoriesFromBudget(type: "weekly") { cats in add(cats); group.leave() }
-        group.enter()
         fetchCategoriesFromBudget(type: "monthly") { cats in add(cats); group.leave() }
-        group.enter()
-        fetchCategoriesFromCosts(type: "weekly") { cats in add(cats); group.leave() }
         group.enter()
         fetchCategoriesFromCosts(type: "monthly") { cats in add(cats); group.leave() }
 
@@ -500,23 +496,16 @@ extension ReceiptUploadView {
             additions[category, default: 0.0] += amount
         }
 
-        let group = DispatchGroup()
-        var okWeekly = false
-        var okMonthly = false
-
-        group.enter()
-        postMergeCosts(type: "weekly", costs: additions) { ok in okWeekly = ok; group.leave() }
-        group.enter()
-        postMergeCosts(type: "monthly", costs: additions) { ok in okMonthly = ok; group.leave() }
-
-        group.notify(queue: .main) {
-            self.resultMessage = """
-            Uploaded to Weekly & Monthly:
-            \(additions.map { "\($0.key): $\(String(format: "%.2f", $0.value))" }.joined(separator: "\n"))
-            """
-            self.showCategoryPrompt = false
-            self.loadCategories()
-            if !(okWeekly && okMonthly) { print("One of the merges failed (weekly:\(okWeekly), monthly:\(okMonthly))") }
+        postMergeCosts(type: "monthly", costs: additions) { ok in
+            DispatchQueue.main.async {
+                self.resultMessage = """
+                Uploaded:
+                \(additions.map { "\($0.key): $\(String(format: "%.2f", $0.value))" }.joined(separator: "\n"))
+                """
+                self.showCategoryPrompt = false
+                self.loadCategories()
+                if !ok { print("Monthly merge failed") }
+            }
         }
     }
 
@@ -611,10 +600,10 @@ extension ReceiptUploadView {
                 return
             }
 
-            // Step 2: Add new costs using merge-dated
+            // Step 2: Add new costs to monthly
             let addPayload: [String: Any] = [
                 "username": self.username,
-                "type": "weekly",
+                "type": "monthly",
                 "date": localDate,
                 "costs": updatedCosts
             ]
@@ -632,45 +621,19 @@ extension ReceiptUploadView {
             addRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
             addRequest.httpBody = addData
 
-            let group = DispatchGroup()
-            var weeklyOk = false
-            var monthlyOk = false
-
-            // Add to weekly
-            group.enter()
             URLSession.shared.dataTask(with: addRequest) { _, resp, _ in
-                if let http = resp as? HTTPURLResponse, (200...299).contains(http.statusCode) {
-                    weeklyOk = true
-                }
-                group.leave()
-            }.resume()
+                DispatchQueue.main.async {
+                    self.isUploading = false
+                    self.showEditSheet = false
 
-            // Add to monthly
-            var monthlyPayload = addPayload
-            monthlyPayload["type"] = "monthly"
-            if let monthlyData = try? JSONSerialization.data(withJSONObject: monthlyPayload) {
-                var monthlyRequest = addRequest
-                monthlyRequest.httpBody = monthlyData
-                group.enter()
-                URLSession.shared.dataTask(with: monthlyRequest) { _, resp, _ in
                     if let http = resp as? HTTPURLResponse, (200...299).contains(http.statusCode) {
-                        monthlyOk = true
+                        self.lastAddedCosts = updatedCosts
+                        self.resultMessage = "Updated costs:\n" + updatedCosts.map { "\($0.key): $\(String(format: "%.2f", $0.value))" }.joined(separator: "\n")
+                    } else {
+                        self.errorText = "Failed to save edited costs"
                     }
-                    group.leave()
-                }.resume()
-            }
-
-            group.notify(queue: .main) {
-                self.isUploading = false
-                self.showEditSheet = false
-
-                if weeklyOk && monthlyOk {
-                    self.lastAddedCosts = updatedCosts
-                    self.resultMessage = "Updated costs:\n" + updatedCosts.map { "\($0.key): $\(String(format: "%.2f", $0.value))" }.joined(separator: "\n")
-                } else {
-                    self.errorText = "Failed to save edited costs"
                 }
-            }
+            }.resume()
         }.resume()
     }
 }
@@ -716,18 +679,39 @@ struct CameraPicker: UIViewControllerRepresentable {
     }
 }
 
+private let receiptCommonCategories = [
+    "Rent", "Groceries", "Subscriptions", "Eating Out",
+    "Entertainment", "Utilities", "Savings", "Miscellaneous",
+    "Transportation", "Roth IRA", "Car Insurance",
+    "Health Insurance", "Brokerage",
+    "Gas", "Phone", "Internet", "Gym", "Clothing",
+    "Personal Care", "Education", "Childcare", "Pet Care",
+    "Home Maintenance", "Gifts", "Donations", "Travel",
+    "Baby Supplies", "Hobbies", "Shopping", "Coffee",
+    "Alcohol & Bars", "Home Decor", "Electronics",
+    "Medical", "Dental", "Vision", "Therapy",
+    "Parking", "Tolls", "Laundry", "Haircuts",
+    "Streaming Services", "Gaming", "Music", "Books"
+]
+
 // MARK: - Sheet: Assign categories (no Form; compact + sticky confirm)
 private struct ManualCategoryAssignmentSheet: View {
     @Binding var items: [ReceiptItem]
     @Binding var corrections: [String: String]
     @Binding var categories: [String]
     var onConfirm: () -> Void
-    
+
     @Environment(\.dismiss) var dismiss
     @State private var newCategoryName: String = ""
+    @State private var showCustomCategoryPicker = false
     
     private var allChosen: Bool {
         items.allSatisfy { !(corrections[$0.name] ?? "").isEmpty }
+    }
+
+    private var availableReceiptCategories: [String] {
+        let current = Set(categories.map { $0.lowercased() })
+        return receiptCommonCategories.filter { !current.contains($0.lowercased()) }.sorted()
     }
     
     var body: some View {
@@ -748,10 +732,33 @@ private struct ManualCategoryAssignmentSheet: View {
                     VStack(alignment: .leading, spacing: PLSpacing.sm) {
                         Text("Add New Category")
                             .font(.headline)
-                        HStack(spacing: PLSpacing.sm) {
-                            TextField("New category name", text: $newCategoryName)
-                                .textFieldStyle(.roundedBorder)
-                            Button {
+                        Menu {
+                            ForEach(availableReceiptCategories, id: \.self) { cat in
+                                Button(cat) {
+                                    if !categories.contains(where: { $0.caseInsensitiveCompare(cat) == .orderedSame }) {
+                                        categories.append(cat)
+                                        categories.sort()
+                                    }
+                                }
+                            }
+                            Divider()
+                            Button("Custom...") { showCustomCategoryPicker = true }
+                        } label: {
+                            HStack {
+                                Image(systemName: "plus.circle.fill")
+                                    .foregroundColor(.green)
+                                Text("Add Category")
+                                    .font(.subheadline)
+                                Spacer()
+                                Image(systemName: "chevron.down")
+                                    .font(.caption)
+                                    .foregroundColor(PLColor.textSecondary)
+                            }
+                            .padding(.vertical, 8)
+                        }
+                        .alert("Custom Category", isPresented: $showCustomCategoryPicker) {
+                            TextField("Category name", text: $newCategoryName)
+                            Button("Add") {
                                 let trimmed = newCategoryName.trimmingCharacters(in: .whitespacesAndNewlines)
                                 guard !trimmed.isEmpty else { return }
                                 if !categories.contains(where: { $0.caseInsensitiveCompare(trimmed) == .orderedSame }) {
@@ -759,10 +766,8 @@ private struct ManualCategoryAssignmentSheet: View {
                                     categories.sort()
                                 }
                                 newCategoryName = ""
-                            } label: {
-                                Label("Add", systemImage: "plus.circle.fill")
                             }
-                            .tint(.green)
+                            Button("Cancel", role: .cancel) { newCategoryName = "" }
                         }
                     }
                     .plCard()
@@ -838,6 +843,13 @@ private struct EditReceiptCostsSheet: View {
     @State private var editedCosts: [EditableCost] = []
     @State private var newCategoryName: String = ""
     @State private var newCategoryAmount: String = ""
+    @State private var showAddCategoryMenu = false
+    @State private var customCategoryName: String = ""
+
+    private var availableNewCategories: [String] {
+        let current = Set(categories.map { $0.lowercased() })
+        return receiptCommonCategories.filter { !current.contains($0.lowercased()) }.sorted()
+    }
 
     var body: some View {
         NavigationStack {
@@ -870,6 +882,41 @@ private struct EditReceiptCostsSheet: View {
                             Image(systemName: "plus.circle.fill")
                         }
                         .tint(.green)
+                    }
+
+                    // Add a new category to the picker list
+                    Menu {
+                        ForEach(availableNewCategories, id: \.self) { cat in
+                            Button(cat) {
+                                if !categories.contains(where: { $0.caseInsensitiveCompare(cat) == .orderedSame }) {
+                                    categories.append(cat)
+                                    categories.sort()
+                                }
+                            }
+                        }
+                        Divider()
+                        Button("Custom...") { showAddCategoryMenu = true }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "plus")
+                                .font(.caption2)
+                            Text("Add new category")
+                                .font(.caption)
+                        }
+                        .foregroundColor(PLColor.accent)
+                    }
+                    .alert("Custom Category", isPresented: $showAddCategoryMenu) {
+                        TextField("Category name", text: $customCategoryName)
+                        Button("Add") {
+                            let trimmed = customCategoryName.trimmingCharacters(in: .whitespacesAndNewlines)
+                            guard !trimmed.isEmpty else { return }
+                            if !categories.contains(where: { $0.caseInsensitiveCompare(trimmed) == .orderedSame }) {
+                                categories.append(trimmed)
+                                categories.sort()
+                            }
+                            customCategoryName = ""
+                        }
+                        Button("Cancel", role: .cancel) { customCategoryName = "" }
                     }
                 }
                 .plCard()

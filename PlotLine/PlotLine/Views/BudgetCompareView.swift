@@ -298,8 +298,8 @@ struct BudgetCompareView: View {
         defer { isLoading = false }
         guard let url = URL(string: "\(BackendConfig.baseURLString)/api/budget") else { return }
         let cleanedMonthly = proposedBudget.filter { !excludedCats.contains($0.key) }
-        let weeklyBudget = cleanedMonthly.mapValues { $0 / 4.0 }
 
+        // Save monthly budget — backend auto-creates weekly (monthly / 4)
         let payload: [String: Any] = [
             "username": username,
             "type": "monthly",
@@ -314,21 +314,6 @@ struct BudgetCompareView: View {
 
         do {
             _ = try await URLSession.shared.data(for: req)
-            // also save weekly scaled version
-            let weeklyBudget = proposedBudget.mapValues { $0 / 4.0 }
-            let weeklyPayload: [String: Any] = [
-                "username": username,
-                "type": "weekly",
-                "budget": weeklyBudget
-            ]
-            if let wdata = try? JSONSerialization.data(withJSONObject: weeklyPayload) {
-                var wreq = URLRequest(url: url)
-                BackendConfig.addApiKey(to: &wreq)
-                wreq.httpMethod = "POST"
-                wreq.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                wreq.httpBody = wdata
-                _ = try? await URLSession.shared.data(for: wreq)
-            }
             await MainActor.run { self.successMessage = "Budget replaced successfully." }
         } catch {
             await MainActor.run { self.error = "Could not save budget." }

@@ -160,11 +160,11 @@ struct BudgetSection: View {
                         ReceiptUploadView().environmentObject(calendarVM)
                     }
                     .buttonStyle(AdaptivePrimaryButton())
-                    ActionRow(title: "Input Weekly/Monthly Costs", system: "square.and.pencil") {
+                    ActionRow(title: "Monthly Costs", system: "square.and.pencil") {
                         WeeklyMonthlyCostView().environmentObject(calendarVM)
                     }
                     .buttonStyle(AdaptivePrimaryButton())
-                    ActionRow(title: "Weekly/Monthly Budget", system: "list.bullet.rectangle.portrait") {
+                    ActionRow(title: "Monthly Budget", system: "list.bullet.rectangle.portrait") {
                         BudgetInputView()
                     }
                     .buttonStyle(AdaptivePrimaryButton())
@@ -448,10 +448,15 @@ struct SpendingTrendChartView: View {
     }
 
     private func fetchBudgetTarget() async throws -> Double {
-        let type = chartType.lowercased()
+        // First try take-home monthly (matches budget summary on costs page)
+        if let takeHome = try? await fetchTakeHomeMonthly(), takeHome > 0 {
+            return chartType == "Weekly" ? takeHome / 4.0 : takeHome
+        }
+
+        // Fallback: sum of per-category budgets
         let candidates = [
-            "\(BackendConfig.baseURLString)/api/budget/\(username)/\(type)",
-            "\(BackendConfig.baseURLString)/api/budget/\(username.lowercased())/\(type)"
+            "\(BackendConfig.baseURLString)/api/budget/\(username)/monthly",
+            "\(BackendConfig.baseURLString)/api/budget/\(username.lowercased())/monthly"
         ]
 
         for urlStr in candidates {
@@ -462,32 +467,23 @@ struct SpendingTrendChartView: View {
                 let (data, resp) = try await URLSession.shared.data(for: request)
                 guard let http = resp as? HTTPURLResponse, (200...299).contains(http.statusCode), !data.isEmpty else { continue }
 
-                // Primary decode
+                var monthlyTotal = 0.0
+
                 if let resp = try? JSONDecoder().decode(BudgetResponse.self, from: data) {
-                    let filtered = resp.budget.filter { !is401kKey($0.key) }
-                    return filtered.values.reduce(0, +)
-                }
-                // Fallback: flexible JSON
-                if let any = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    monthlyTotal = resp.budget.filter { !isExcludedKey($0.key) }.values.reduce(0, +)
+                } else if let any = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
                     if let budgetMap = any["budget"] as? [String: Any] {
-                        let filtered = budgetMap.filter { !is401kKey($0.key) }
-                        let sum = filtered.values.compactMap { v -> Double? in
+                        monthlyTotal = budgetMap.filter { !isExcludedKey($0.key) }.values.compactMap { v -> Double? in
                             if let d = v as? Double { return d }
                             if let s = v as? String, let d = Double(s) { return d }
                             if let n = v as? NSNumber { return n.doubleValue }
                             return nil
                         }.reduce(0, +)
-                        return sum
-                    } else {
-                        let filtered = any.filter { !is401kKey($0.key) }
-                        let sum = filtered.values.compactMap { v -> Double? in
-                            if let d = v as? Double { return d }
-                            if let s = v as? String, let d = Double(s) { return d }
-                            if let n = v as? NSNumber { return n.doubleValue }
-                            return nil
-                        }.reduce(0, +)
-                        return sum
                     }
+                }
+
+                if monthlyTotal > 0 {
+                    return chartType == "Weekly" ? monthlyTotal / 4.0 : monthlyTotal
                 }
             } catch {
                 continue
@@ -496,13 +492,25 @@ struct SpendingTrendChartView: View {
         return 0
     }
 
+    private func fetchTakeHomeMonthly() async throws -> Double {
+        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/llm/budget/last/\(username)") else { return 0 }
+        var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
+        let (data, resp) = try await URLSession.shared.data(for: request)
+        guard let http = resp as? HTTPURLResponse, (200...299).contains(http.statusCode) else { return 0 }
+        if let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            if let v = obj["monthlyNet"] as? Double { return v }
+            if let s = obj["monthlyNet"] as? String, let v = Double(s) { return v }
+        }
+        return 0
+    }
+
     private func fetchTrendSeries() async throws -> [TrendPoint] {
         chartType == "Weekly" ? try await last8Weeks() : try await last6Months()
     }
 
-    private func is401kKey(_ key: String) -> Bool {
-        let lower = key.lowercased()
-        return lower.contains("401k") || lower.contains("401(k)")
+    private func isExcludedKey(_ key: String) -> Bool {
+        Self.chartExclusions.contains(key) || key.lowercased().contains("401k") || key.lowercased().contains("401(k)")
     }
 
     private func last8Weeks() async throws -> [TrendPoint] {
@@ -533,14 +541,51 @@ struct SpendingTrendChartView: View {
         return result
     }
 
+    private static let chartExclusions: Set<String> = [
+        "401(k)", "401k", "401(k) Contribution", "401k Contribution"
+    ]
+
     private func fetchWeeklyPoint(for start: Date) async throws -> TrendPoint? {
-        let weekStart = start.ymd()
-        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/costs/weekly/\(username)?week_start=\(weekStart)") else { return nil }
-        var request = URLRequest(url: url)
-        BackendConfig.addApiKey(to: &request)
-        let (data, _) = try await URLSession.shared.data(for: request)
-        let resp = try JSONDecoder().decode(PeriodFile.self, from: data)
-        let total = (resp.totals?.values.reduce(0, +)) ?? 0
+        // Derive weekly totals from monthly file day entries
+        let cal = Calendar.current
+        let weekEnd = cal.date(byAdding: .day, value: 6, to: start) ?? start
+        let monthFmt = DateFormatter(); monthFmt.calendar = .init(identifier: .gregorian); monthFmt.dateFormat = "yyyy-MM"
+        let dayFmt = DateFormatter(); dayFmt.calendar = .init(identifier: .gregorian); dayFmt.dateFormat = "yyyy-MM-dd"
+
+        // Build the 7 day keys for this week
+        var weekDayKeys: Set<String> = []
+        for i in 0..<7 {
+            if let d = cal.date(byAdding: .day, value: i, to: start) {
+                weekDayKeys.insert(dayFmt.string(from: d))
+            }
+        }
+
+        // Determine which months to fetch (1 or 2 if week spans month boundary)
+        let startMonth = monthFmt.string(from: start)
+        let endMonth = monthFmt.string(from: weekEnd)
+        let monthsToFetch = startMonth == endMonth ? [startMonth] : [startMonth, endMonth]
+
+        // Collect all day entries from relevant months
+        var allDays: [String: [String: Double]] = [:]
+        for month in monthsToFetch {
+            guard let url = URL(string: "\(BackendConfig.baseURLString)/api/costs/monthly/\(username)?month=\(month)") else { continue }
+            var request = URLRequest(url: url)
+            BackendConfig.addApiKey(to: &request)
+            if let (data, _) = try? await URLSession.shared.data(for: request),
+               let resp = try? JSONDecoder().decode(PeriodFile.self, from: data),
+               let days = resp.days {
+                for (k, v) in days { allDays[k] = v }
+            }
+        }
+
+        // Sum only the day entries that fall within this week
+        var total = 0.0
+        for (dayKey, categories) in allDays {
+            guard weekDayKeys.contains(dayKey) else { continue }
+            for (cat, amt) in categories where !Self.chartExclusions.contains(cat) {
+                total += amt
+            }
+        }
         return TrendPoint(date: start, total: total)
     }
 
@@ -552,7 +597,9 @@ struct SpendingTrendChartView: View {
         BackendConfig.addApiKey(to: &request)
         let (data, _) = try await URLSession.shared.data(for: request)
         let resp = try JSONDecoder().decode(PeriodFile.self, from: data)
-        let total = (resp.totals?.values.reduce(0, +)) ?? 0
+        let total = resp.totals?
+            .filter { !Self.chartExclusions.contains($0.key) }
+            .values.reduce(0, +) ?? 0
         // place at end-of-month for spacing
         let comps = DateComponents(year: Calendar.current.component(.year, from: date),
                                    month: Calendar.current.component(.month, from: date) + 1,
@@ -571,6 +618,7 @@ private struct TrendPoint: Identifiable, Equatable {
 
 private struct PeriodFile: Decodable {
     let totals: [String: Double]?
+    let days: [String: [String: Double]]?
 }
 
 private extension Calendar {

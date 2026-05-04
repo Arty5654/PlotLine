@@ -76,13 +76,30 @@ private struct DestructiveButton: ButtonStyle {
 }
 
 // ---------- View ----------
+// Common categories available across budget views
+private let budgetCommonCategories = [
+    // Defaults
+    "Rent", "Groceries", "Subscriptions", "Eating Out",
+    "Entertainment", "Utilities", "Savings", "Miscellaneous",
+    "Transportation", "Roth IRA", "Car Insurance",
+    "Health Insurance", "Brokerage",
+    // Additional common
+    "Gas", "Phone", "Internet", "Gym", "Clothing",
+    "Personal Care", "Education", "Childcare", "Pet Care",
+    "Home Maintenance", "Gifts", "Donations", "Travel",
+    "Baby Supplies", "Hobbies", "Shopping", "Coffee",
+    "Alcohol & Bars", "Home Decor", "Electronics",
+    "Medical", "Dental", "Vision", "Therapy",
+    "Parking", "Tolls", "Laundry", "Haircuts",
+    "Streaming Services", "Gaming", "Music", "Books"
+]
+
 struct BudgetInputView: View {
     // MARK: State
-    @State private var selectedType: String = "Monthly"
-    
     @State private var budgetItems: [BudgetItem] = []
     @State private var newCategory: String = ""
-    
+    @State private var showCategoryPicker = false
+
     @State private var activeAlert2: ActiveAlert2? = nil
     @State private var budgetingWarnings: String = ""
     
@@ -102,7 +119,7 @@ struct BudgetInputView: View {
             .reduce(0, +)
     }
     private var totalAllowance: Double {
-        selectedType == "Monthly" ? userIncome : userIncome / 4.0
+        userIncome
     }
     private var remaining: Double { totalAllowance - totalEntered }
     private var progress: Double {
@@ -129,26 +146,21 @@ struct BudgetInputView: View {
         BudgetItem(category: "Brokerage", amount: "")
     ]
     
-    private var backendType: String { selectedType.lowercased() }
+    private var backendType: String { "monthly" }
+
+    private var availableBudgetCategories: [String] {
+        let current = Set(budgetItems.map { $0.category.lowercased() })
+        return budgetCommonCategories.filter { !current.contains($0.lowercased()) }.sorted()
+    }
     
     var body: some View {
         ScrollView {
             VStack(spacing: PLSpacing.lg) {
                 
-                // Header + Segmented
+                // Header
                 VStack(alignment: .leading, spacing: PLSpacing.sm) {
-                    Text("Create Your \(selectedType) Budget")
+                    Text("Create Your Monthly Budget")
                         .font(.headline).bold()
-                    
-                    Picker("Type", selection: $selectedType) {
-                        Text("Weekly").tag("Weekly")
-                        Text("Monthly").tag("Monthly")
-                    }
-                    .pickerStyle(.segmented)
-                    .onChange(of: selectedType) { _ in
-                        fetchBudgetData()
-                        UserDefaults.standard.set(selectedType, forKey: "selectedType")
-                    }
                 }
                 .plCard()
                 
@@ -164,7 +176,7 @@ struct BudgetInputView: View {
                     }
                     HStack {
                         VStack(alignment: .leading) {
-                            Text("Target (\(selectedType))")
+                            Text("Monthly Target")
                                 .font(.caption)
                                 .foregroundColor(PLColor.textSecondary)
                             Text(totalAllowance > 0 ? "$\(totalAllowance, specifier: "%.2f")" : "—")
@@ -195,27 +207,45 @@ struct BudgetInputView: View {
                         .font(.headline)
                     
                     LazyVStack(spacing: PLSpacing.sm) {
-                        ForEach(budgetItems.indices, id: \.self) { i in
+                        ForEach($budgetItems) { $item in
                             BudgetRow(
-                                item: $budgetItems[i],
-                                onRemove: { removeCategory(item: budgetItems[i]) },
+                                item: $item,
+                                onRemove: { removeCategory(item: item) },
                                 onChangeAmount: { newVal in
-                                    budgetItems[i].amount = sanitizeAmount(newVal)
+                                    item.amount = sanitizeAmount(newVal)
                                 }
                             )
                         }
                     }
                     
-                    HStack(spacing: PLSpacing.sm) {
-                        TextField("New Category", text: $newCategory)
-                            .textFieldStyle(.roundedBorder)
-                        Button {
-                            addCategory()
+                    VStack(spacing: PLSpacing.xs) {
+                        Menu {
+                            ForEach(availableBudgetCategories, id: \.self) { cat in
+                                Button(cat) {
+                                    budgetItems.append(BudgetItem(category: cat, amount: ""))
+                                    regenerateBudgetFromUI(auto: true)
+                                }
+                            }
+                            Divider()
+                            Button("Custom...") { showCategoryPicker = true }
                         } label: {
-                            Label("Add", systemImage: "plus.circle.fill")
-                                .labelStyle(.titleAndIcon)
+                            HStack {
+                                Image(systemName: "plus.circle.fill")
+                                    .foregroundColor(.green)
+                                Text("Add Category")
+                                    .font(.subheadline)
+                                Spacer()
+                                Image(systemName: "chevron.down")
+                                    .font(.caption)
+                                    .foregroundColor(PLColor.textSecondary)
+                            }
+                            .padding(.vertical, 8)
                         }
-                        .tint(.green)
+                        .alert("Custom Category", isPresented: $showCategoryPicker) {
+                            TextField("Category name", text: $newCategory)
+                            Button("Add") { addCategory() }
+                            Button("Cancel", role: .cancel) { newCategory = "" }
+                        }
                     }
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Tip: Leave a new category blank to auto-generate amounts. If you enter a number, it won’t regenerate unless you tap Regenerate.")
@@ -257,7 +287,7 @@ struct BudgetInputView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .principal) {
-                Text("\(selectedType) Budget")
+                Text("Monthly Budget")
                     .font(.headline)
             }
         }
@@ -274,13 +304,13 @@ struct BudgetInputView: View {
             case .saved:
                 return Alert(
                     title: Text("Budget Saved"),
-                    message: Text("Your \(selectedType) budget was saved successfully."),
+                    message: Text("Your monthly budget was saved successfully."),
                     dismissButton: .default(Text("OK"))
                 )
             case .cleared:
                 return Alert(
                     title: Text("Budget Cleared"),
-                    message: Text("Your \(selectedType) budget was cleared and defaults restored."),
+                    message: Text("Your monthly budget was cleared and defaults restored."),
                     dismissButton: .default(Text("OK"))
                 )
             }
@@ -515,7 +545,7 @@ extension BudgetInputView {
             if rent > userIncome * 0.3   { budgetingWarnings += "• Rent exceeds 30% of monthly income.\n" }
             if savings < userIncome * 0.1 { budgetingWarnings += "• Savings are below 10% of income.\n" }
             if totalAllowance > 0 && totalEntered > totalAllowance {
-                budgetingWarnings += "• Your \(selectedType.lowercased()) budget is over by $\(String(format: "%.2f", totalEntered - totalAllowance)).\n"
+                budgetingWarnings += "• Your monthly budget is over by $\(String(format: "%.2f", totalEntered - totalAllowance)).\n"
             }
         }
         if eatingOut > 200 { budgetingWarnings += "• High eating out cost—consider cooking at home.\n" }

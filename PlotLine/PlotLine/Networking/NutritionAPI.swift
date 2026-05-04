@@ -108,7 +108,7 @@ class NutritionAPI {
     // MARK: - Barcode lookup via Open Food Facts (free, no API key needed)
 
     func lookupBarcode(_ barcode: String) async throws -> FoodItem? {
-        guard let url = URL(string: "https://world.openfoodfacts.org/api/v2/product/\(barcode).json?fields=product_name,brands,serving_size,nutriments") else {
+        guard let url = URL(string: "https://world.openfoodfacts.org/api/v2/product/\(barcode).json?fields=product_name,brands,serving_size,serving_quantity,nutriments") else {
             throw URLError(.badURL)
         }
 
@@ -125,22 +125,80 @@ class NutritionAPI {
         let serving = product.servingSize ?? "1 serving"
         let n = product.nutriments
 
-        // Prefer per-serving data, fall back to per-100g
-        let cal = n?.energyKcalServing ?? n?.energyKcal100g ?? 0
+        // Prefer per-serving data, fall back to per-100g (with kJ→kcal conversion)
+        let cal = n?.bestCaloriesServing ?? n?.bestCalories100g ?? 0
         let pro = n?.proteinsServing ?? n?.proteins100g ?? 0
         let carb = n?.carbohydratesServing ?? n?.carbohydrates100g ?? 0
         let fat = n?.fatServing ?? n?.fat100g ?? 0
+
+        // If all nutrition values are 0, the product data is incomplete — try Nutritionix
+        let allZero = cal == 0 && pro == 0 && carb == 0 && fat == 0
+        if allZero {
+            // Try Open Food Facts world + US databases don't have it → return with zeroes
+            // so the user can at least see the product name and manually correct
+            print("[Barcode] Product found but nutrition data is empty: \(name)")
+        }
 
         return FoodItem(
             name: name.isEmpty ? "Unknown Product" : name,
             servingSize: serving,
             servings: 1,
-            calories: cal,
-            protein: pro,
-            carbs: carb,
-            fat: fat,
+            calories: round(cal * 10) / 10,
+            protein: round(pro * 10) / 10,
+            carbs: round(carb * 10) / 10,
+            fat: round(fat * 10) / 10,
             source: .barcode
         )
+    }
+
+    // MARK: - Food search via Open Food Facts
+
+    func searchFoods(_ query: String) async throws -> [FoodItem] {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              let encoded = trimmed.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+              let url = URL(string: "https://world.openfoodfacts.org/cgi/search.pl?search_terms=\(encoded)&json=1&page_size=30&fields=product_name,brands,serving_size,serving_quantity,nutriments,code") else {
+            return []
+        }
+
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 10
+
+        let (data, _) = try await URLSession.shared.data(for: request)
+        let result = try JSONDecoder().decode(OFFSearchResponse.self, from: data)
+
+        guard let products = result.products else { return [] }
+
+        return products.compactMap { product -> FoodItem? in
+            let name = [product.brands, product.productName]
+                .compactMap { $0 }
+                .filter { !$0.isEmpty }
+                .joined(separator: " – ")
+
+            guard !name.isEmpty else { return nil }
+
+            let serving = product.servingSize ?? "1 serving"
+            let n = product.nutriments
+
+            let cal = n?.bestCaloriesServing ?? n?.bestCalories100g ?? 0
+            let pro = n?.proteinsServing ?? n?.proteins100g ?? 0
+            let carb = n?.carbohydratesServing ?? n?.carbohydrates100g ?? 0
+            let fat = n?.fatServing ?? n?.fat100g ?? 0
+
+            // Skip entries with zero nutrition data
+            if cal == 0 && pro == 0 && carb == 0 && fat == 0 { return nil }
+
+            return FoodItem(
+                name: name,
+                servingSize: serving,
+                servings: 1,
+                calories: round(cal * 10) / 10,
+                protein: round(pro * 10) / 10,
+                carbs: round(carb * 10) / 10,
+                fat: round(fat * 10) / 10,
+                source: .search
+            )
+        }
     }
 
     // MARK: - Favorites & Saved Meals

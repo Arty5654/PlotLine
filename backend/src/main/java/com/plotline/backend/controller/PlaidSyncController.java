@@ -77,17 +77,10 @@ public ResponseEntity<?> sync(@RequestBody Map<String, Object> body) {
               ? accountIdsFilter
               : tokenStore.getSelectedAccounts(username, itemId);
 
-      // Check if we're filtering to specific accounts
-      boolean isFilteringByAccount = targetAccountIds != null && !targetAccountIds.isEmpty();
-
-      // If filtering by specific accounts, start from the BEGINNING (null cursor)
-      // to ensure we get all transactions. We rely on hasSeenTxn to skip duplicates.
-      // If syncing all accounts, use the saved cursor for incremental sync.
-      String cursor = isFilteringByAccount ? null : cursorStore.getCursor(username, itemId);
-
-      if (isFilteringByAccount) {
-        System.out.println("Filtering to specific accounts - starting from beginning (ignoring saved cursor)");
-      }
+      // Always use cursor-based incremental sync.
+      // Plaid's transactionsSync cursor tracks the item, not individual accounts,
+      // so we filter accounts client-side after fetching.
+      String cursor = cursorStore.getCursor(username, itemId);
       boolean hasMore = true;
 
       List<Transaction> added = new ArrayList<>();
@@ -119,15 +112,9 @@ public ResponseEntity<?> sync(@RequestBody Map<String, Object> body) {
       System.out.println("Fetched from Plaid - added: " + added.size() +
           ", modified: " + modified.size() + ", removed: " + removed.size());
 
-      // Only save cursor if we're NOT filtering by specific accounts.
-      // When filtering, we need to keep the cursor unchanged so other accounts
-      // from the same item can be synced later without missing transactions.
-      if (!isFilteringByAccount) {
-        cursorStore.saveCursor(username, itemId, cursor);
-        System.out.println("Saved cursor for item: " + itemId);
-      } else {
-        System.out.println("Not saving cursor (filtering by specific accounts)");
-      }
+      // Always save cursor for incremental sync
+      cursorStore.saveCursor(username, itemId, cursor);
+      System.out.println("Saved cursor for item: " + itemId);
 
       // If caller selected accounts, filter results here
       if (targetAccountIds != null && !targetAccountIds.isEmpty()) {
@@ -187,6 +174,8 @@ public ResponseEntity<?> sync(@RequestBody Map<String, Object> body) {
           String date = t.getDate().toString();
           Map<String, Double> cats = dayMap.computeIfAbsent(date, k -> new LinkedHashMap<>());
           cats.put(bucket, round2(cats.getOrDefault(bucket, 0.0) + amount));
+          // Store individual transaction detail
+          costsWriter.storeTransaction(username, date, t.getTransactionId(), txnName, amount, bucket, "plaid");
           cursorStore.markSeenTxn(username, itemId, t.getTransactionId());
           totalAdded++;
         }
@@ -225,6 +214,8 @@ public ResponseEntity<?> sync(@RequestBody Map<String, Object> body) {
           String date = t.getDate().toString();
           Map<String, Double> cats = dayMap.computeIfAbsent(date, k -> new LinkedHashMap<>());
           cats.put(bucket, round2(cats.getOrDefault(bucket, 0.0) + amount));
+          // Store individual transaction detail
+          costsWriter.storeTransaction(username, date, t.getTransactionId(), txnName, amount, bucket, "plaid");
           totalModified++;
         }
       }

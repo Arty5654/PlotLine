@@ -21,12 +21,16 @@ import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.temporal.ChronoField;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
 import java.util.Objects;
 import java.util.LinkedHashMap;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.Iterator;
 
 import java.time.DayOfWeek;
@@ -48,6 +52,9 @@ public class WeeklyMonthlyCostController {
 
     @Autowired
     private com.plotline.backend.service.UserProfileService userProfileService;
+
+    @Autowired
+    private com.plotline.backend.service.CostsService costsService;
 
     @PostMapping
     public ResponseEntity<String> saveWeeklyMonthlyCosts(@RequestBody WeeklyMonthlyCostRequest request) {
@@ -272,36 +279,35 @@ public class WeeklyMonthlyCostController {
             System.out.println("[DEBUG] Current day costs for " + dayKey + ": " + dayCostsRaw);
             System.out.println("[DEBUG] Delta to add: " + delta);
 
-            // Add delta to existing values (or create new categories)
+            // Add delta to day's costs
             for (var entry : delta.entrySet()) {
                 String cat = entry.getKey();
                 double addAmount = round2(entry.getValue());
 
-                // Add to day's costs (handle Integer or Double from Jackson)
                 double currentDay = 0.0;
                 Object dayVal = dayCostsRaw.get(cat);
                 if (dayVal instanceof Number) {
                     currentDay = round2(((Number) dayVal).doubleValue());
                 }
-                double newDayVal = round2(currentDay + addAmount);
-                System.out.println("[DEBUG] " + cat + ": currentDay=" + currentDay + " + addAmount=" + addAmount + " = " + newDayVal);
-                dayCostsRaw.put(cat, newDayVal);
-
-                // Add to totals (handle Integer or Double from Jackson)
-                double currentTotal = 0.0;
-                Object totalVal = totals.get(cat);
-                if (totalVal instanceof Number) {
-                    currentTotal = round2(((Number) totalVal).doubleValue());
-                }
-                double newTotalVal = round2(currentTotal + addAmount);
-                System.out.println("[DEBUG] " + cat + " totals: current=" + currentTotal + " + add=" + addAmount + " = " + newTotalVal);
-                totals.put(cat, newTotalVal);
+                dayCostsRaw.put(cat, round2(currentDay + addAmount));
             }
-
             days.put(dayKey, dayCostsRaw);
 
-            System.out.println("[DEBUG] Final totals after update: " + totals);
-            System.out.println("[DEBUG] Final day costs: " + dayCostsRaw);
+            // Recalculate totals from ALL day entries (bulletproof — no drift)
+            totals.clear();
+            for (var dayEntry : days.values()) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> dc = (Map<String, Object>) dayEntry;
+                for (var ce : dc.entrySet()) {
+                    if (ce.getValue() instanceof Number) {
+                        double val = ((Number) ce.getValue()).doubleValue();
+                        double cur = 0.0;
+                        Object existing = totals.get(ce.getKey());
+                        if (existing instanceof Number) cur = ((Number) existing).doubleValue();
+                        totals.put(ce.getKey(), round2(cur + val));
+                    }
+                }
+            }
 
             // Store start/end for weekly/monthly
             if ("weekly".equalsIgnoreCase(type)) {
@@ -423,9 +429,8 @@ public class WeeklyMonthlyCostController {
 
             for (var entry : negativeDelta.entrySet()) {
                 String cat = entry.getKey();
-                double subtractAmount = Math.abs(entry.getValue()); // Make positive for subtraction
+                double subtractAmount = Math.abs(entry.getValue());
 
-                // Subtract from day's costs (don't go below 0) - handle Integer or Double
                 double currentDay = 0.0;
                 Object dayVal = dayCosts.get(cat);
                 if (dayVal instanceof Number) {
@@ -437,22 +442,25 @@ public class WeeklyMonthlyCostController {
                 } else {
                     dayCosts.put(cat, newDay);
                 }
+            }
+            days.put(dayKey, dayCosts);
 
-                // Subtract from totals (don't go below 0) - handle Integer or Double
-                double currentTotal = 0.0;
-                Object totalVal = totals.get(cat);
-                if (totalVal instanceof Number) {
-                    currentTotal = ((Number) totalVal).doubleValue();
-                }
-                double newTotal = Math.max(0, round2(currentTotal - subtractAmount));
-                if (newTotal == 0) {
-                    totals.remove(cat);
-                } else {
-                    totals.put(cat, newTotal);
+            // Recalculate totals from ALL day entries
+            totals.clear();
+            for (var dayEntry : days.values()) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> dc = (Map<String, Object>) dayEntry;
+                for (var ce : dc.entrySet()) {
+                    if (ce.getValue() instanceof Number) {
+                        double val = ((Number) ce.getValue()).doubleValue();
+                        double cur = 0.0;
+                        Object existing = totals.get(ce.getKey());
+                        if (existing instanceof Number) cur = ((Number) existing).doubleValue();
+                        totals.put(ce.getKey(), round2(cur + val));
+                    }
                 }
             }
 
-            days.put(dayKey, dayCosts);
             saveJson(key, period);
             System.out.println("Subtracted " + type + " costs for " + username + ": " + negativeDelta);
         } catch (Exception e) {
@@ -521,6 +529,24 @@ public class WeeklyMonthlyCostController {
             period.putIfAbsent("days", new LinkedHashMap<String, Map<String, Double>>());
             period.putIfAbsent("totals", new LinkedHashMap<String, Double>());
 
+            // Include fixed costs so the client can display them
+            List<Map<String, Object>> fixedCosts = loadFixedCosts(normUser);
+            period.put("fixedCosts", fixedCosts);
+
+            // Merge fixed costs into totals so budget summary, feedback, and charts reflect them
+            @SuppressWarnings("unchecked")
+            Map<String, Object> totals = (Map<String, Object>) period.get("totals");
+            for (var fc : fixedCosts) {
+                String cat = String.valueOf(fc.get("category"));
+                double amt = fc.get("amount") instanceof Number ? ((Number) fc.get("amount")).doubleValue() : 0.0;
+                if (amt > 0) {
+                    double cur = 0.0;
+                    Object existing = totals.get(cat);
+                    if (existing instanceof Number) cur = ((Number) existing).doubleValue();
+                    totals.put(cat, round2(cur + amt));
+                }
+            }
+
             return ResponseEntity.ok(period);
         } catch (Exception e) {
             return ResponseEntity.status(500).body("monthly fetch failed: " + e.getMessage());
@@ -543,6 +569,8 @@ public class WeeklyMonthlyCostController {
             LocalDate date = LocalDate.parse(dateStr);
             String periodKey = "weekly".equalsIgnoreCase(type) ? weekKey(date) : monthKey(date);
 
+            boolean replaceAll = Boolean.TRUE.equals(body.get("replaceAll"));
+
             String key = "users/%s/costs/%s/%s.json".formatted(username, type.toLowerCase(), periodKey);
             Map<String, Object> period = loadJsonOrEmpty(key);
 
@@ -556,40 +584,55 @@ public class WeeklyMonthlyCostController {
             @SuppressWarnings("unchecked")
             Map<String, Object> totals = (Map<String, Object>) period.get("totals");
 
+            // If replaceAll, clear all existing day entries so the new values become the totals
+            if (replaceAll) {
+                days.clear();
+            }
+
             String dayKey = date.toString();
             @SuppressWarnings("unchecked")
             Map<String, Object> dayCosts = (Map<String, Object>) days.getOrDefault(dayKey, new LinkedHashMap<>());
 
-            // merge
+            // Set day values (simple overwrite, no delta tracking)
             for (var e : costs.entrySet()) {
                 String cat = e.getKey();
                 double incoming = e.getValue() == null ? 0.0 : round2(e.getValue().doubleValue());
-
-                // Handle Integer or Double from Jackson
-                double prev = 0.0;
-                Object prevVal = dayCosts.get(cat);
-                if (prevVal instanceof Number) {
-                    prev = round2(((Number) prevVal).doubleValue());
-                }
-                double delta = round2(incoming - prev);
-
                 if (incoming == 0.0) {
-                    // treat zero as "clear this category for the day"
-                    if (prev != 0.0) {
-                        dayCosts.remove(cat);
-                        Object totalVal = totals.get(cat);
-                        double currentTotal = (totalVal instanceof Number) ? ((Number) totalVal).doubleValue() : 0.0;
-                        totals.put(cat, round2(currentTotal - prev));
-                    }
+                    dayCosts.remove(cat);
                 } else {
                     dayCosts.put(cat, incoming);
-                    Object totalVal = totals.get(cat);
-                    double currentTotal = (totalVal instanceof Number) ? ((Number) totalVal).doubleValue() : 0.0;
-                    totals.put(cat, round2(currentTotal + delta));
                 }
             }
-
             days.put(dayKey, dayCosts);
+
+            // Recalculate totals from ALL day entries + adjustments
+            Map<String, Object> newTotals = new LinkedHashMap<>();
+            for (var dayEntry : days.values()) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> dc = (Map<String, Object>) dayEntry;
+                for (var ce : dc.entrySet()) {
+                    if (ce.getValue() instanceof Number) {
+                        double val = ((Number) ce.getValue()).doubleValue();
+                        double cur = 0.0;
+                        Object existing = newTotals.get(ce.getKey());
+                        if (existing instanceof Number) cur = ((Number) existing).doubleValue();
+                        newTotals.put(ce.getKey(), round2(cur + val));
+                    }
+                }
+            }
+            // Include monthly adjustments (costs not tied to specific days)
+            @SuppressWarnings("unchecked")
+            Map<String, Object> adj = (Map<String, Object>) period.getOrDefault("adjustments", new LinkedHashMap<>());
+            for (var ae : adj.entrySet()) {
+                if (ae.getValue() instanceof Number) {
+                    double val = ((Number) ae.getValue()).doubleValue();
+                    double cur = 0.0;
+                    Object existing = newTotals.get(ae.getKey());
+                    if (existing instanceof Number) cur = ((Number) existing).doubleValue();
+                    newTotals.put(ae.getKey(), round2(cur + val));
+                }
+            }
+            period.put("totals", newTotals);
 
             // Store start/end for weekly/monthly
             if ("weekly".equalsIgnoreCase(type)) {
@@ -644,14 +687,15 @@ public class WeeklyMonthlyCostController {
 
     static record MonthlyFeedback(
         String month,              // "YYYY-MM"
-        String previousMonth,      // "YYYY-MM"
+        String previousMonth,      // most recent compared month "YYYY-MM"
         double totalCurrent,
-        double totalPrevious,
-        double totalDelta,         // current - previous
+        double totalPrevious,      // average across up to 6 prior months
+        double totalDelta,         // current - average
         java.util.List<CatDelta> deltas,
         boolean overBudget,
         Double monthlyBudget,
-        java.util.List<CatDelta> cutbacks
+        java.util.List<CatDelta> cutbacks,
+        int monthsCompared         // how many prior months were averaged
     ) {}
 
     /** Helper: parse "YYYY-MM" and return previous month as "YYYY-MM" */
@@ -686,25 +730,69 @@ public class WeeklyMonthlyCostController {
             @RequestParam(name = "month") String month // "YYYY-MM"
     ) {
         try {
-            String prev = prevMonthKey(month);
-
             String normUser = normalize(username);
-            Map<String, Double> curTotals  = readMonthlyTotalsOrEmpty(normUser, month);
-            Map<String, Double> prevTotals = readMonthlyTotalsOrEmpty(normUser, prev);
+
+            // Load fixed costs once
+            List<Map<String, Object>> fixedCosts = loadFixedCosts(normUser);
+
+            // Load and enrich current month
+            Map<String, Double> curTotals = readMonthlyTotalsOrEmpty(normUser, month);
+            for (var fc : fixedCosts) {
+                String cat = String.valueOf(fc.get("category"));
+                double amt = fc.get("amount") instanceof Number ? ((Number) fc.get("amount")).doubleValue() : 0.0;
+                if (amt > 0) curTotals.merge(cat, amt, Double::sum);
+            }
+
+            // Collect up to 6 prior months — only those where the user tracked variable data
+            YearMonth ym = YearMonth.parse(month);
+            java.util.List<Map<String, Double>> priorMonths = new java.util.ArrayList<>();
+            String mostRecentPrevKey = null;
+
+            for (int i = 1; i <= 6; i++) {
+                YearMonth prevYM = ym.minusMonths(i);
+                String prevKey = String.format("%04d-%02d", prevYM.getYear(), prevYM.getMonthValue());
+                Map<String, Double> rawPrev = readMonthlyTotalsOrEmpty(normUser, prevKey);
+                if (rawPrev.isEmpty()) continue; // no tracked data for this month
+
+                // Enrich with fixed costs for fair comparison
+                Map<String, Double> enriched = new LinkedHashMap<>(rawPrev);
+                for (var fc : fixedCosts) {
+                    String cat = String.valueOf(fc.get("category"));
+                    double amt = fc.get("amount") instanceof Number ? ((Number) fc.get("amount")).doubleValue() : 0.0;
+                    if (amt > 0) enriched.merge(cat, amt, Double::sum);
+                }
+
+                if (mostRecentPrevKey == null) mostRecentPrevKey = prevKey;
+                priorMonths.add(enriched);
+            }
+
+            int monthsCompared = priorMonths.size();
+
+            // Build per-category averages across all N prior months (missing months count as $0)
+            Map<String, Double> avgPrevTotals = new LinkedHashMap<>();
+            if (monthsCompared > 0) {
+                java.util.Set<String> allPrevCats = new java.util.LinkedHashSet<>();
+                for (var m : priorMonths) allPrevCats.addAll(m.keySet());
+                for (String cat : allPrevCats) {
+                    double sum = 0.0;
+                    for (var m : priorMonths) sum += m.getOrDefault(cat, 0.0);
+                    avgPrevTotals.put(cat, round2(sum / monthsCompared));
+                }
+            }
 
             // Union of categories
             java.util.Set<String> cats = new java.util.TreeSet<>();
             cats.addAll(curTotals.keySet());
-            cats.addAll(prevTotals.keySet());
+            cats.addAll(avgPrevTotals.keySet());
 
             java.util.List<CatDelta> deltas = new java.util.ArrayList<>();
             double totalCur = 0.0, totalPrev = 0.0;
 
             for (String c : cats) {
-                double cur  = round2(curTotals.getOrDefault(c, 0.0));
-                double pre  = round2(prevTotals.getOrDefault(c, 0.0));
-                double d    = round2(cur - pre);
-                Double pct  = (pre == 0.0) ? null : round2(d / pre);
+                double cur = round2(curTotals.getOrDefault(c, 0.0));
+                double pre = round2(avgPrevTotals.getOrDefault(c, 0.0));
+                double d   = round2(cur - pre);
+                Double pct = (pre == 0.0) ? null : round2(d / pre);
                 deltas.add(new CatDelta(c, cur, pre, d, pct));
                 totalCur  += cur;
                 totalPrev += pre;
@@ -712,10 +800,9 @@ public class WeeklyMonthlyCostController {
             totalCur  = round2(totalCur);
             totalPrev = round2(totalPrev);
 
-            double monthlyBudget = totalPrev; // fallback: last month spend as soft budget
+            double monthlyBudget = totalPrev; // fallback: avg spend as soft budget
             boolean overBudget = totalCur > monthlyBudget && monthlyBudget > 0;
 
-            // Build cutback suggestions: top overspenders until we cover overage
             double overAmount = overBudget ? round2(totalCur - monthlyBudget) : 0.0;
             java.util.List<CatDelta> cutbacks = new java.util.ArrayList<>();
             if (overBudget && overAmount > 0) {
@@ -732,19 +819,21 @@ public class WeeklyMonthlyCostController {
                 }
             }
 
+            String prevLabel = mostRecentPrevKey != null ? mostRecentPrevKey : prevMonthKey(month);
             MonthlyFeedback payload = new MonthlyFeedback(
                 month,
-                prev,
+                prevLabel,
                 totalCur,
                 totalPrev,
                 round2(totalCur - totalPrev),
                 deltas,
                 overBudget,
                 monthlyBudget > 0 ? monthlyBudget : null,
-                cutbacks
+                cutbacks,
+                monthsCompared
             );
 
-            // Trophy hooks: under-budget streak + budget pacing + healthy eating shift
+            // Trophy hooks
             try {
                 if (!overBudget && monthlyBudget > 0) {
                     userProfileService.incrementTrophy(username, "monthly-budget-met", 1);
@@ -752,7 +841,6 @@ public class WeeklyMonthlyCostController {
                         userProfileService.incrementTrophy(username, "budget-pacer", 1);
                     }
                 }
-                // Healthy eating: eating out down and groceries up versus last month
                 CatDelta eatOut = deltas.stream().filter(d -> d.category.toLowerCase().contains("eat")).findFirst().orElse(null);
                 CatDelta groceries = deltas.stream().filter(d -> d.category.toLowerCase().contains("groc")).findFirst().orElse(null);
                 if (eatOut != null && eatOut.delta < 0 && (groceries == null || groceries.delta >= 0)) {
@@ -764,5 +852,247 @@ public class WeeklyMonthlyCostController {
         } catch (Exception e) {
             return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
         }
+    }
+
+    /**
+     * Set desired monthly totals. Adjustments are stored separately from day entries
+     * so monthly-only costs (like rent) don't appear in weekly charts.
+     */
+    @PostMapping("/monthly/{username}/set-totals")
+    public ResponseEntity<?> setMonthlyTotals(
+            @PathVariable String username,
+            @RequestParam String month,
+            @RequestBody Map<String, Object> body) {
+        try {
+            String normUser = normalize(username);
+            @SuppressWarnings("unchecked")
+            Map<String, Number> costsRaw = (Map<String, Number>) body.get("costs");
+            Map<String, Double> costs = new LinkedHashMap<>();
+            if (costsRaw != null) {
+                for (var e : costsRaw.entrySet()) {
+                    costs.put(e.getKey(), e.getValue() == null ? 0.0 : e.getValue().doubleValue());
+                }
+            }
+
+            // Exclude fixed cost categories so setMonthlyTotals doesn't zero them out
+            // (fixed costs are merged into totals separately on GET)
+            List<Map<String, Object>> fixedCosts = loadFixedCosts(normUser);
+            Set<String> fixedCatNames = new HashSet<>();
+            for (var fc : fixedCosts) {
+                fixedCatNames.add(String.valueOf(fc.get("category")).toLowerCase());
+            }
+            costs.keySet().removeIf(k -> fixedCatNames.contains(k.toLowerCase()));
+
+            Map<String, Object> result = costsService.setMonthlyTotals(normUser, month, costs);
+            if (result == null) {
+                return ResponseEntity.status(500).body("Failed to set monthly totals");
+            }
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body("set-monthly-totals failed: " + e.getMessage());
+        }
+    }
+
+    // ==================== Transaction Management ====================
+
+    /** GET /api/costs/transactions/{username}?month=YYYY-MM */
+    @GetMapping("/transactions/{username}")
+    public ResponseEntity<?> getTransactions(
+            @PathVariable String username,
+            @RequestParam(name = "month") String month) {
+        try {
+            String normUser = normalize(username);
+            List<Map<String, Object>> txns = costsService.getTransactions(normUser, month);
+            return ResponseEntity.ok(txns);
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /** PUT /api/costs/transactions/{username}/{txnId}?month=YYYY-MM */
+    @PutMapping("/transactions/{username}/{txnId}")
+    public ResponseEntity<?> editTransaction(
+            @PathVariable String username,
+            @PathVariable String txnId,
+            @RequestParam(name = "month") String month,
+            @RequestBody Map<String, Object> body) {
+        try {
+            String normUser = normalize(username);
+            double newAmount = 0.0;
+            Object amountObj = body.get("amount");
+            if (amountObj instanceof Number) newAmount = ((Number) amountObj).doubleValue();
+
+            Map<String, Object> result = costsService.editTransaction(normUser, month, txnId, newAmount);
+            if (result == null) {
+                return ResponseEntity.status(404).body(Map.of("error", "Transaction not found"));
+            }
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /** PUT /api/costs/transactions/{username}/{txnId}/category?month=YYYY-MM */
+    @PutMapping("/transactions/{username}/{txnId}/category")
+    public ResponseEntity<?> recategorizeTransaction(
+            @PathVariable String username,
+            @PathVariable String txnId,
+            @RequestParam(name = "month") String month,
+            @RequestBody Map<String, Object> body) {
+        try {
+            String normUser = normalize(username);
+            String newCategory = (String) body.get("category");
+            if (newCategory == null || newCategory.isBlank()) {
+                return ResponseEntity.badRequest().body(Map.of("error", "category is required"));
+            }
+            Map<String, Object> result = costsService.recategorizeTransaction(normUser, month, txnId, newCategory);
+            if (result == null) {
+                return ResponseEntity.status(404).body(Map.of("error", "Transaction not found"));
+            }
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /** POST /api/costs/transactions/{username}/{txnId}/revert?month=YYYY-MM */
+    @PostMapping("/transactions/{username}/{txnId}/revert")
+    public ResponseEntity<?> revertTransaction(
+            @PathVariable String username,
+            @PathVariable String txnId,
+            @RequestParam(name = "month") String month) {
+        try {
+            String normUser = normalize(username);
+            Map<String, Object> result = costsService.revertTransaction(normUser, month, txnId);
+            if (result == null) {
+                return ResponseEntity.status(404).body(Map.of("error", "Transaction not found"));
+            }
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /** DELETE /api/costs/transactions/{username}/{txnId}?month=YYYY-MM */
+    @DeleteMapping("/transactions/{username}/{txnId}")
+    public ResponseEntity<?> deleteTransaction(
+            @PathVariable String username,
+            @PathVariable String txnId,
+            @RequestParam(name = "month") String month) {
+        try {
+            String normUser = normalize(username);
+            boolean deleted = costsService.deleteTransaction(normUser, month, txnId);
+            if (!deleted) {
+                return ResponseEntity.status(404).body(Map.of("error", "Transaction not found"));
+            }
+            return ResponseEntity.ok(Map.of("success", true));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    // ==================== Fixed Monthly Costs ====================
+
+    /** GET /api/costs/fixed/{username} — list all fixed monthly costs */
+    @GetMapping("/fixed/{username}")
+    public ResponseEntity<?> getFixedCosts(@PathVariable String username) {
+        try {
+            String normUser = normalize(username);
+            List<Map<String, Object>> fixed = loadFixedCosts(normUser);
+            return ResponseEntity.ok(fixed);
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /** POST /api/costs/fixed/{username} — add or update a fixed cost */
+    @PostMapping("/fixed/{username}")
+    public ResponseEntity<?> saveFixedCost(
+            @PathVariable String username,
+            @RequestBody Map<String, Object> body) {
+        try {
+            String normUser = normalize(username);
+            List<Map<String, Object>> fixed = loadFixedCosts(normUser);
+
+            String id = body.get("id") != null ? String.valueOf(body.get("id")) : null;
+            String category = (String) body.get("category");
+            double amount = body.get("amount") instanceof Number
+                    ? ((Number) body.get("amount")).doubleValue() : 0.0;
+
+            if (category == null || category.isBlank()) {
+                return ResponseEntity.badRequest().body(Map.of("error", "category is required"));
+            }
+
+            if (id != null && !id.isBlank()) {
+                // Update existing by id
+                for (var fc : fixed) {
+                    if (id.equals(fc.get("id"))) {
+                        fc.put("category", category);
+                        fc.put("amount", round2(amount));
+                        break;
+                    }
+                }
+            } else {
+                // Check if a fixed cost with the same category already exists — overwrite it
+                boolean found = false;
+                for (var fc : fixed) {
+                    if (category.equalsIgnoreCase(String.valueOf(fc.get("category")))) {
+                        fc.put("amount", round2(amount));
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    Map<String, Object> entry = new LinkedHashMap<>();
+                    entry.put("id", java.util.UUID.randomUUID().toString());
+                    entry.put("category", category);
+                    entry.put("amount", round2(amount));
+                    fixed.add(entry);
+                }
+            }
+
+            saveFixedCosts(normUser, fixed);
+            return ResponseEntity.ok(fixed);
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /** DELETE /api/costs/fixed/{username}/{id} — remove a fixed cost */
+    @DeleteMapping("/fixed/{username}/{id}")
+    public ResponseEntity<?> deleteFixedCost(
+            @PathVariable String username,
+            @PathVariable String id) {
+        try {
+            String normUser = normalize(username);
+            List<Map<String, Object>> fixed = loadFixedCosts(normUser);
+            boolean removed = fixed.removeIf(fc -> id.equals(fc.get("id")));
+            if (!removed) {
+                return ResponseEntity.status(404).body(Map.of("error", "Fixed cost not found"));
+            }
+            saveFixedCosts(normUser, fixed);
+            return ResponseEntity.ok(fixed);
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    private List<Map<String, Object>> loadFixedCosts(String username) {
+        try {
+            String key = "users/" + username + "/fixed_costs.json";
+            byte[] data = s3Service.downloadFile(key);
+            if (data == null || data.length == 0) return new ArrayList<>();
+            return new ObjectMapper().readValue(data, new TypeReference<List<Map<String, Object>>>() {});
+        } catch (Exception e) {
+            return new ArrayList<>();
+        }
+    }
+
+    private void saveFixedCosts(String username, List<Map<String, Object>> fixed) throws Exception {
+        String key = "users/" + username + "/fixed_costs.json";
+        String json = new ObjectMapper().writeValueAsString(fixed);
+        s3Service.uploadFile(key,
+                new ByteArrayInputStream(json.getBytes(StandardCharsets.UTF_8)),
+                json.length());
     }
 }

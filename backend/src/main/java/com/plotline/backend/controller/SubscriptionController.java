@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.plotline.backend.dto.SubscriptionRequest;
 import com.plotline.backend.service.S3Service;
 import com.plotline.backend.service.UserProfileService;
+import static com.plotline.backend.util.UsernameUtils.normalize;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -40,7 +41,8 @@ public class SubscriptionController {
             ByteArrayInputStream inputStream = new ByteArrayInputStream(jsonData.getBytes(StandardCharsets.UTF_8));
 
             // Generate S3 key
-            String key = String.format(S3_BUCKET_PATH, request.getUsername());
+            String normUser = normalize(request.getUsername());
+            String key = String.format(S3_BUCKET_PATH, normUser);
 
             if (request.getSubscriptions() != null) {
                 int count = request.getSubscriptions().size();
@@ -62,7 +64,7 @@ public class SubscriptionController {
     @GetMapping("/{username}")
     public ResponseEntity<Object> getSubscriptions(@PathVariable String username) {
         try {
-            String key = String.format(S3_BUCKET_PATH, username);
+            String key = String.format(S3_BUCKET_PATH, normalize(username));
             byte[] data = s3Service.downloadFile(key);
             String json = new String(data, StandardCharsets.UTF_8);
 
@@ -96,7 +98,7 @@ public class SubscriptionController {
     @DeleteMapping("/{username}/{subscriptionName}")
     public ResponseEntity<String> deleteSubscription(@PathVariable String username, @PathVariable String subscriptionName) {
         try {
-            String key = String.format(S3_BUCKET_PATH, username);
+            String key = String.format(S3_BUCKET_PATH, normalize(username));
             byte[] data = s3Service.downloadFile(key);
 
             // Deserialize as SubscriptionRequest (which contains a Map, not a List)

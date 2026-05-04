@@ -23,6 +23,7 @@ import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.stream.Collectors;
+import static com.plotline.backend.util.UsernameUtils.normalize;
 
 @RestController
 @RequestMapping("/api/subscriptions/recurring")
@@ -65,7 +66,7 @@ public class RecurringChargeController {
             Map<String, List<RecurringChargeRequest.ChargeEvent>> grouped = new HashMap<>();
             for (RecurringChargeRequest.ChargeEvent ev : events) {
                 if (ev == null || ev.getName() == null || ev.getDate() == null) continue;
-                String key = normalize(ev.getName());
+                String key = normalizeMerchant(ev.getName());
                 grouped.computeIfAbsent(key, k -> new ArrayList<>()).add(ev);
             }
 
@@ -78,9 +79,13 @@ public class RecurringChargeController {
                 Map<YearMonth, List<RecurringChargeRequest.ChargeEvent>> byMonth = list.stream()
                         .collect(Collectors.groupingBy(ev -> YearMonth.from(LocalDate.parse(ev.getDate(), ISO))));
 
+                // If any month has more than 2 charges, it's likely regular shopping, not a subscription
+                boolean tooManyPerMonth = byMonth.values().stream().anyMatch(evs -> evs.size() > 2);
+                if (tooManyPerMonth) continue;
+
                 List<YearMonth> months = byMonth.keySet().stream().sorted().toList();
                 int chain = trailingChain(months);
-                if (chain < 2) continue; // need two consecutive months
+                if (chain < 3) continue; // need three consecutive months to be confident
 
                 // Compare last two months for amount drift
                 YearMonth lastMonth = months.get(months.size() - 1);
@@ -89,7 +94,7 @@ public class RecurringChargeController {
 
                 double avgLast = avgAmount(byMonth.get(lastMonth));
                 double avgPrev = avgAmount(byMonth.get(prevMonth));
-                if (!withinDrift(avgPrev, avgLast, 0.05)) continue;
+                if (!withinDrift(avgPrev, avgLast, 0.15)) continue;
 
                 LocalDate lastSeen = list.stream()
                         .map(ev -> LocalDate.parse(ev.getDate(), ISO))
@@ -148,10 +153,14 @@ public class RecurringChargeController {
             @RequestParam(name = "remindAfterMonths", defaultValue = "2") int remindAfter
     ) {
         try {
+            String normUser = normalize(username);
+            System.out.println("[RecurringCharge] Analyzing for user: " + normUser + " months=" + months);
+            List<RecurringChargeRequest.ChargeEvent> charges = fetchChargesFromPlaid(normUser, months);
+            System.out.println("[RecurringCharge] Fetched " + charges.size() + " charge events from Plaid");
             RecurringChargeRequest req = new RecurringChargeRequest();
-            req.setUsername(username);
+            req.setUsername(normUser);
             req.setRemindAfterMonths(remindAfter);
-            req.setCharges(fetchChargesFromPlaid(username, months));
+            req.setCharges(charges);
             return analyze(req);
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
@@ -171,9 +180,10 @@ public class RecurringChargeController {
             int months = request.getMonths() != null && request.getMonths() > 0 ? request.getMonths() : 2;
             LocalDate until = LocalDate.now().plusMonths(months);
 
-            Map<String, String> snoozed = loadSnoozed(request.getUsername());
+            String normUser = normalize(request.getUsername());
+            Map<String, String> snoozed = loadSnoozed(normUser);
             snoozed.put(request.getSnoozeKey(), until.format(ISO));
-            saveSnoozed(request.getUsername(), snoozed);
+            saveSnoozed(normUser, snoozed);
 
             return ResponseEntity.ok(Map.of(
                     "snoozedUntil", until.format(ISO),
@@ -203,11 +213,58 @@ public class RecurringChargeController {
         } catch (Exception ignored) { }
     }
 
-    private String normalize(String name) {
-        return name == null ? "" : name.trim().toLowerCase();
+    private String normalizeMerchant(String name) {
+        if (name == null) return "";
+        // Strip common noise: transaction IDs, dates, locations, leading/trailing symbols
+        String cleaned = name.trim().toLowerCase()
+                .replaceAll("\\s*#\\d+.*", "")           // strip #12345 and everything after
+                .replaceAll("\\s*\\d{2,}/\\d{2,}.*", "") // strip date patterns like 01/15
+                .replaceAll("\\s*\\*+.*", "")             // strip * and everything after (common in bank txns)
+                .replaceAll("\\s+", " ")                  // normalize whitespace
+                .trim();
+        return cleaned;
     }
 
     private static double round2(double v) { return Math.round(v * 100.0) / 100.0; }
+
+    /**
+     * Filter out Plaid transaction categories that are almost never subscriptions.
+     * This eliminates false positives like grocery stores, restaurants, gas stations, etc.
+     */
+    private boolean isNonSubscriptionCategory(Transaction t) {
+        if (t.getPersonalFinanceCategory() == null) return false;
+        String detailed = t.getPersonalFinanceCategory().getDetailed();
+        if (detailed == null) return false;
+        String cat = detailed.toUpperCase();
+
+        // Categories that are NOT subscriptions
+        return cat.contains("GROCERIES") ||
+               cat.contains("RESTAURANT") ||
+               cat.contains("FOOD_AND_DRINK") ||
+               cat.contains("COFFEE") ||
+               cat.contains("FAST_FOOD") ||
+               cat.contains("GAS_STATION") ||
+               cat.contains("FUEL") ||
+               cat.contains("PARKING") ||
+               cat.contains("TAXI") ||
+               cat.contains("RIDESHARE") ||
+               cat.contains("PUBLIC_TRANSIT") ||
+               cat.contains("ATM") ||
+               cat.contains("TRANSFER") ||
+               cat.contains("BANK_FEES") ||
+               cat.contains("INTEREST") ||
+               cat.contains("OVERDRAFT") ||
+               cat.contains("INCOME") ||
+               cat.contains("PAYROLL") ||
+               cat.contains("GENERAL_MERCHANDISE") ||
+               cat.contains("SUPERSTORES") ||
+               cat.contains("PHARMACIES") ||
+               cat.contains("CLOTHING") ||
+               cat.contains("ELECTRONICS") ||
+               cat.contains("CHARITABLE_GIVING") ||
+               cat.contains("GOVERNMENT") ||
+               cat.contains("TAX");
+    }
 
     private double avgAmount(List<RecurringChargeRequest.ChargeEvent> list) {
         if (list == null || list.isEmpty()) return 0.0;
@@ -272,9 +329,17 @@ public class RecurringChargeController {
                 for (Transaction t : res.getTransactions()) {
                     if (Boolean.TRUE.equals(t.getPending())) continue;
                     if (t.getAmount() == null || t.getAmount().doubleValue() <= 0) continue;
+
+                    // Skip categories that are almost never subscriptions
+                    if (isNonSubscriptionCategory(t)) continue;
+
+                    // Prefer merchantName (clean) over getName (raw bank description)
+                    String txnName = t.getMerchantName() != null && !t.getMerchantName().isBlank()
+                            ? t.getMerchantName() : t.getName();
+
                     LocalDate date = LocalDate.parse(t.getDate().toString(), ISO);
                     events.add(new RecurringChargeRequest.ChargeEvent(
-                            t.getName(),
+                            txnName,
                             t.getAmount().doubleValue(),
                             date.format(ISO)
                     ));

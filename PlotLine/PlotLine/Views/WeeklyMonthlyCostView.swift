@@ -61,52 +61,75 @@ private struct PrimaryButton: ButtonStyle {
 }
 
 // MARK: - View
+// Common categories available across budget views
+private let commonCategories = [
+    // Defaults
+    "Rent", "Groceries", "Subscriptions", "Eating Out",
+    "Entertainment", "Utilities", "Savings", "Miscellaneous",
+    "Transportation", "Roth IRA", "Car Insurance",
+    "Health Insurance", "Brokerage",
+    // Additional common
+    "Gas", "Phone", "Internet", "Gym", "Clothing",
+    "Personal Care", "Education", "Childcare", "Pet Care",
+    "Home Maintenance", "Gifts", "Donations", "Travel",
+    "Baby Supplies", "Hobbies", "Shopping", "Coffee",
+    "Alcohol & Bars", "Home Decor", "Electronics",
+    "Medical", "Dental", "Vision", "Therapy",
+    "Parking", "Tolls", "Laundry", "Haircuts",
+    "Streaming Services", "Gaming", "Music", "Books"
+]
+
 struct WeeklyMonthlyCostView: View {
-    @State private var selectedType = "Weekly"
+    @State private var selectedTab = "Costs"
     @State private var costItems: [BudgetItem] = []
     @State private var budgetLimits: [String: Double] = [:]
     @State private var newCategory: String = ""
-    
-    //    @State private var showSuccessAlert: Bool = false
-    //    @State private var showBudgetWarning: Bool = false
-    
-    @State private var budgetWarningMessage: String = ""
-    
+    @State private var showCategoryPicker = false
+
+    // Fixed monthly costs
+    @State private var fixedCosts: [FixedCostItem] = []
+    @State private var showAddFixedCost = false
+    @State private var editingFixedCost: FixedCostItem? = nil
+    @State private var fixedCostCategory: String = ""
+    @State private var fixedCostAmount: String = ""
+    @State private var showFixedCostCategoryPicker = false
+    @State private var fixedCostCustomCategory: String = ""
+
     // Recurring subscription detection after Plaid sync
     @State private var recurringPrompts: [RecurringChargePromptModel] = []
     @State private var showRecurringPrompt = false
-    
+
     // Tracker logic
     @State private var takeHomeMonthly: Double = 0
     private let trackerExclusions: Set<String> = [
-        "401(k)", "401k", "401(k) Contribution", "401k Contribution", "Subscriptions"
+        "401(k)", "401k", "401(k) Contribution", "401k Contribution"
     ]
-    
-    // Week strip
+
+    // Current month being viewed
+    @State private var selectedMonth: Date = Date()
+    // Daily vs Monthly view toggle within Costs tab
+    @State private var costsViewMode = "Monthly" // "Monthly" or "Daily"
     @State private var selectedDay: Date = Date()
-    @State private var weekDays: [Date] = []
-    @State private var weeklyPeriod: WeeklyPeriod? = nil
-    
-    // Totals
+    // Cached monthly period for day-level data
+    @State private var monthlyPeriod: WeeklyPeriod? = nil
+    // Monthly totals for budget summary (always reflects month totals regardless of view mode)
+    @State private var monthlyTotals: [String: Double] = [:]
+
+    // Totals (always monthly)
     private var budgetTotal: Double {
-        let base = takeHomeMonthly > 0 ? takeHomeMonthly : budgetLimits.values.reduce(0, +)
-        return selectedType == "Monthly" ? base : base / 4.0
+        takeHomeMonthly > 0 ? takeHomeMonthly : budgetLimits.values.reduce(0, +)
+    }
+    private var fixedCostTotal: Double {
+        fixedCosts.reduce(0) { $0 + $1.amount }
     }
     private var enteredTotal: Double {
-        if selectedType == "Weekly" {
-            // Use the week's accumulated totals, not just selected day
-            let weekTotals = weeklyPeriod?.totals ?? [:]
-            return weekTotals
-                .filter { !trackerExclusions.contains($0.key) }
-                .values
-                .reduce(0, +)
-        } else {
-            // Monthly mode uses costItems which are loaded with monthly totals
-            return costItems
-                .filter { !trackerExclusions.contains($0.category) }
-                .compactMap { Double($0.amount) }
-                .reduce(0, +)
-        }
+        // Always use month totals for budget summary, regardless of daily/monthly view mode
+        // Fixed costs are already included in monthlyTotals (merged on backend)
+        let fromTotals = monthlyTotals
+            .filter { !trackerExclusions.contains($0.key) }
+            .values
+            .reduce(0, +)
+        return fromTotals
     }
     private var remaining: Double { budgetTotal - enteredTotal }
     private var utilization: Double {
@@ -116,6 +139,25 @@ struct WeeklyMonthlyCostView: View {
     private var utilizationPercentText: String {
         guard budgetTotal > 0 else { return "—" }
         return String(format: "%.0f%%", utilization * 100)
+    }
+
+    private var monthDisplayText: String {
+        let f = DateFormatter()
+        f.dateFormat = "MMMM yyyy"
+        return f.string(from: selectedMonth)
+    }
+
+    private var selectedDayDisplayText: String {
+        let f = DateFormatter()
+        f.dateFormat = "EEEE, MMM d"
+        return f.string(from: selectedDay)
+    }
+
+    private var daysInSelectedMonth: [Date] {
+        let cal = Calendar.current
+        guard let range = cal.range(of: .day, in: .month, for: selectedMonth),
+              let firstOfMonth = cal.date(from: cal.dateComponents([.year, .month], from: selectedMonth)) else { return [] }
+        return range.compactMap { cal.date(byAdding: .day, value: $0 - 1, to: firstOfMonth) }
     }
     
     // Confirmation after Save
@@ -140,12 +182,24 @@ struct WeeklyMonthlyCostView: View {
     @State private var pendingAssignments: [CategoryAssignment] = []
     @State private var skippedTransactionIds: Set<String> = []
     @State private var newCategoryName: String = ""
+    @State private var showSyncCategoryPicker = false
     
     // Build the choices list from UI state
     private var existingCategories: [String] {
         let fromLimits = budgetLimits.keys
         let fromCosts  = costItems.map { $0.category }
         return Array(Set(fromLimits).union(fromCosts)).sorted()
+    }
+
+    private var availableSyncCategories: [String] {
+        let current = Set(costItems.map { $0.category.lowercased() })
+        return commonCategories.filter { !current.contains($0.lowercased()) }.sorted()
+    }
+
+    // Categories not yet added — shown in the "Add Category" dropdown
+    private var availableCategories: [String] {
+        let current = Set(costItems.map { $0.category.lowercased() })
+        return commonCategories.filter { !current.contains($0.lowercased()) }.sorted()
     }
     
     @EnvironmentObject var calendarVM: CalendarViewModel
@@ -155,210 +209,30 @@ struct WeeklyMonthlyCostView: View {
     }
     
     var body: some View {
-        // Avoid large nav title ("zoomed") look
-        ScrollView {
-            VStack(spacing: PLSpacing.lg) {
-                
-                // Header + Segmented
-                VStack(alignment: .leading, spacing: PLSpacing.sm) {
-                    Text("Enter Your \(selectedType) Costs")
-                        .font(.headline)
-                        .bold()
-                        .foregroundColor(PLColor.textPrimary)
-                    
-                    Picker("Type", selection: $selectedType) {
-                        Text("Weekly").tag("Weekly")
-                        Text("Monthly").tag("Monthly")
-                    }
-                    .pickerStyle(.segmented)
-                    .onChange(of: selectedType) { newVal in
-                        loadBudgetLimits()
-                        loadSavedData()
-                        if newVal == "Weekly" {
-                            rebuildWeek(for: selectedDay)
-                            loadWeeklyPeriod(for: selectedDay)
-                        } else {
-                            fetchMonthlyFeedback(for: selectedDay)
-                        }
-                        UserDefaults.standard.set(newVal, forKey: "selectedType")
-                    }
-                }
-                .plCard()
-                
-                // Week strip (only for Weekly)
-                if selectedType == "Weekly" {
-                    weekHeader
-                        .plCard()
-                }
-                
-                // Summary Card
-                VStack(alignment: .leading, spacing: PLSpacing.sm) {
-                    HStack {
-                        Text("Budget Summary")
-                            .font(.headline)
-                        Spacer()
-                        Text(utilizationPercentText)
-                            .font(.subheadline)
-                            .foregroundColor(utilization >= 1.0 ? PLColor.danger : PLColor.textSecondary)
-                    }
-                    HStack {
-                        VStack(alignment: .leading) {
-                            Text("Total Budget")
-                                .font(.caption)
-                                .foregroundColor(PLColor.textSecondary)
-                            Text("$\(budgetTotal, specifier: "%.2f")")
-                                .font(.headline)
-                        }
-                        Spacer()
-                        VStack(alignment: .trailing) {
-                            Text("Entered")
-                                .font(.caption)
-                                .foregroundColor(PLColor.textSecondary)
-                            Text("$\(enteredTotal, specifier: "%.2f")")
-                                .font(.headline)
-                        }
-                    }
-                    ProgressView(value: utilization)
-                    let over = remaining < 0
-                    Text(over
-                         ? "Over by $\(abs(remaining), specifier: "%.2f")"
-                         : "Left: $\(remaining, specifier: "%.2f")")
-                    .font(.subheadline)
-                    .foregroundColor(over ? PLColor.danger : PLColor.success)
-                }
-                .plCard()
-                
-                // Monthly Feedback (only when in Monthly mode and we have data)
-                if selectedType == "Monthly" {
-                    if let fb = monthlyFeedback {
-                        MonthlyFeedbackCard(fb: fb, budgetHint: budgetTotal)
-                            .plCard()
-                    } else {
-                        VStack(alignment: .leading, spacing: PLSpacing.sm) {
-                            Text("Feedback")
-                                .font(.headline)
-                            Text("Need more data — complete a full month first.")
-                                .font(.subheadline)
-                                .foregroundColor(PLColor.textSecondary)
-                        }
-                        .plCard()
-                    }
-                }
-                
-                // Input list (custom rows instead of List to avoid nested scroll + zoomy look)
-                VStack(alignment: .leading, spacing: PLSpacing.sm) {
-                    Text("Costs")
-                        .font(.headline)
-                        .foregroundColor(PLColor.textPrimary)
-                    
-                    LazyVStack(spacing: PLSpacing.sm) {
-                        ForEach(costItems.indices, id: \.self) { i in
-                            if !trackerExclusions.contains(costItems[i].category) {
-                                CostRow(
-                                    item: $costItems[i],
-                                    budgetLimit: budgetLimits[costItems[i].category],
-                                    onRemove: { removeCategory(item: costItems[i]) },
-                                    onChangeAmount: { newVal in
-                                        costItems[i].amount = sanitizeAmount(newVal)
-                                    }
-                                )
-                            }
-                        }
-                    }
-                    
-                    HStack(spacing: PLSpacing.sm) {
-                        TextField("New Category", text: $newCategory)
-                            .textFieldStyle(.roundedBorder)
-                        Button {
-                            addCategory()
-                        } label: {
-                            Label("Add", systemImage: "plus.circle.fill")
-                                .labelStyle(.titleAndIcon)
-                        }
-                        .tint(.green)
-                    }
-                }
-                .plCard()
-                
-                // Save Button
-                Button("Save Costs", action: saveCosts)
-                    .buttonStyle(PrimaryButton())
-                    .padding(.top, -PLSpacing.sm) // visually tighten spacing to card above
-                
-                // Sync
-                // Present the sheet when user taps "Sync Transactions"
-                HStack(spacing: 12) {
-                    Button {
-                        Task { await fetchAccountsForSelection() }
-                    } label: {
-                        HStack(spacing: 8) {
-                            if isSyncing {
-                                ProgressView()
-                                    .progressViewStyle(CircularProgressViewStyle())
-                                Text("Syncing...")
-                            } else {
-                                Image(systemName: "arrow.triangle.2.circlepath")
-                                Text("Sync Transactions")
-                            }
-                        }
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(isSyncing || isResetting)
-
-                    // Reset sync button - clears cursors and seen transactions
-                    Button {
-                        showResetConfirmation = true
-                    } label: {
-                        HStack(spacing: 4) {
-                            if isResetting {
-                                ProgressView()
-                                    .progressViewStyle(CircularProgressViewStyle())
-                            } else {
-                                Image(systemName: "arrow.counterclockwise")
-                            }
-                        }
-                    }
-                    .buttonStyle(.bordered)
-                    .tint(.orange)
-                    .disabled(isSyncing || isResetting)
-                }
-                .sheet(isPresented: $showAccountPicker) {
-                    AccountPickerSheet(
-                        accounts: $selectableAccounts,
-                        selectedAccountIds: $selectedAccountIds,
-                        isPresented: $showAccountPicker
-                    ) {
-                        Task { await syncSelectedAccounts() }
-                    }
-                }
-                .alert("Reset Sync?", isPresented: $showResetConfirmation) {
-                    Button("Cancel", role: .cancel) {}
-                    Button("Reset", role: .destructive) {
-                        Task { await resetSyncState() }
-                    }
-                } message: {
-                    Text("This will clear all sync history. Your next sync will fetch all transactions from the last 30 days.")
-                }
-                
-                
-                // Subscriptions UI moved to SubsView (kept here intentionally blank)
+        VStack(spacing: 0) {
+            // Costs / Feedback tab picker
+            Picker("Tab", selection: $selectedTab) {
+                Text("Costs").tag("Costs")
+                Text("Feedback").tag("Feedback")
             }
+            .pickerStyle(.segmented)
             .padding(.horizontal, PLSpacing.lg)
-            .padding(.vertical, PLSpacing.lg)
-            .scrollDismissesKeyboard(.interactively)
-            .onTapGesture { hideKeyboard() }
+            .padding(.vertical, PLSpacing.sm)
+
+            Divider()
+
+            if selectedTab == "Costs" {
+                costsTab
+            } else {
+                feedbackTab
+            }
         }
-        //.navigationTitle("\(selectedType) Cost Input")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .principal) {
-                Text("\(selectedType) Cost Input")
+                Text("Monthly Costs")
                     .font(.headline)
             }
-//            ToolbarItemGroup(placement: .keyboard) {
-//                Spacer()
-//                Button("Done") { hideKeyboard() }
-//            }
         }
         .tint(PLColor.accent)
         .alert(item: $activeAlert) { a in
@@ -369,14 +243,14 @@ struct WeeklyMonthlyCostView: View {
             )
         }
         .onAppear {
-            selectedType = "Weekly" // default to weekly each time page opens
-            rebuildWeek(for: selectedDay)
-            loadWeeklyPeriod(for: selectedDay)
             loadBudgetLimits()
-            loadSavedData()
+            loadMonthlyData()
+            fetchFixedCosts()
             fetchTakeHomeMonthly()
+            fetchMonthlyFeedback(for: selectedMonth)
+            requestNotificationPermission()
         }
-        
+
         .sheet(isPresented: $showCategorizer, onDismiss: {
             pendingAssignments = []
             skippedTransactionIds = []
@@ -453,10 +327,33 @@ struct WeeklyMonthlyCostView: View {
                             }
 
                             Section {
-                                HStack {
-                                    TextField("e.g. Baby Supplies", text: $newCategoryName)
-                                        .textFieldStyle(.roundedBorder)
-                                        .tint(Color(UIColor { $0.userInterfaceStyle == .dark ? .white : .systemBlue }))
+                                Menu {
+                                    ForEach(availableSyncCategories, id: \.self) { cat in
+                                        Button(cat) {
+                                            self.costItems.append(BudgetItem(category: cat, amount: ""))
+                                            if let idx = pendingAssignments.indices.last {
+                                                pendingAssignments[idx].category = cat
+                                            }
+                                        }
+                                    }
+                                    Divider()
+                                    Button("Custom...") { showSyncCategoryPicker = true }
+                                } label: {
+                                    HStack {
+                                        Image(systemName: "plus.circle.fill")
+                                            .foregroundColor(.green)
+                                        Text("Add Category")
+                                            .font(.subheadline)
+                                            .foregroundColor(Color(UIColor { $0.userInterfaceStyle == .dark ? .white : .systemBlue }))
+                                        Spacer()
+                                        Image(systemName: "chevron.down")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
+                                    .padding(.vertical, 8)
+                                }
+                                .alert("Custom Category", isPresented: $showSyncCategoryPicker) {
+                                    TextField("Category name", text: $newCategoryName)
                                     Button("Add") {
                                         let name = newCategoryName.trimmingCharacters(in: .whitespacesAndNewlines)
                                         guard !name.isEmpty else { return }
@@ -466,7 +363,7 @@ struct WeeklyMonthlyCostView: View {
                                         }
                                         newCategoryName = ""
                                     }
-                                    .tint(Color(UIColor { $0.userInterfaceStyle == .dark ? .white : .systemBlue }))
+                                    Button("Cancel", role: .cancel) { newCategoryName = "" }
                                 }
                             } header: {
                                 Text("Create new category")
@@ -510,24 +407,524 @@ struct WeeklyMonthlyCostView: View {
                 }
             )
         }
-        .onAppear {
-            rebuildWeek(for: Date())
-            selectedDay = Date()
-            loadBudgetLimits()
-            fetchMonthlyFeedback(for: selectedDay)
-            requestNotificationPermission()
-            fetchTakeHomeMonthly()
-        }
         .onReceive(NotificationCenter.default.publisher(for: .plaidSynced)) { _ in
-            // after backend wrote to weekly/monthly, just fetch again
-            rebuildWeek(for: selectedDay)
-            loadWeeklyPeriod(for: selectedDay)
-            if selectedType == "Monthly" {
-                fetchMonthlyFeedback(for: selectedDay)
+            loadMonthlyData()
+            fetchMonthlyFeedback(for: selectedMonth)
+        }
+    }
+
+    // MARK: - Costs Tab
+    private var costsTab: some View {
+        ScrollView {
+            VStack(spacing: PLSpacing.lg) {
+                // Month navigation
+                HStack {
+                    Button {
+                        selectedMonth = Calendar.current.date(byAdding: .month, value: -1, to: selectedMonth) ?? selectedMonth
+                        loadMonthlyData()
+                        fetchMonthlyFeedback(for: selectedMonth)
+                    } label: {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(PLColor.textPrimary)
+                    }
+                    Spacer()
+                    Text(monthDisplayText)
+                        .font(.headline)
+                        .foregroundColor(PLColor.textPrimary)
+                    Spacer()
+                    Button {
+                        selectedMonth = Calendar.current.date(byAdding: .month, value: 1, to: selectedMonth) ?? selectedMonth
+                        loadMonthlyData()
+                        fetchMonthlyFeedback(for: selectedMonth)
+                    } label: {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(PLColor.textPrimary)
+                    }
+                }
+                .plCard()
+
+                // Monthly / Daily toggle
+                Picker("View", selection: $costsViewMode) {
+                    Text("Monthly").tag("Monthly")
+                    Text("Daily").tag("Daily")
+                }
+                .pickerStyle(.segmented)
+                .onChange(of: costsViewMode) { _ in
+                    if costsViewMode == "Monthly" {
+                        loadMonthlyTotalsIntoCostItems()
+                    } else {
+                        loadDayCostsIntoCostItems()
+                    }
+                }
+
+                // Day picker (only in Daily mode)
+                if costsViewMode == "Daily" {
+                    dayPicker
+                        .plCard()
+                }
+
+                // Budget Summary (always shows monthly totals)
+                VStack(alignment: .leading, spacing: PLSpacing.sm) {
+                    HStack {
+                        Text("Budget Summary")
+                            .font(.headline)
+                        Spacer()
+                        Text(utilizationPercentText)
+                            .font(.subheadline)
+                            .foregroundColor(utilization >= 1.0 ? PLColor.danger : PLColor.textSecondary)
+                    }
+                    HStack {
+                        VStack(alignment: .leading) {
+                            Text("Monthly Budget")
+                                .font(.caption)
+                                .foregroundColor(PLColor.textSecondary)
+                            Text("$\(budgetTotal, specifier: "%.2f")")
+                                .font(.headline)
+                        }
+                        Spacer()
+                        VStack(alignment: .trailing) {
+                            Text("Spent")
+                                .font(.caption)
+                                .foregroundColor(PLColor.textSecondary)
+                            Text("$\(enteredTotal, specifier: "%.2f")")
+                                .font(.headline)
+                        }
+                    }
+                    ProgressView(value: utilization)
+                    let over = remaining < 0
+                    Text(over
+                         ? "Over by $\(abs(remaining), specifier: "%.2f")"
+                         : "Left: $\(remaining, specifier: "%.2f")")
+                    .font(.subheadline)
+                    .foregroundColor(over ? PLColor.danger : PLColor.success)
+                }
+                .plCard()
+
+                // Cost input rows
+                VStack(alignment: .leading, spacing: PLSpacing.sm) {
+                    Text(costsViewMode == "Daily" ? "Costs for \(selectedDayDisplayText)" : "Monthly Costs")
+                        .font(.headline)
+                        .foregroundColor(PLColor.textPrimary)
+
+                    LazyVStack(spacing: PLSpacing.sm) {
+                        ForEach($costItems) { $item in
+                            if !trackerExclusions.contains(item.category) {
+                                CostRow(
+                                    item: $item,
+                                    budgetLimit: budgetLimits[item.category],
+                                    onRemove: { removeCategory(item: item) },
+                                    onChangeAmount: { newVal in
+                                        item.amount = sanitizeAmount(newVal)
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    // Add category
+                    VStack(spacing: PLSpacing.xs) {
+                        Menu {
+                            ForEach(availableCategories, id: \.self) { cat in
+                                Button(cat) {
+                                    costItems.append(BudgetItem(category: cat, amount: ""))
+                                }
+                            }
+                            Divider()
+                            Button("Custom...") {
+                                showCategoryPicker = true
+                            }
+                        } label: {
+                            HStack {
+                                Image(systemName: "plus.circle.fill")
+                                    .foregroundColor(.green)
+                                Text("Add Category")
+                                    .font(.subheadline)
+                                    .foregroundColor(.primary)
+                                Spacer()
+                                Image(systemName: "chevron.down")
+                                    .font(.caption)
+                                    .foregroundColor(PLColor.textSecondary)
+                            }
+                            .padding(.vertical, 8)
+                        }
+                        .alert("Custom Category", isPresented: $showCategoryPicker) {
+                            TextField("Category name", text: $newCategory)
+                            Button("Add") { addCategory() }
+                            Button("Cancel", role: .cancel) { newCategory = "" }
+                        }
+                    }
+                }
+                .plCard()
+
+                // Fixed Monthly Costs
+                if costsViewMode == "Monthly" {
+                    fixedCostsSection
+                }
+
+                // Save
+                Button("Save Costs", action: saveCosts)
+                    .buttonStyle(PrimaryButton())
+                    .padding(.top, -PLSpacing.sm)
+
+                // Sync
+                HStack(spacing: 12) {
+                    Button {
+                        Task { await fetchAccountsForSelection() }
+                    } label: {
+                        HStack(spacing: 8) {
+                            if isSyncing {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle())
+                                Text("Syncing...")
+                            } else {
+                                Image(systemName: "arrow.triangle.2.circlepath")
+                                Text("Sync Transactions")
+                            }
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(isSyncing || isResetting)
+
+                    Button {
+                        showResetConfirmation = true
+                    } label: {
+                        HStack(spacing: 4) {
+                            if isResetting {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle())
+                            } else {
+                                Image(systemName: "arrow.counterclockwise")
+                            }
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.orange)
+                    .disabled(isSyncing || isResetting)
+                }
+                .sheet(isPresented: $showAccountPicker) {
+                    AccountPickerSheet(
+                        accounts: $selectableAccounts,
+                        selectedAccountIds: $selectedAccountIds,
+                        isPresented: $showAccountPicker
+                    ) {
+                        Task { await syncSelectedAccounts() }
+                    }
+                }
+                .alert("Reset Sync?", isPresented: $showResetConfirmation) {
+                    Button("Cancel", role: .cancel) {}
+                    Button("Reset", role: .destructive) {
+                        Task { await resetSyncState() }
+                    }
+                } message: {
+                    Text("This will clear all sync history. Your next sync will fetch all transactions from the last 30 days.")
+                }
+
+                // View Transactions
+                NavigationLink {
+                    TransactionsView(username: username, month: selectedMonth)
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "list.bullet.rectangle")
+                        Text("View Transactions")
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.vertical, 10)
+                }
+                .buttonStyle(.bordered)
             }
+            .padding(.horizontal, PLSpacing.lg)
+            .padding(.vertical, PLSpacing.lg)
+            .scrollDismissesKeyboard(.interactively)
+            .onTapGesture { hideKeyboard() }
+        }
+    }
+
+    // MARK: - Feedback Tab
+    private var feedbackTab: some View {
+        ScrollView {
+            VStack(spacing: PLSpacing.lg) {
+                if let fb = monthlyFeedback {
+                    MonthlyFeedbackCard(fb: fb, budgetHint: budgetTotal)
+                        .plCard()
+                } else {
+                    VStack(spacing: PLSpacing.md) {
+                        Image(systemName: "chart.bar.xaxis")
+                            .font(.system(size: 40))
+                            .foregroundColor(PLColor.textSecondary)
+                        Text("No Feedback Yet")
+                            .font(.headline)
+                        Text("Complete at least one prior month of tracking to see how you're doing. Up to 6 months are averaged for a more accurate baseline.")
+                            .font(.subheadline)
+                            .foregroundColor(PLColor.textSecondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 40)
+                    .plCard()
+                }
+            }
+            .padding(.horizontal, PLSpacing.lg)
+            .padding(.vertical, PLSpacing.lg)
         }
     }
     
+    // MARK: - Day Picker
+    private var dayPicker: some View {
+        VStack(alignment: .leading, spacing: PLSpacing.xs) {
+            Text(selectedDayDisplayText)
+                .font(.subheadline.bold())
+                .foregroundColor(PLColor.textPrimary)
+
+            let columns = Array(repeating: GridItem(.flexible(), spacing: 4), count: 7)
+            LazyVGrid(columns: columns, spacing: 4) {
+                // Day-of-week headers
+                let weekdayLabels = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"]
+                ForEach(Array(weekdayLabels.enumerated()), id: \.offset) { _, label in
+                    Text(label)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(PLColor.textSecondary)
+                        .frame(maxWidth: .infinity)
+                }
+
+                // Leading empty cells for alignment
+                let cal = Calendar.current
+                let firstDay = daysInSelectedMonth.first ?? selectedMonth
+                let weekdayOffset = cal.component(.weekday, from: firstDay) - 1 // Sun=0
+                ForEach(0..<weekdayOffset, id: \.self) { _ in
+                    Text("")
+                        .frame(height: 32)
+                }
+
+                // Day cells
+                ForEach(daysInSelectedMonth, id: \.self) { day in
+                    let isSelected = cal.isDate(day, inSameDayAs: selectedDay)
+                    let dayNum = cal.component(.day, from: day)
+                    let dayKey = day.ymd()
+                    let hasData = monthlyPeriod?.days[dayKey] != nil
+
+                    Text("\(dayNum)")
+                        .font(.system(size: 13))
+                        .foregroundColor(isSelected ? .white : PLColor.textPrimary)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 32)
+                        .background(
+                            isSelected ? PLColor.accent :
+                            hasData ? PLColor.accent.opacity(0.12) : Color.clear
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                        .onTapGesture {
+                            selectedDay = day
+                            loadDayCostsIntoCostItems()
+                        }
+                }
+            }
+        }
+    }
+
+    // MARK: - Fixed Monthly Costs Section
+    private var fixedCostsSection: some View {
+        VStack(alignment: .leading, spacing: PLSpacing.sm) {
+            HStack {
+                Text("Fixed Monthly Costs")
+                    .font(.headline)
+                    .foregroundColor(PLColor.textPrimary)
+                Spacer()
+                if !fixedCosts.isEmpty {
+                    Text("$\(fixedCostTotal, specifier: "%.2f")")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(PLColor.textSecondary)
+                }
+            }
+
+            Text("These amounts are automatically included every month.")
+                .font(.caption)
+                .foregroundColor(PLColor.textSecondary)
+
+            if fixedCosts.isEmpty {
+                HStack {
+                    Image(systemName: "pin.slash")
+                        .foregroundColor(PLColor.textSecondary)
+                    Text("No fixed costs set")
+                        .font(.subheadline)
+                        .foregroundColor(PLColor.textSecondary)
+                }
+                .padding(.vertical, 4)
+            } else {
+                ForEach(fixedCosts) { fc in
+                    HStack {
+                        Text(fc.category)
+                            .font(.body)
+                        Spacer()
+                        Text("$\(fc.amount, specifier: "%.2f")")
+                            .font(.body.monospacedDigit())
+                            .fontWeight(.medium)
+                        Button {
+                            editingFixedCost = fc
+                            fixedCostCategory = fc.category
+                            fixedCostAmount = String(format: "%.2f", fc.amount)
+                            showAddFixedCost = true
+                        } label: {
+                            Image(systemName: "pencil.circle")
+                                .foregroundColor(PLColor.accent)
+                        }
+                        .buttonStyle(.plain)
+                        Button {
+                            deleteFixedCost(fc)
+                        } label: {
+                            Image(systemName: "minus.circle.fill")
+                                .foregroundColor(PLColor.danger)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.vertical, 2)
+                }
+            }
+
+            Button {
+                editingFixedCost = nil
+                fixedCostCategory = ""
+                fixedCostAmount = ""
+                showAddFixedCost = true
+            } label: {
+                HStack {
+                    Image(systemName: "plus.circle.fill")
+                        .foregroundColor(.green)
+                    Text("Add Fixed Cost")
+                        .font(.subheadline)
+                }
+            }
+        }
+        .plCard()
+        .sheet(isPresented: $showAddFixedCost) {
+            fixedCostSheet
+        }
+    }
+
+    private var fixedCostSheet: some View {
+        NavigationView {
+            Form {
+                Section("Category") {
+                    Picker("Category", selection: $fixedCostCategory) {
+                        Text("Select...").tag("")
+                        ForEach(commonCategories.sorted(), id: \.self) { cat in
+                            Text(cat).tag(cat)
+                        }
+                    }
+                    .pickerStyle(.menu)
+
+                    HStack {
+                        TextField("Or type custom...", text: $fixedCostCustomCategory)
+                            .textInputAutocapitalization(.words)
+                        if !fixedCostCustomCategory.isEmpty {
+                            Button("Use") {
+                                fixedCostCategory = fixedCostCustomCategory.trimmingCharacters(in: .whitespacesAndNewlines)
+                                fixedCostCustomCategory = ""
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                    }
+                }
+
+                Section("Amount") {
+                    HStack {
+                        Text("$")
+                            .font(.title3)
+                        TextField("0.00", text: $fixedCostAmount)
+                            .keyboardType(.decimalPad)
+                            .font(.title3)
+                    }
+                }
+            }
+            .navigationTitle(editingFixedCost != nil ? "Edit Fixed Cost" : "Add Fixed Cost")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        showAddFixedCost = false
+                        fixedCostCustomCategory = ""
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        saveFixedCost()
+                    }
+                    .disabled(fixedCostCategory.isEmpty || Double(fixedCostAmount) == nil)
+                }
+            }
+        }
+    }
+
+    // MARK: - Fixed Cost Functions
+
+    private func fetchFixedCosts() {
+        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/costs/fixed/\(username)") else { return }
+        var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
+        URLSession.shared.dataTask(with: request) { data, _, _ in
+            guard let data = data,
+                  let decoded = try? JSONDecoder().decode([FixedCostItem].self, from: data) else { return }
+            DispatchQueue.main.async {
+                self.fixedCosts = decoded
+            }
+        }.resume()
+    }
+
+    private func saveFixedCost() {
+        guard let amount = Double(fixedCostAmount), !fixedCostCategory.isEmpty else { return }
+        let urlStr = "\(BackendConfig.baseURLString)/api/costs/fixed/\(username)"
+        guard let url = URL(string: urlStr) else { return }
+
+        var payload: [String: Any] = [
+            "category": fixedCostCategory,
+            "amount": amount
+        ]
+        if let existing = editingFixedCost {
+            payload["id"] = existing.id
+        }
+        guard let body = try? JSONSerialization.data(withJSONObject: payload) else { return }
+
+        var req = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &req)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = body
+
+        URLSession.shared.dataTask(with: req) { data, response, _ in
+            let code = (response as? HTTPURLResponse)?.statusCode ?? -1
+            guard (200...299).contains(code),
+                  let data = data,
+                  let updated = try? JSONDecoder().decode([FixedCostItem].self, from: data) else { return }
+            DispatchQueue.main.async {
+                self.fixedCosts = updated
+                self.showAddFixedCost = false
+                self.fixedCostCustomCategory = ""
+            }
+        }.resume()
+    }
+
+    private func deleteFixedCost(_ fc: FixedCostItem) {
+        let urlStr = "\(BackendConfig.baseURLString)/api/costs/fixed/\(username)/\(fc.id)"
+        guard let url = URL(string: urlStr) else { return }
+        var req = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &req)
+        req.httpMethod = "DELETE"
+
+        URLSession.shared.dataTask(with: req) { data, response, _ in
+            let code = (response as? HTTPURLResponse)?.statusCode ?? -1
+            guard (200...299).contains(code),
+                  let data = data,
+                  let updated = try? JSONDecoder().decode([FixedCostItem].self, from: data) else { return }
+            DispatchQueue.main.async {
+                self.fixedCosts = updated
+            }
+        }.resume()
+    }
+
     // MARK: - Cost Functions
     private func addCategory() {
         let trimmed = newCategory.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -552,13 +949,16 @@ struct WeeklyMonthlyCostView: View {
         return filtered
     }
     
-    private func postMerge(type: String, date: Date, values: [String: Double], completion: @escaping (Bool)->Void) {
-        let payload: [String: Any] = [
+    private func postMerge(type: String, date: Date, values: [String: Double], replaceAll: Bool = false, completion: @escaping (Bool)->Void) {
+        var payload: [String: Any] = [
             "username": username,
             "type": type,
             "date": date.ymd(),
             "costs": values
         ]
+        if replaceAll {
+            payload["replaceAll"] = true
+        }
         guard let data = try? JSONSerialization.data(withJSONObject: payload) else { completion(false); return }
 
         var req = URLRequest(url: URL(string: "\(BackendConfig.baseURLString)/api/costs/merge-dated")!)
@@ -573,58 +973,84 @@ struct WeeklyMonthlyCostView: View {
         }.resume()
     }
     
+    private func postSetMonthlyTotals(values: [String: Double], completion: @escaping (Bool)->Void) {
+        let monthStr = monthYYYYMM(from: selectedMonth)
+        let urlString = "\(BackendConfig.baseURLString)/api/costs/monthly/\(username)/set-totals?month=\(monthStr)"
+        guard let url = URL(string: urlString) else { completion(false); return }
+
+        let payload: [String: Any] = ["costs": values]
+        guard let data = try? JSONSerialization.data(withJSONObject: payload) else { completion(false); return }
+
+        var req = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &req)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = data
+
+        URLSession.shared.dataTask(with: req) { _, response, error in
+            let code = (response as? HTTPURLResponse)?.statusCode ?? -1
+            completion(error == nil && (200...299).contains(code))
+        }.resume()
+    }
+
     private func saveCosts() {
-        // Validate all cost rows (non-excluded) have a value and are numeric
+        // Validate: reject non-numeric values but allow empty (treated as 0)
         let invalid = costItems.first { item in
             guard !trackerExclusions.contains(item.category) else { return false }
             let trimmed = item.amount.trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmed.isEmpty { return true }
+            if trimmed.isEmpty { return false } // empty = 0, that's fine
             return Double(trimmed) == nil
         }
         if invalid != nil {
-            activeAlert = AppAlert(title: "Missing Amount", message: "Please enter a number for every cost before saving.")
+            activeAlert = AppAlert(title: "Invalid Amount", message: "Please enter a valid number (or leave blank for $0).")
             return
         }
 
-        // build payload excluding tracker exclusions and zeroes
-        let values = costItems.reduce(into: [String: Double]()) { acc, item in
-            guard !trackerExclusions.contains(item.category),
-                  let v = Double(item.amount), v != 0 else { return }
-            acc[item.category] = v
-        }
-        
-        let day = selectedDay
-        let group = DispatchGroup()
-        var okW = false, okM = false
-        
-        group.enter()
-        postMerge(type: "weekly", date: day, values: values) { ok in okW = ok; group.leave() }
-        
-        group.enter()
-        postMerge(type: "monthly", date: day, values: values) { ok in okM = ok; group.leave() }
-        
-        group.notify(queue: .main) {
-            if !(okW && okM) {
-                print("Merge failed weekly:\(okW), monthly:\(okM)")
-                activeAlert = AppAlert(title: "Save Error", message: "We couldn't save everything. Please try again.")
-                return
+        let isDaily = costsViewMode == "Daily"
+        let successMsg = isDaily
+            ? "Costs for \(selectedDayDisplayText) saved."
+            : "Your monthly costs have been saved."
+
+        if isDaily {
+            // Daily: build payload excluding tracker exclusions and zeroes
+            let values = costItems.reduce(into: [String: Double]()) { acc, item in
+                guard !trackerExclusions.contains(item.category),
+                      let v = Double(item.amount), v != 0 else { return }
+                acc[item.category] = v
             }
-            self.loadWeeklyPeriod(for: self.selectedDay)
-            self.activeAlert = AppAlert(
-                title: "Success",
-                message: "Your \(selectedType) costs have been saved."
-            )
-            
-            if self.selectedType == "Monthly" {
-                self.fetchMonthlyFeedback(for: self.selectedDay)
+            // SET this day's costs directly
+            postMerge(type: "monthly", date: selectedDay, values: values) { ok in
+                DispatchQueue.main.async {
+                    if !ok { self.activeAlert = AppAlert(title: "Save Error", message: "We couldn't save. Please try again."); return }
+                    self.loadMonthlyData()
+                    self.fetchMonthlyFeedback(for: self.selectedMonth)
+                    self.activeAlert = AppAlert(title: "Success", message: successMsg)
+                }
+            }
+        } else {
+            // Monthly: send desired totals to backend.
+            // Backend stores adjustments separately from day entries,
+            // so monthly-only costs (like rent) won't appear in weekly charts.
+            let values = costItems.reduce(into: [String: Double]()) { acc, item in
+                guard !trackerExclusions.contains(item.category) else { return }
+                let v = Double(item.amount) ?? 0
+                acc[item.category] = v
+            }
+            postSetMonthlyTotals(values: values) { ok in
+                DispatchQueue.main.async {
+                    if !ok { self.activeAlert = AppAlert(title: "Save Error", message: "We couldn't save. Please try again."); return }
+                    self.loadMonthlyData()
+                    self.fetchMonthlyFeedback(for: self.selectedMonth)
+                    self.activeAlert = AppAlert(title: "Success", message: successMsg)
+                }
             }
         }
-        
     }
+
     
     // MARK: - Budget Limits + Costs
     private func loadBudgetLimits() {
-        let urlString = "\(BackendConfig.baseURLString)/api/budget/\(username)/\(selectedType.lowercased())"
+        let urlString = "\(BackendConfig.baseURLString)/api/budget/\(username)/monthly"
         guard let url = URL(string: urlString) else { return }
 
         var request = URLRequest(url: url)
@@ -638,16 +1064,8 @@ struct WeeklyMonthlyCostView: View {
             do {
                 let decoded = try JSONDecoder().decode(BudgetResponse.self, from: data)
                 DispatchQueue.main.async {
-                    // exclude 401k-like lines from limit visual
-                    self.budgetLimits = decoded.budget.filter { !trackerExclusions.contains($0.key) }
-                    
-                    if self.selectedType == "Weekly" {
-                        self.rebuildWeek(for: self.selectedDay)
-                        self.loadWeeklyPeriod(for: self.selectedDay)
-                    } else {
-                        self.loadSavedData()
-                        self.fetchMonthlyFeedback(for: self.selectedDay)
-                    }
+                    self.budgetLimits = decoded.budget.filter { !self.trackerExclusions.contains($0.key) }
+                    self.loadMonthlyData()
                 }
             } catch {
                 print("Failed to decode budget data:", error)
@@ -655,14 +1073,8 @@ struct WeeklyMonthlyCostView: View {
         }.resume()
     }
     
-    private func loadSavedData() {
-        if selectedType == "Weekly" {
-            loadCostsForSelectedDay() // uses weeklyPeriod already loaded
-            return
-        }
-        
-        // MONTHLY: read the period file and show totals
-        let monthStr = monthYYYYMM(from: selectedDay)
+    private func loadMonthlyData() {
+        let monthStr = monthYYYYMM(from: selectedMonth)
         let urlString = "\(BackendConfig.baseURLString)/api/costs/monthly/\(username)?month=\(monthStr)"
         guard let url = URL(string: urlString) else { return }
 
@@ -673,15 +1085,57 @@ struct WeeklyMonthlyCostView: View {
             guard let data = data else { return }
             if let period = try? JSONDecoder().decode(WeeklyPeriod.self, from: data) {
                 DispatchQueue.main.async {
-                    let totals = period.totals
-                    let keys = Set(totals.keys)
-                        .union(self.budgetLimits.keys)
-                        .subtracting(self.trackerExclusions)
-                        .sorted()
-                    self.costItems = keys.map { BudgetItem(category: $0, amount: String(totals[$0] ?? 0.0)) }
+                    self.monthlyPeriod = period
+                    self.monthlyTotals = period.totals
+
+                    if self.costsViewMode == "Daily" {
+                        self.loadDayCostsIntoCostItems()
+                    } else {
+                        self.loadMonthlyTotalsIntoCostItems()
+                    }
                 }
             }
         }.resume()
+    }
+
+    private func loadMonthlyTotalsIntoCostItems() {
+        let totals = monthlyTotals
+        // Exclude fixed cost categories (they're shown in the fixed costs section)
+        let fixedCatNames = Set(fixedCosts.map { $0.category.lowercased() })
+
+        // Only fall back to budget categories if there are no saved totals for this month
+        var keys = Set(totals.keys)
+        if keys.isEmpty {
+            keys = keys.union(budgetLimits.keys)
+        }
+        let sorted = keys
+            .subtracting(trackerExclusions)
+            .filter { !fixedCatNames.contains($0.lowercased()) }
+            .sorted()
+        costItems = sorted.map { cat in
+            let v = totals[cat] ?? 0.0
+            return BudgetItem(category: cat, amount: v == 0.0 ? "" : String(v))
+        }
+    }
+
+    private func loadDayCostsIntoCostItems() {
+        let dayKey = selectedDay.ymd()
+        let dayCosts = monthlyPeriod?.days[dayKey] ?? [:]
+        // Exclude fixed cost categories
+        let fixedCatNames = Set(fixedCosts.map { $0.category.lowercased() })
+
+        var keys = Set(dayCosts.keys)
+        if keys.isEmpty {
+            keys = keys.union(budgetLimits.keys)
+        }
+        let sorted = keys
+            .subtracting(trackerExclusions)
+            .filter { !fixedCatNames.contains($0.lowercased()) }
+            .sorted()
+        costItems = sorted.map { cat in
+            let v = dayCosts[cat] ?? 0.0
+            return BudgetItem(category: cat, amount: v == 0.0 ? "" : String(v))
+        }
     }
     
     private func monthYYYYMM(from date: Date) -> String {
@@ -692,38 +1146,6 @@ struct WeeklyMonthlyCostView: View {
     }
     
     
-    private func setDefaultCategories() {
-        self.costItems = [
-            BudgetItem(category: "Rent", amount: ""),
-            BudgetItem(category: "Groceries", amount: ""),
-            BudgetItem(category: "Subscriptions", amount: ""),
-            BudgetItem(category: "Eating Out", amount: ""),
-            BudgetItem(category: "Entertainment", amount: ""),
-            BudgetItem(category: "Utilities", amount: ""),
-            BudgetItem(category: "Savings", amount: ""),
-            BudgetItem(category: "Miscellaneous", amount: ""),
-            BudgetItem(category: "Transportation", amount: ""),
-            BudgetItem(category: "Roth IRA", amount: ""),
-            BudgetItem(category: "Car Insurance", amount: ""),
-            BudgetItem(category: "Health Insurance", amount: ""),
-            BudgetItem(category: "Brokerage", amount: "")
-        ]
-    }
-    
-    private func checkBudgetWarnings() {
-        budgetWarningMessage = ""
-        for item in costItems {
-            if let limit = budgetLimits[item.category],
-               let cost = Double(item.amount),
-               cost >= limit {
-                budgetWarningMessage += "\(item.category) exceeds the budget limit!\n"
-            }
-        }
-        //showBudgetWarning = !budgetWarningMessage.isEmpty
-        if !budgetWarningMessage.isEmpty {
-            activeAlert = AppAlert(title: "⚠️ Budget Warning", message: budgetWarningMessage)
-        }
-    }
     
     // MARK: - Notifications
     private func requestNotificationPermission() {
@@ -749,7 +1171,7 @@ struct WeeklyMonthlyCostView: View {
 
     // MARK: - Recurring subscription prompts (Plaid)
     private func fetchRecurringSubscriptionPrompts() async {
-        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/subscriptions/recurring/analyze/\(username)?months=3&remindAfterMonths=2") else { return }
+        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/subscriptions/recurring/analyze/\(username)?months=6&remindAfterMonths=2") else { return }
         do {
             var request = URLRequest(url: url)
             BackendConfig.addApiKey(to: &request)
@@ -924,103 +1346,10 @@ struct WeeklyMonthlyCostView: View {
         }.resume()
     }
     
-    // MARK: - Weekly header + period loading
-    private func rebuildWeek(for date: Date) {
-        let start = Calendar.current.startOfWeek(for: date)
-        weekDays = (0..<7).map { start.addingDays($0) }
-    }
-    
-    private var weekHeader: some View {
-        HStack(spacing: 4) {
-            Button {
-                selectedDay = selectedDay.addingDays(-7)
-                rebuildWeek(for: selectedDay)
-                loadWeeklyPeriod(for: selectedDay)
-            } label: {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 12))
-                    .foregroundColor(PLColor.textPrimary)
-                    .frame(width: 20, height: 20)
-                    .contentShape(Rectangle())
-            }
-
-            Spacer(minLength: 4)
-            
-            ForEach(weekDays, id: \.self) { d in
-                let isSelected = Calendar.current.isDate(d, inSameDayAs: selectedDay)
-                VStack(spacing: 1) {
-                    Text(d.shortWeekday())
-                        .font(.system(size: 9))
-                        .foregroundColor(PLColor.textSecondary)
-                    Text(d.monthDay())
-                        .font(.system(size: 11))
-                        .foregroundColor(PLColor.textPrimary)
-                }
-                .frame(minWidth: 28)
-                .padding(.vertical, 3)
-                .padding(.horizontal, 2)
-                .background(isSelected ? PLColor.accent.opacity(0.12) : Color.clear)
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    selectedDay = d
-                    loadCostsForSelectedDay()
-                }
-            }
-
-            Spacer(minLength: 4)
-
-            Button {
-                selectedDay = selectedDay.addingDays(+7)
-                rebuildWeek(for: selectedDay)
-                loadWeeklyPeriod(for: selectedDay)
-            } label: {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 12))
-                    .foregroundColor(PLColor.textPrimary)
-                    .frame(width: 20, height: 20)
-                    .contentShape(Rectangle())
-            }
-        }
-    }
-    
-    private func loadWeeklyPeriod(for anyDate: Date) {
-        let weekStart = Calendar.current.startOfWeek(for: anyDate).ymd()
-        let urlStr = "\(BackendConfig.baseURLString)/api/costs/weekly/\(username)?week_start=\(weekStart)"
-        guard let url = URL(string: urlStr) else { return }
-
-        var request = URLRequest(url: url)
-        BackendConfig.addApiKey(to: &request)
-        URLSession.shared.dataTask(with: request) { data, _, error in
-            guard let data = data, error == nil,
-                  let period = try? JSONDecoder().decode(WeeklyPeriod.self, from: data) else {
-                DispatchQueue.main.async {
-                    self.weeklyPeriod = WeeklyPeriod(periodKey: "", start: weekStart, end: weekStart, days: [:], totals: [:])
-                    self.loadCostsForSelectedDay()
-                }
-                return
-            }
-            DispatchQueue.main.async {
-                self.weeklyPeriod = period
-                self.loadCostsForSelectedDay()
-            }
-        }.resume()
-    }
-    
-    private func loadCostsForSelectedDay() {
-        let dayKey = selectedDay.ymd()
-        let dayMap = weeklyPeriod?.days[dayKey] ?? [:]
-        let keys = Set(dayMap.keys)
-            .union(Set(budgetLimits.keys))
-            .subtracting(trackerExclusions)
-            .sorted()
-        self.costItems = keys.map { BudgetItem(category: $0, amount: String(dayMap[$0] ?? 0.0)) }
-    }
-    
-    // Feedback
+    // MARK: - Feedback
     private func fetchMonthlyFeedback(for date: Date) {
-        let currentMonth = monthYYYYMM(from: Date())
-        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/costs/feedback/\(username)?month=\(currentMonth)")
+        let month = monthYYYYMM(from: date)
+        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/costs/feedback/\(username)?month=\(month)")
         else { return }
 
         var request = URLRequest(url: url)
@@ -1032,23 +1361,21 @@ struct WeeklyMonthlyCostView: View {
                 let data = data,
                 !data.isEmpty,
                 let decoded = try? JSONDecoder().decode(MonthlyFeedback.self, from: data),
-                decoded.month == currentMonth
+                decoded.month == month
             else { DispatchQueue.main.async { self.monthlyFeedback = nil }; return }
 
-            // Require a real previous-month baseline
             if decoded.totalPrevious == 0 {
                 DispatchQueue.main.async { self.monthlyFeedback = nil }
                 return
             }
 
-            // If both totals are zero, treat as "no data"
             if decoded.totalCurrent == 0 && decoded.totalPrevious == 0 {
                 DispatchQueue.main.async { self.monthlyFeedback = nil }
                 return
             }
 
             DispatchQueue.main.async { self.monthlyFeedback = decoded }
-        }.resume();
+        }.resume()
     }
     
     // Fetch accounts (grouped across items) the user can pick from
@@ -1180,10 +1507,8 @@ struct WeeklyMonthlyCostView: View {
                 )
                 if uncategorized.isEmpty {
                     self.showSyncDone = true
-                    // refresh UI
-                    self.rebuildWeek(for: self.selectedDay)
-                    self.loadWeeklyPeriod(for: self.selectedDay)
-                    if self.selectedType == "Monthly" { self.fetchMonthlyFeedback(for: self.selectedDay) }
+                    self.loadMonthlyData()
+                    self.fetchMonthlyFeedback(for: self.selectedMonth)
                     Task { await fetchRecurringSubscriptionPrompts() }
                 } else {
                     self.showCategorizer = true
@@ -1238,14 +1563,6 @@ struct WeeklyMonthlyCostView: View {
         }
     }
     
-    private func parseYMD(_ s: String) -> Date? {
-        let f = DateFormatter()
-        f.calendar = .init(identifier: .gregorian)
-        f.timeZone = TimeZone(secondsFromGMT: 0)
-        f.dateFormat = "yyyy-MM-dd"
-        return f.date(from: s)
-    }
-    
     // Send assignments to backend
     private func submitAssignments() async {
         // First, submit any skipped transactions
@@ -1256,9 +1573,8 @@ struct WeeklyMonthlyCostView: View {
             await MainActor.run {
                 self.showCategorizer = false
                 self.showSyncDone = true
-                self.rebuildWeek(for: self.selectedDay)
-                self.loadWeeklyPeriod(for: self.selectedDay)
-                if self.selectedType == "Monthly" { self.fetchMonthlyFeedback(for: self.selectedDay) }
+                self.loadMonthlyData()
+                self.fetchMonthlyFeedback(for: self.selectedMonth)
                 NotificationCenter.default.post(name: .plaidSynced, object: nil)
             }
             return
@@ -1285,17 +1601,11 @@ struct WeeklyMonthlyCostView: View {
                 return
             }
 
-            // pick a date to jump to (if exactly one day was assigned)
-            let days = Array(Set(pendingAssignments.map { $0.date })).sorted()
             await MainActor.run {
                 self.showCategorizer = false
                 self.showSyncDone = true
-                if days.count == 1, let d = parseYMD(days[0]) {
-                    self.selectedDay = d
-                }
-                self.rebuildWeek(for: self.selectedDay)
-                self.loadWeeklyPeriod(for: self.selectedDay)
-                if self.selectedType == "Monthly" { self.fetchMonthlyFeedback(for: self.selectedDay) }
+                self.loadMonthlyData()
+                self.fetchMonthlyFeedback(for: self.selectedMonth)
                 NotificationCenter.default.post(name: .plaidSynced, object: nil)
             }
             await fetchRecurringSubscriptionPrompts()
@@ -1314,53 +1624,49 @@ private struct CostRow: View {
     let budgetLimit: Double?
     var onRemove: () -> Void
     var onChangeAmount: (String) -> Void
-    
-    var body: some View {
-        HStack(spacing: PLSpacing.sm) {
-            Text(item.category)
-                .frame(width: 130, alignment: .leading)
-            
-            TextField("Amount ($)", text: $item.amount)
-                .keyboardType(.decimalPad)
-                .textFieldStyle(.roundedBorder)
-                .onChange(of: item.amount) { newValue in
-                    onChangeAmount(newValue)
-                }
-            
-            if let limit = budgetLimit, let cost = Double(item.amount) {
-                if cost > limit {
-                    IconBadge(text: "Over budget!", system: "exclamationmark.triangle.fill", color: PLColor.danger)
-                } else if cost >= limit * 0.8 {
-                    IconBadge(text: "Nearing budget", system: "exclamationmark.triangle.fill", color: PLColor.warning)
-                }
-            }
-            
-            Spacer(minLength: PLSpacing.sm)
-            Button(action: onRemove) {
-                Image(systemName: "minus.circle.fill")
-                    .foregroundColor(PLColor.danger)
-            }
-        }
-    }
-}
 
-// Tiny badge used above
-private struct IconBadge: View {
-    let text: String
-    let system: String
-    let color: Color
-    var body: some View {
-        HStack(spacing: 4) {
-            Image(systemName: system)
-            Text(text)
-        }
-        .font(.caption)
-        .padding(.horizontal, 8).padding(.vertical, 4)
-        .background(Color.white)
-        .foregroundColor(color)
-        .clipShape(RoundedRectangle(cornerRadius: 6))
-        .overlay(RoundedRectangle(cornerRadius: 6).stroke(color.opacity(0.25)))
+    private var budgetStatus: BudgetStatus? {
+        guard let limit = budgetLimit, let cost = Double(item.amount), cost > 0 else { return nil }
+        if cost > limit { return .over }
+        if cost >= limit * 0.8 { return .nearing }
+        return nil
     }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: PLSpacing.sm) {
+                Text(item.category)
+                    .font(.subheadline)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                TextField("$0", text: $item.amount)
+                    .keyboardType(.decimalPad)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 90)
+                    .onChange(of: item.amount) { newValue in
+                        onChangeAmount(newValue)
+                    }
+
+                Button(action: onRemove) {
+                    Image(systemName: "minus.circle.fill")
+                        .foregroundColor(PLColor.danger)
+                }
+            }
+
+            if let status = budgetStatus {
+                HStack(spacing: 4) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.caption2)
+                    Text(status == .over ? "Over budget" : "Nearing budget")
+                        .font(.caption)
+                }
+                .foregroundColor(status == .over ? PLColor.danger : PLColor.warning)
+            }
+        }
+    }
+
+    private enum BudgetStatus { case over, nearing }
 }
 
 // MARK: - Calendar helpers
@@ -1394,6 +1700,13 @@ struct SubscriptionItem: Identifiable, Codable {
     var dueDate: Date
 
 }
+// Fixed monthly cost item
+struct FixedCostItem: Codable, Identifiable {
+    let id: String
+    let category: String
+    let amount: Double
+}
+
 // For the days of the week at the top
 struct WeeklyPeriod: Codable {
     let periodKey: String
@@ -1401,6 +1714,7 @@ struct WeeklyPeriod: Codable {
     let end: String
     let days: [String: [String: Double]] // "YYYY-MM-DD" -> category->amount
     let totals: [String: Double]
+    let adjustments: [String: Double]? // monthly-only costs (not in days/weekly charts)
 }
 
 // Decode date to be able to upload it to the backend
@@ -1415,22 +1729,24 @@ struct CodableDate: Codable {
     init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
         let dateString = try container.decode(String.self)
-        print("Decoding date: \(dateString)")
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = formatter.date(from: dateString) {
+        let f1 = ISO8601DateFormatter()
+        f1.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let f2 = ISO8601DateFormatter()
+        f2.formatOptions = [.withInternetDateTime]
+        if let date = f1.date(from: dateString) ?? f2.date(from: dateString) {
             self.wrappedValue = date
-            print("Successfully decoded date:", date)
         } else {
-            print("Failed to decode date:", dateString)
-            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Invalid date format")
+            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Invalid date format: \(dateString)")
         }
     }
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.singleValueContainer()
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        // Use DateFormatter with exact UTC 'Z' format the backend expects
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'"
+        formatter.timeZone = TimeZone(identifier: "UTC")
         let dateString = formatter.string(from: wrappedValue)
         try container.encode(dateString)
     }
@@ -1448,7 +1764,7 @@ struct SubscriptionMapResponse: Codable {
 
 struct SubscriptionData: Codable {
     let name: String
-    let cost: String
+    let cost: String?
     @CodableDate var dueDate: Date
 }
 
@@ -1521,8 +1837,8 @@ private struct CategoryDelta: Codable, Identifiable {
     let category: String
     let current: Double
     let previous: Double
-    let delta: Double        // current - previous
-    let pct: Double?         // nil means no baseline last month
+    let delta: Double        // current - average
+    let pct: Double?         // nil means no prior-month baseline for this category
 }
 
 private struct MonthlyFeedback: Codable {
@@ -1535,6 +1851,7 @@ private struct MonthlyFeedback: Codable {
     let overBudget: Bool?
     let monthlyBudget: Double?
     let cutbacks: [CategoryDelta]?
+    let monthsCompared: Int?
 }
 
 private struct FeedbackRow: View {
@@ -1627,10 +1944,21 @@ private struct MonthlyFeedbackCard: View {
         fb.cutbacks ?? []
     }
 
+    private var comparisonLabel: String {
+        switch fb.monthsCompared ?? 1 {
+        case 1:  return "Last Month"
+        case let n: return "Avg of \(n) Months"
+        }
+    }
+
+    private var headerTitle: String {
+        (fb.monthsCompared ?? 1) <= 1 ? "This Month vs Last Month" : "This Month vs Your Average"
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: PLSpacing.sm) {
             HStack {
-                Text("This Month vs Last Month")
+                Text(headerTitle)
                     .font(.headline)
                 Spacer()
                 Text(verdictText)
@@ -1649,7 +1977,7 @@ private struct MonthlyFeedbackCard: View {
                 }
                 Spacer()
                 VStack(alignment: .trailing) {
-                    Text("Last Month")
+                    Text(comparisonLabel)
                         .font(.caption)
                         .foregroundColor(PLColor.textSecondary)
                     Text(previousTotalText)

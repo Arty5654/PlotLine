@@ -108,6 +108,9 @@ struct SubsView: View {
         } message: {
             Text("We detected \(newRecurringCount) potential subscription\(newRecurringCount == 1 ? "" : "s") from your transactions. Review them below to add to your tracking.")
         }
+        .onChange(of: calendarVM.events.count) { _ in
+            mergeFromCalendar()
+        }
     }
 
     // MARK: - Budget Summary Card
@@ -397,7 +400,7 @@ struct SubsView: View {
                 return
             }
             let list = decoded.subscriptions.map { (name, subData) in
-                SubscriptionItem(name: name, cost: subData.cost, dueDate: subData.dueDate)
+                SubscriptionItem(name: name, cost: subData.cost ?? "", dueDate: subData.dueDate)
             }
             DispatchQueue.main.async {
                 self.subscriptions = list
@@ -550,8 +553,9 @@ struct SubsView: View {
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = body
-        URLSession.shared.dataTask(with: req) { _, _, _ in
-            DispatchQueue.main.async { self.showSavedAlert = true }
+        URLSession.shared.dataTask(with: req) { _, response, _ in
+            let ok = (response as? HTTPURLResponse).map { (200...299).contains($0.statusCode) } ?? false
+            DispatchQueue.main.async { if ok { self.showSavedAlert = true } }
         }.resume()
     }
 

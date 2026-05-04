@@ -32,6 +32,7 @@ struct FoodItem: Codable, Identifiable {
         case manual
         case barcode
         case photo
+        case search
     }
 
     enum MealType: String, Codable, CaseIterable {
@@ -97,7 +98,7 @@ struct NutritionGoals: Codable {
     static func macrosFrom(calories: Double, weightGoal: QuizData.WeightGoal) -> (protein: Double, carbs: Double, fat: Double) {
         let splits: (p: Double, c: Double, f: Double) = {
             switch weightGoal {
-            case .lose:     return (0.40, 0.30, 0.30)
+            case .lose:     return (0.30, 0.40, 0.30)
             case .maintain: return (0.30, 0.40, 0.30)
             case .gain:     return (0.30, 0.45, 0.25)
             }
@@ -174,7 +175,7 @@ struct QuizData: Codable {
         }
         var detail: String {
             switch self {
-            case .lose:     return "~1 lb/week deficit"
+            case .lose:     return "~1 lb/week calorie deficit"
             case .maintain: return "Stay at current weight"
             case .gain:     return "~0.5 lb/week surplus"
             }
@@ -193,7 +194,7 @@ struct QuizData: Codable {
     /// Adjusted calories for weight goal
     var targetCalories: Double {
         switch weightGoal {
-        case .lose:     return tdee - 500
+        case .lose:     return tdee - 600
         case .maintain: return tdee
         case .gain:     return tdee + 300
         }
@@ -210,12 +211,14 @@ struct OFFProductDetail: Codable {
     let productName: String?
     let brands: String?
     let servingSize: String?
+    let servingQuantity: Double?
     let nutriments: OFFNutriments?
 
     enum CodingKeys: String, CodingKey {
         case productName = "product_name"
         case brands
         case servingSize = "serving_size"
+        case servingQuantity = "serving_quantity"
         case nutriments
     }
 }
@@ -229,6 +232,12 @@ struct OFFNutriments: Codable {
     let proteinsServing: Double?
     let carbohydratesServing: Double?
     let fatServing: Double?
+    // Some products store energy in kJ instead of kcal
+    let energyKj100g: Double?
+    let energyKjServing: Double?
+    // Some products use "energy_100g" which is kJ
+    let energy100g: Double?
+    let energyServing: Double?
 
     enum CodingKeys: String, CodingKey {
         case energyKcal100g = "energy-kcal_100g"
@@ -239,5 +248,36 @@ struct OFFNutriments: Codable {
         case proteinsServing = "proteins_serving"
         case carbohydratesServing = "carbohydrates_serving"
         case fatServing = "fat_serving"
+        case energyKj100g = "energy-kj_100g"
+        case energyKjServing = "energy-kj_serving"
+        case energy100g = "energy_100g"
+        case energyServing = "energy_serving"
     }
+
+    /// Best available kcal per serving, converting from kJ if needed (1 kJ ≈ 0.239 kcal)
+    var bestCaloriesServing: Double? {
+        if let v = energyKcalServing, v > 0 { return v }
+        if let v = energyKjServing, v > 0 { return v * 0.239 }
+        if let v = energyServing, v > 0 {
+            // energy_serving is usually kJ
+            return v * 0.239
+        }
+        return nil
+    }
+
+    /// Best available kcal per 100g, converting from kJ if needed
+    var bestCalories100g: Double? {
+        if let v = energyKcal100g, v > 0 { return v }
+        if let v = energyKj100g, v > 0 { return v * 0.239 }
+        if let v = energy100g, v > 0 {
+            return v * 0.239
+        }
+        return nil
+    }
+}
+
+// Open Food Facts search response
+struct OFFSearchResponse: Codable {
+    let count: Int?
+    let products: [OFFProductDetail]?
 }

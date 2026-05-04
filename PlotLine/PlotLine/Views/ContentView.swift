@@ -73,6 +73,11 @@ struct ContentView: View {
                                 .plCard()
                         }
                         .buttonStyle(PlainButtonStyle())
+                        
+                        NavigationLink { NutritionView() } label: {
+                            NutritionWidget().plCard()
+                        }
+                        .buttonStyle(PlainButtonStyle())
 
                         NavigationLink { TopGroceryListView() } label: {
                             GroceryListWidget().plCard()
@@ -81,11 +86,6 @@ struct ContentView: View {
 
                         NavigationLink { GoalsView().environmentObject(calendarVM) } label: {
                             GoalsWidget().environmentObject(calendarVM).plCard()
-                        }
-                        .buttonStyle(PlainButtonStyle())
-
-                        NavigationLink { NutritionView() } label: {
-                            NutritionWidget().plCard()
                         }
                         .buttonStyle(PlainButtonStyle())
                     }
@@ -343,13 +343,14 @@ struct SpendingPreviewWidget: View {
         }
     }
 
-    // GET /api/costs/weekly/{username}?week_start=YYYY-MM-DD
+    // Derive current week's daily spending from the monthly file
     private func fetchCurrentWeekSeries() async throws -> [DayPoint] {
         let cal = Calendar.current
         let weekStart = cal.startOfWeek(for: Date())
-        let startStr = weekStart.ymd()
+        let f = DateFormatter(); f.calendar = .init(identifier: .gregorian); f.dateFormat = "yyyy-MM"
+        let monthStr = f.string(from: Date())
 
-        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/costs/weekly/\(username)?week_start=\(startStr)") else {
+        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/costs/monthly/\(username)?month=\(monthStr)") else {
             return []
         }
         var request = URLRequest(url: url)

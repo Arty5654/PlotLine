@@ -18,7 +18,7 @@ public class CostsAssignController {
     this.tokenStore = t;
   }
 
-  public record Assignment(String txnId, String date, String category, Double amount) {}
+  public record Assignment(String txnId, String date, String name, String category, Double amount) {}
   public record AssignBody(String username, List<Assignment> assignments) {}
 
   @PostMapping("/assign")
@@ -36,6 +36,14 @@ public class CostsAssignController {
       for (var e : dayMap.entrySet()) {
         costsWriter.addDated(body.username(), "weekly",  e.getKey(), e.getValue());
         costsWriter.addDated(body.username(), "monthly", e.getKey(), e.getValue());
+      }
+
+      // Store individual transaction details so they appear in the Transactions view
+      for (Assignment a : body.assignments()) {
+        if (a.amount() == null || a.amount() == 0.0) continue;
+        String txnName = (a.name() != null && !a.name().isBlank()) ? a.name() : a.txnId();
+        costsWriter.storeTransaction(body.username(), a.date(), a.txnId(),
+            txnName, a.amount(), a.category(), "manual");
       }
 
       return ResponseEntity.ok(Map.of("ok", true, "days", dayMap.keySet()));

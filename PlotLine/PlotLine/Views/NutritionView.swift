@@ -49,6 +49,7 @@ struct NutritionView: View {
     @State private var selectedMealType: FoodItem.MealType = Self.suggestedMealType()
 
     // Sheet states
+    @State private var showFoodSearch = false
     @State private var showManualEntry = false
     @State private var showBarcodeScanner = false
     @State private var showCamera = false
@@ -97,6 +98,7 @@ struct NutritionView: View {
         .navigationTitle("Nutrition")
         .onAppear { loadEntry(); loadUserData() }
         .onChange(of: selectedDate) { _ in loadEntry() }
+        .sheet(isPresented: $showFoodSearch) { FoodSearchSheet { food in addFood(food) } }
         .sheet(isPresented: $showManualEntry) { ManualFoodEntrySheet { food in addFood(food) } }
         .sheet(isPresented: $showBarcodeScanner) { barcodeScannerSheet }
         .sheet(isPresented: $showBarcodeResult) { barcodeResultSheet }
@@ -306,6 +308,7 @@ struct NutritionView: View {
     // MARK: - Add Food Buttons
     private var addFoodButtons: some View {
         HStack(spacing: PLSpacing.sm) {
+            addButton(icon: "magnifyingglass", label: "Search") { showFoodSearch = true }
             addButton(icon: "pencil.line", label: "Manual") { showManualEntry = true }
             addButton(icon: "barcode.viewfinder", label: "Barcode") { showBarcodeScanner = true }
             photoMenuButton
@@ -471,6 +474,7 @@ struct NutritionView: View {
             case .manual: Image(systemName: "pencil").font(.caption2)
             case .barcode: Image(systemName: "barcode").font(.caption2)
             case .photo: Image(systemName: "camera").font(.caption2)
+            case .search: Image(systemName: "magnifyingglass").font(.caption2)
             }
         }
         .foregroundColor(PLColor.textSecondary)
@@ -816,8 +820,12 @@ struct CreateMealSheet: View {
     @State private var mealName = ""
     @State private var selectedFoodIds: Set<String> = []
 
-    // Manual add fields
+    // Add food options
     @State private var showAddManual = false
+    @State private var showAddSearch = false
+    @State private var showAddBarcode = false
+    @State private var scannedFood: FoodItem?
+    @State private var showScannedResult = false
     @State private var manualName = ""
     @State private var manualServing = ""
     @State private var manualServings = "1"
@@ -864,8 +872,18 @@ struct CreateMealSheet: View {
                         }
                     }
 
-                    Button { showAddManual = true } label: {
-                        Label("Add Food Manually", systemImage: "plus.circle")
+                    Menu {
+                        Button { showAddSearch = true } label: {
+                            Label("Search Food", systemImage: "magnifyingglass")
+                        }
+                        Button { showAddBarcode = true } label: {
+                            Label("Scan Barcode", systemImage: "barcode.viewfinder")
+                        }
+                        Button { showAddManual = true } label: {
+                            Label("Enter Manually", systemImage: "pencil.line")
+                        }
+                    } label: {
+                        Label("Add Food", systemImage: "plus.circle")
                     }
                 }
 
@@ -898,6 +916,203 @@ struct CreateMealSheet: View {
                 ManualFoodEntrySheet { food in
                     extraFoods.append(food)
                     selectedFoodIds.insert(food.id)
+                }
+            }
+            .sheet(isPresented: $showAddSearch) {
+                FoodSearchSheet { food in
+                    extraFoods.append(food)
+                    selectedFoodIds.insert(food.id)
+                }
+            }
+            .sheet(isPresented: $showAddBarcode) {
+                NavigationView {
+                    BarcodeScannerView { barcode in
+                        showAddBarcode = false
+                        lookupBarcode(barcode)
+                    }
+                    .navigationBarTitle("Scan Barcode", displayMode: .inline)
+                    .navigationBarItems(leading: Button("Cancel") { showAddBarcode = false })
+                }
+            }
+            .sheet(isPresented: $showScannedResult) {
+                if let food = scannedFood {
+                    NavigationView {
+                        ServingsAdjustmentSheet(food: food) { adjusted in
+                            extraFoods.append(adjusted)
+                            selectedFoodIds.insert(adjusted.id)
+                            showScannedResult = false
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func lookupBarcode(_ barcode: String) {
+        Task {
+            if let food = try? await NutritionAPI.shared.lookupBarcode(barcode) {
+                await MainActor.run {
+                    scannedFood = food
+                    showScannedResult = true
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Food Search Sheet
+struct FoodSearchSheet: View {
+    let onSelect: (FoodItem) -> Void
+    @Environment(\.dismiss) var dismiss
+
+    @State private var query = ""
+    @State private var results: [FoodItem] = []
+    @State private var isSearching = false
+    @State private var hasSearched = false
+    @State private var selectedFood: FoodItem?
+    @State private var showServingsSheet = false
+
+    private let api = NutritionAPI.shared
+
+    // Debounce: only search after user stops typing
+    @State private var searchTask: Task<Void, Never>?
+
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 0) {
+                // Search bar
+                HStack(spacing: 10) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundColor(.secondary)
+                    TextField("Search foods (e.g. chicken, Big Mac...)", text: $query)
+                        .textInputAutocapitalization(.never)
+                        .disableAutocorrection(true)
+                        .submitLabel(.search)
+                        .onSubmit { performSearch() }
+                    if !query.isEmpty {
+                        Button { query = ""; results = []; hasSearched = false } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+                .padding(12)
+                .background(Color(.secondarySystemBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .padding(.horizontal)
+                .padding(.top, 8)
+
+                // Results
+                if isSearching {
+                    Spacer()
+                    ProgressView("Searching...")
+                    Spacer()
+                } else if results.isEmpty && hasSearched {
+                    Spacer()
+                    VStack(spacing: 8) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.largeTitle)
+                            .foregroundColor(.secondary)
+                        Text("No results found")
+                            .font(.headline)
+                            .foregroundColor(.secondary)
+                        Text("Try a different search term")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                } else if results.isEmpty {
+                    Spacer()
+                    VStack(spacing: 8) {
+                        Image(systemName: "fork.knife")
+                            .font(.largeTitle)
+                            .foregroundColor(.secondary)
+                        Text("Search for any food or product")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                } else {
+                    List {
+                        ForEach(results) { food in
+                            Button {
+                                selectedFood = food
+                                showServingsSheet = true
+                            } label: {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(food.name)
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundColor(.primary)
+                                        .lineLimit(2)
+                                    Text(food.servingSize)
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                    HStack(spacing: 12) {
+                                        Text("\(Int(food.calories)) cal")
+                                            .font(.caption.bold())
+                                        Text("P: \(Int(food.protein))g")
+                                            .font(.caption)
+                                        Text("C: \(Int(food.carbs))g")
+                                            .font(.caption)
+                                        Text("F: \(Int(food.fat))g")
+                                            .font(.caption)
+                                    }
+                                    .foregroundColor(.secondary)
+                                }
+                                .padding(.vertical, 4)
+                            }
+                        }
+                    }
+                    .listStyle(.plain)
+                }
+            }
+            .navigationBarTitle("Search Food", displayMode: .inline)
+            .navigationBarItems(leading: Button("Cancel") { dismiss() })
+            .sheet(isPresented: $showServingsSheet) {
+                if let food = selectedFood {
+                    NavigationView {
+                        ServingsAdjustmentSheet(food: food) { adjusted in
+                            onSelect(adjusted)
+                            showServingsSheet = false
+                            dismiss()
+                        }
+                    }
+                }
+            }
+            .onChange(of: query) { _ in
+                // Debounce: wait 500ms after typing stops before searching
+                searchTask?.cancel()
+                guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    results = []
+                    hasSearched = false
+                    return
+                }
+                searchTask = Task {
+                    try? await Task.sleep(nanoseconds: 500_000_000)
+                    guard !Task.isCancelled else { return }
+                    await MainActor.run { performSearch() }
+                }
+            }
+        }
+    }
+
+    private func performSearch() {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        isSearching = true
+        Task {
+            do {
+                let foods = try await api.searchFoods(trimmed)
+                await MainActor.run {
+                    results = foods
+                    isSearching = false
+                    hasSearched = true
+                }
+            } catch {
+                await MainActor.run {
+                    results = []
+                    isSearching = false
+                    hasSearched = true
                 }
             }
         }
@@ -964,8 +1179,20 @@ struct ServingsAdjustmentSheet: View {
     @Environment(\.dismiss) var dismiss
 
     @State private var servings: String = "1"
+    @State private var editCalories: String = ""
+    @State private var editProtein: String = ""
+    @State private var editCarbs: String = ""
+    @State private var editFat: String = ""
 
+    private var baseCalories: Double { Double(editCalories) ?? food.calories }
+    private var baseProtein: Double { Double(editProtein) ?? food.protein }
+    private var baseCarbs: Double { Double(editCarbs) ?? food.carbs }
+    private var baseFat: Double { Double(editFat) ?? food.fat }
     private var multiplier: Double { (Double(servings) ?? 1) / food.servings }
+
+    private var dataLooksIncomplete: Bool {
+        food.calories == 0 && food.protein == 0 && food.carbs == 0 && food.fat == 0
+    }
 
     var body: some View {
         Form {
@@ -982,15 +1209,64 @@ struct ServingsAdjustmentSheet: View {
                     }
                 }
             }
+
+            if dataLooksIncomplete {
+                Section {
+                    HStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundColor(.orange)
+                        Text("Nutrition data missing from database. You can enter values from the label below.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+
             Section(header: Text("How many servings?")) {
                 TextField("Servings", text: $servings)
                     .keyboardType(.decimalPad)
             }
-            Section(header: Text("Estimated Nutrition")) {
-                HStack { Text("Calories"); Spacer(); Text("\(Int(food.calories * multiplier))") }
-                HStack { Text("Protein"); Spacer(); Text("\(Int(food.protein * multiplier))g") }
-                HStack { Text("Carbs"); Spacer(); Text("\(Int(food.carbs * multiplier))g") }
-                HStack { Text("Fat"); Spacer(); Text("\(Int(food.fat * multiplier))g") }
+            Section(header: Text(dataLooksIncomplete ? "Nutrition (per serving)" : "Nutrition (editable)")) {
+                HStack {
+                    Text("Calories")
+                    Spacer()
+                    TextField("0", text: $editCalories)
+                        .keyboardType(.decimalPad)
+                        .multilineTextAlignment(.trailing)
+                        .frame(width: 80)
+                }
+                HStack {
+                    Text("Protein (g)")
+                    Spacer()
+                    TextField("0", text: $editProtein)
+                        .keyboardType(.decimalPad)
+                        .multilineTextAlignment(.trailing)
+                        .frame(width: 80)
+                }
+                HStack {
+                    Text("Carbs (g)")
+                    Spacer()
+                    TextField("0", text: $editCarbs)
+                        .keyboardType(.decimalPad)
+                        .multilineTextAlignment(.trailing)
+                        .frame(width: 80)
+                }
+                HStack {
+                    Text("Fat (g)")
+                    Spacer()
+                    TextField("0", text: $editFat)
+                        .keyboardType(.decimalPad)
+                        .multilineTextAlignment(.trailing)
+                        .frame(width: 80)
+                }
+            }
+            if !dataLooksIncomplete {
+                Section {
+                    HStack { Text("Total Calories"); Spacer(); Text("\(Int(baseCalories * multiplier))").bold() }
+                    HStack { Text("Total Protein"); Spacer(); Text("\(Int(baseProtein * multiplier))g") }
+                    HStack { Text("Total Carbs"); Spacer(); Text("\(Int(baseCarbs * multiplier))g") }
+                    HStack { Text("Total Fat"); Spacer(); Text("\(Int(baseFat * multiplier))g") }
+                }
             }
         }
         .navigationBarTitle("Adjust Servings", displayMode: .inline)
@@ -1000,15 +1276,21 @@ struct ServingsAdjustmentSheet: View {
                 var adjusted = food
                 let mult = multiplier
                 adjusted.servings = Double(servings) ?? 1
-                adjusted.calories = food.calories * mult
-                adjusted.protein = food.protein * mult
-                adjusted.carbs = food.carbs * mult
-                adjusted.fat = food.fat * mult
+                adjusted.calories = baseCalories * mult
+                adjusted.protein = baseProtein * mult
+                adjusted.carbs = baseCarbs * mult
+                adjusted.fat = baseFat * mult
                 onSave(adjusted)
             }
             .bold()
         )
-        .onAppear { servings = "\(food.servings)" }
+        .onAppear {
+            servings = "\(food.servings)"
+            editCalories = food.calories > 0 ? "\(Int(food.calories))" : ""
+            editProtein = food.protein > 0 ? "\(Int(food.protein))" : ""
+            editCarbs = food.carbs > 0 ? "\(Int(food.carbs))" : ""
+            editFat = food.fat > 0 ? "\(Int(food.fat))" : ""
+        }
     }
 }
 

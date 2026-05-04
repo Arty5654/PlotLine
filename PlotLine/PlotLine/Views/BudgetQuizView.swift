@@ -86,6 +86,23 @@ private struct OutlineButton: ButtonStyle {
     }
 }
 
+private let quizCommonCategories = [
+    // Defaults
+    "Rent", "Groceries", "Subscriptions", "Eating Out",
+    "Entertainment", "Utilities", "Savings", "Miscellaneous",
+    "Transportation", "Roth IRA", "Car Insurance",
+    "Health Insurance", "Brokerage",
+    // Additional common
+    "Gas", "Phone", "Internet", "Gym", "Clothing",
+    "Personal Care", "Education", "Childcare", "Pet Care",
+    "Home Maintenance", "Gifts", "Donations", "Travel",
+    "Baby Supplies", "Hobbies", "Shopping", "Coffee",
+    "Alcohol & Bars", "Home Decor", "Electronics",
+    "Medical", "Dental", "Vision", "Therapy",
+    "Parking", "Tolls", "Laundry", "Haircuts",
+    "Streaming Services", "Gaming", "Music", "Books"
+]
+
 struct BudgetQuizView: View {
     static let defaultCategories = [
         "Rent", "Groceries", "Subscriptions", "Eating Out",
@@ -158,6 +175,7 @@ struct BudgetQuizView: View {
     // Categories & known costs
     @State private var selectedCategories: Set<String> = Set(defaultCategories)
     @State private var customCategory = ""
+    @State private var showCustomCategoryPicker = false
     @State private var knownCosts: [String: String] = [:]
     
     // Loading / errors
@@ -175,6 +193,11 @@ struct BudgetQuizView: View {
     
     var username: String {
         UserDefaults.standard.string(forKey: "loggedInUsername") ?? "UnknownUser"
+    }
+
+    private var availableQuizCategories: [String] {
+        let current = Set(allCategories.map { $0.lowercased() })
+        return quizCommonCategories.filter { !current.contains($0.lowercased()) && !trackerExclusions.contains($0) }.sorted()
     }
     
     private func optionRow(_ title: String, isSelected: Bool) -> some View {
@@ -447,18 +470,41 @@ struct BudgetQuizView: View {
                         }
                     }
                     
-                    HStack(spacing: PLSpacing.sm) {
-                        TextField("Custom Category", text: $customCategory)
-                            .textFieldStyle(.roundedBorder)
-                        Button("Add") {
-                            let trimmed = customCategory.trimmingCharacters(in: .whitespacesAndNewlines)
-                            if !trimmed.isEmpty && !allCategories.contains(trimmed) && !trackerExclusions.contains(trimmed) {
-                                allCategories.append(trimmed)
-                                selectedCategories.insert(trimmed)
-                                customCategory = ""
+                    VStack(spacing: PLSpacing.xs) {
+                        Menu {
+                            ForEach(availableQuizCategories, id: \.self) { cat in
+                                Button(cat) {
+                                    allCategories.append(cat)
+                                    selectedCategories.insert(cat)
+                                }
                             }
+                            Divider()
+                            Button("Custom...") { showCustomCategoryPicker = true }
+                        } label: {
+                            HStack {
+                                Image(systemName: "plus.circle.fill")
+                                    .foregroundColor(.green)
+                                Text("Add Category")
+                                    .font(.subheadline)
+                                Spacer()
+                                Image(systemName: "chevron.down")
+                                    .font(.caption)
+                                    .foregroundColor(PLColor.textSecondary)
+                            }
+                            .padding(.vertical, 8)
                         }
-                        .buttonStyle(OutlineButton(tint: PLColor.accent))
+                        .alert("Custom Category", isPresented: $showCustomCategoryPicker) {
+                            TextField("Category name", text: $customCategory)
+                            Button("Add") {
+                                let trimmed = customCategory.trimmingCharacters(in: .whitespacesAndNewlines)
+                                if !trimmed.isEmpty && !allCategories.contains(trimmed) && !trackerExclusions.contains(trimmed) {
+                                    allCategories.append(trimmed)
+                                    selectedCategories.insert(trimmed)
+                                    customCategory = ""
+                                }
+                            }
+                            Button("Cancel", role: .cancel) { customCategory = "" }
+                        }
                     }
                 }
                 .plCard()
@@ -604,9 +650,8 @@ struct BudgetQuizView: View {
     
     func saveBudgetToBackend(_ budget: [String: Double]) async {
         do {
+            // Save monthly budget — backend auto-creates weekly (monthly / 4)
             try await postBudget(username: username, type: "monthly", budget: budget)
-            let weekly = budget.mapValues { $0 / 4.0 }
-            try await postBudget(username: username, type: "weekly", budget: weekly)
             await resetCostsToSelectedCategories()
             UserDefaults.standard.set(true, forKey: "budgetQuizCompleted")
             // Notify observers (e.g., BudgetView) to refresh state immediately
@@ -743,7 +788,6 @@ struct BudgetQuizView: View {
         }
         do {
             try await postCosts(username: username, type: "monthly", costs: zeros)
-            try await postCosts(username: username, type: "weekly",  costs: zeros)
             print("Costs reset to zeros for selected categories.")
         } catch { print("Failed to reset costs: \(error)") }
     }

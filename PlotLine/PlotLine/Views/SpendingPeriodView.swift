@@ -1,8 +1,24 @@
 import SwiftUI
 
+private let spendingCommonCategories = [
+    "Rent", "Groceries", "Subscriptions", "Eating Out",
+    "Entertainment", "Utilities", "Savings", "Miscellaneous",
+    "Transportation", "Roth IRA", "Car Insurance",
+    "Health Insurance", "Brokerage",
+    "Gas", "Phone", "Internet", "Gym", "Clothing",
+    "Personal Care", "Education", "Childcare", "Pet Care",
+    "Home Maintenance", "Gifts", "Donations", "Travel",
+    "Baby Supplies", "Hobbies", "Shopping", "Coffee",
+    "Alcohol & Bars", "Home Decor", "Electronics",
+    "Medical", "Dental", "Vision", "Therapy",
+    "Parking", "Tolls", "Laundry", "Haircuts",
+    "Streaming Services", "Gaming", "Music", "Books"
+]
+
 struct SpendingPeriodView: View {
     @State private var spendingItems: [BudgetItem] = []
     @State private var newCategory: String = ""
+    @State private var showCustomCategoryPicker = false
     
     // Instead of two separate Bool flags, we use one enum-based alert:
     @State private var activeAlert2: ActiveAlert2? = nil
@@ -15,6 +31,11 @@ struct SpendingPeriodView: View {
         return UserDefaults.standard.string(forKey: "loggedInUsername") ?? "UnknownUser"
     }
 
+    private var availableSpendingCategories: [String] {
+        let current = Set(spendingItems.map { $0.category.lowercased() })
+        return spendingCommonCategories.filter { !current.contains($0.lowercased()) }.sorted()
+    }
+
     var body: some View {
         VStack(spacing: 15) {
             Text("Enter Spending for a Specific Time Period")
@@ -25,10 +46,12 @@ struct SpendingPeriodView: View {
             VStack {
                 DatePicker("Start Date", selection: $startDate, displayedComponents: .date)
                     .datePickerStyle(.compact)
+                    .accentColor(.primary)
                     .padding()
 
                 DatePicker("End Date", selection: $endDate, in: startDate..., displayedComponents: .date)
                     .datePickerStyle(.compact)
+                    .accentColor(.primary)
                     .padding()
             }
 
@@ -56,12 +79,32 @@ struct SpendingPeriodView: View {
             .frame(height: 300)
 
             // ➕ Add New Category
-            HStack {
-                TextField("New Category", text: $newCategory)
-                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                Button(action: addCategory) {
-                    Image(systemName: "plus.circle.fill")
-                        .foregroundColor(.green)
+            VStack(spacing: 6) {
+                Menu {
+                    ForEach(availableSpendingCategories, id: \.self) { cat in
+                        Button(cat) {
+                            spendingItems.append(BudgetItem(category: cat, amount: ""))
+                        }
+                    }
+                    Divider()
+                    Button("Custom...") { showCustomCategoryPicker = true }
+                } label: {
+                    HStack {
+                        Image(systemName: "plus.circle.fill")
+                            .foregroundColor(.green)
+                        Text("Add Category")
+                            .font(.subheadline)
+                        Spacer()
+                        Image(systemName: "chevron.down")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.vertical, 8)
+                }
+                .alert("Custom Category", isPresented: $showCustomCategoryPicker) {
+                    TextField("Category name", text: $newCategory)
+                    Button("Add") { addCategory() }
+                    Button("Cancel", role: .cancel) { newCategory = "" }
                 }
             }
             .padding()
