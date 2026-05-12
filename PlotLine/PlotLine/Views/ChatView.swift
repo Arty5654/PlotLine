@@ -11,21 +11,39 @@ struct ChatView: View {
 
     var body: some View {
         VStack {
-            List {
-                ForEach(vm.messages) { msg in
-                    ChatMessageRow(
-                        msg: msg,
-                        allEmojis: allEmojis,
-                        onReactTap: { reactingTo = msg },
-                        onReplyTap: { replyingTo = msg }
-                    )
-                    .environmentObject(vm)
-                    .listRowSeparator(.hidden)
-                    .listRowInsets(EdgeInsets())
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(vm.messages.reversed()) { msg in
+                            ChatMessageRow(
+                                msg: msg,
+                                currentUsername: vm.username,
+                                allEmojis: allEmojis,
+                                onReactTap: { reactingTo = msg },
+                                onReplyTap: { replyingTo = msg }
+                            )
+                            .environmentObject(vm)
+                            .id(msg.id)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 4)
+                        }
+                    }
                     .padding(.vertical, 4)
                 }
+                .scrollDismissesKeyboard(.interactively)
+                .onChange(of: vm.messages.count) {
+                    if let newest = vm.messages.first {
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            proxy.scrollTo(newest.id, anchor: .bottom)
+                        }
+                    }
+                }
+                .onAppear {
+                    if let newest = vm.messages.first {
+                        proxy.scrollTo(newest.id, anchor: .bottom)
+                    }
+                }
             }
-            .listStyle(.plain)
 
             HStack {
                 TextField("Type a message…", text: $vm.draft)
@@ -38,14 +56,19 @@ struct ChatView: View {
             .padding()
         }
         .navigationTitle("Chat")
-        .onAppear { Task { await vm.load() } }
+        .task {
+            await vm.load()
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 2_000_000_000) // refresh every 2s while on page
+                await vm.load()
+            }
+        }
         .sheet(item: $reactingTo) { msg in
             EmojiPickerView(emojis: allEmojis) { emoji in
                 Task { await vm.react(to: msg, emoji: emoji) }
                 reactingTo = nil
             }
         }
-
         .sheet(item: $replyingTo) { msg in
             ReplySheet(message: msg)
                 .environmentObject(vm)

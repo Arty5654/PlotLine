@@ -115,6 +115,7 @@ struct NutritionGoalView: View {
                     showRetakeQuiz = true
                 } label: {
                     Label("Retake Quiz", systemImage: "arrow.counterclockwise")
+                        .foregroundColor(adaptiveTextColor)
                 }
 
                 Button(role: .destructive) {
@@ -122,6 +123,7 @@ struct NutritionGoalView: View {
                     dismiss()
                 } label: {
                     Label("Remove Goal", systemImage: "trash")
+                        .foregroundColor(.red)
                 }
             }
         }
@@ -133,7 +135,7 @@ struct NutritionGoalView: View {
                 VStack(spacing: 16) {
                     Text("\(Int(existing.calorieGoal))")
                         .font(.system(size: 48, weight: .bold, design: .rounded))
-                        .foregroundColor(.blue)
+                        .foregroundColor(adaptiveTextColor)
                     Text("calories / day")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
@@ -167,6 +169,7 @@ struct NutritionGoalView: View {
                     isEditing = true
                 } label: {
                     Label("Edit Goal", systemImage: "pencil")
+                        .foregroundColor(adaptiveTextColor)
                 }
             }
         }
@@ -326,7 +329,7 @@ struct NutritionGoalView: View {
                             Spacer()
                             if activityLevel == level {
                                 Image(systemName: "checkmark.circle.fill")
-                                    .foregroundColor(.blue)
+                                    .foregroundColor(adaptiveTextColor)
                             }
                         }
                     }
@@ -350,7 +353,7 @@ struct NutritionGoalView: View {
                             Spacer()
                             if weightGoal == goal {
                                 Image(systemName: "checkmark.circle.fill")
-                                    .foregroundColor(.blue)
+                                    .foregroundColor(adaptiveTextColor)
                             }
                         }
                     }
@@ -390,7 +393,7 @@ struct NutritionGoalView: View {
 
                 Text("\(Int(cal))")
                     .font(.system(size: 56, weight: .bold, design: .rounded))
-                    .foregroundColor(.blue)
+                    .foregroundColor(adaptiveTextColor)
                 Text("calories / day")
                     .font(.subheadline)
                     .foregroundColor(.secondary)

@@ -3,7 +3,10 @@ import SwiftUI
 struct FriendsListSection: View {
     let friends: [String]
     let onSelect: (String) -> Void
-    
+
+    @Environment(\.colorScheme) var colorScheme
+    private var adaptiveTextColor: Color { colorScheme == .dark ? .white : .blue }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             
@@ -23,7 +26,7 @@ struct FriendsListSection: View {
                         HStack {
                             Text(friend)
                                 .font(.custom("AvenirNext-Bold", size: 16))
-                                .foregroundColor(Color(red: 0.0, green: 0.0, blue: 0.5)) // navy blue
+                                .foregroundColor(adaptiveTextColor)
                             Spacer()
                         }
                         .padding()

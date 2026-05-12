@@ -2,19 +2,14 @@
 //  ArchivedGroceryListsView.swift
 //  PlotLine
 //
-//  Created by Yash Mehta on 2/27/25.
-//
-
 
 import SwiftUI
 
-// Lightweight tokens (scoped to this file)
 private enum PLColor {
     static let surface       = Color(.secondarySystemBackground)
     static let cardBorder    = Color.black.opacity(0.06)
     static let textPrimary   = Color.primary
     static let textSecondary = Color.secondary
-    static let accent        = Color.blue
     static let danger        = Color.red
 }
 private enum PLSpacing {
@@ -28,19 +23,20 @@ private enum PLRadius { static let md: CGFloat = 12 }
 struct ArchivedGroceryListsView: View {
     let username: String
 
+    @Environment(\.colorScheme) var colorScheme
+
     @State private var archivedLists: [GroceryList] = []
     @State private var searchText: String = ""
     @State private var isLoading: Bool = false
     @State private var errorMessage: String? = nil
-
-    // Alert
     @State private var showAlert: Bool = false
     @State private var alertMessage: String = ""
-
-    // Track lists currently restoring to disable UI
     @State private var restoringIDs: Set<UUID> = []
 
-    // Derived (UI-only filter; does not change logic or data flow)
+    private var adaptiveTextColor: Color {
+        colorScheme == .dark ? .white : .blue
+    }
+
     private var filteredLists: [GroceryList] {
         let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { return archivedLists }
@@ -50,21 +46,17 @@ struct ArchivedGroceryListsView: View {
     var body: some View {
         Group {
             if isLoading && archivedLists.isEmpty {
-                // Loading skeleton
                 List {
-                    ForEach(0..<5, id: \.self) { _ in
-                        rowSkeleton
-                    }
+                    ForEach(0..<5, id: \.self) { _ in rowSkeleton }
                 }
                 .listStyle(.insetGrouped)
                 .disabled(true)
             } else if let errorMessage {
-                // Error state
                 VStack(spacing: PLSpacing.md) {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.largeTitle)
+                        .font(.system(size: 40))
                         .foregroundColor(PLColor.danger)
-                    Text("Couldn’t load archived lists")
+                    Text("Couldn't load archived lists")
                         .font(.headline)
                     Text(errorMessage)
                         .font(.subheadline)
@@ -76,10 +68,10 @@ struct ArchivedGroceryListsView: View {
                     } label: {
                         Text("Try Again")
                             .font(.headline)
+                            .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
-                            .background(PLColor.accent)
-                            .foregroundColor(.white)
+                            .background(Color.blue)
                             .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
                     }
                     .padding(.horizontal, PLSpacing.lg)
@@ -87,15 +79,14 @@ struct ArchivedGroceryListsView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                 .padding()
             } else if filteredLists.isEmpty {
-                // Empty state
                 VStack(spacing: PLSpacing.md) {
                     Image(systemName: "archivebox")
-                        .font(.largeTitle)
+                        .font(.system(size: 40))
                         .foregroundColor(PLColor.textSecondary)
-                    Text(searchText.isEmpty ? "No archived grocery lists" : "No matches")
+                    Text(searchText.isEmpty ? "No archived lists" : "No matches")
                         .font(.headline)
                     Text(searchText.isEmpty
-                         ? "When you archive a list, it’ll show up here. You can restore it anytime."
+                         ? "When you archive a list, it'll show up here. You can restore it anytime."
                          : "Try a different search term.")
                         .font(.subheadline)
                         .foregroundColor(PLColor.textSecondary)
@@ -105,7 +96,6 @@ struct ArchivedGroceryListsView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding()
             } else {
-                // Content (unchanged logic; just styled)
                 List {
                     Section {
                         ForEach(filteredLists) { list in
@@ -143,7 +133,6 @@ struct ArchivedGroceryListsView: View {
 
     private func row(for groceryList: GroceryList) -> some View {
         HStack(spacing: PLSpacing.md) {
-            // Name only (no updatedAt)
             Text(groceryList.name)
                 .font(.body)
                 .foregroundColor(PLColor.textPrimary)
@@ -161,8 +150,8 @@ struct ArchivedGroceryListsView: View {
                         .font(.subheadline).bold()
                         .padding(.vertical, 6)
                         .padding(.horizontal, 12)
-                        .background(PLColor.accent.opacity(0.12))
-                        .foregroundColor(PLColor.accent)
+                        .background(adaptiveTextColor.opacity(0.12))
+                        .foregroundColor(adaptiveTextColor)
                         .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
@@ -182,7 +171,7 @@ struct ArchivedGroceryListsView: View {
         .padding(.vertical, 4)
     }
 
-    // MARK: - Data (same logic, just wrapped with nicer UI state)
+    // MARK: - Data (logic unchanged)
 
     private func fetchArchivedGroceryLists() {
         isLoading = true
@@ -207,9 +196,8 @@ struct ArchivedGroceryListsView: View {
                 restoringIDs.remove(groceryList.id)
                 switch result {
                 case .success:
-                    alertMessage = "Restored “\(groceryList.name)”"
+                    alertMessage = "Restored \"\(groceryList.name)\""
                     showAlert = true
-                    // Remove from local arrays (no logic change to API calls)
                     archivedLists.removeAll { $0.id == groceryList.id }
                 case .failure(let error):
                     alertMessage = "Failed to restore: \(error.localizedDescription)"

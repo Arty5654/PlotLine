@@ -1,39 +1,24 @@
 import SwiftUI
 
 struct TopGroceryListView: View {
-    @State private var selectedTab = 0  // State to control the TabView selection (0 = Active, 1 = Archived)
+    @State private var selectedTab = 0
 
     var body: some View {
-        NavigationView {
-            VStack {
-                // Tab View for navigating between the active grocery lists and archived grocery lists
-                TabView(selection: $selectedTab) {
-                    // Meals Tab
-                    MealsView()
-                        .tabItem {
-                            Image(systemName: "fork.knife.circle")
-                            Text("Meals")
-                        }
-                        .tag(0)
-                    
-                    // Active Grocery List Tab
-                    ActiveGroceryListView()
-                        .tabItem {
-                            Image(systemName: "list.dash")
-                            Text("Active Lists")
-                        }
-                        .tag(1)
+        NavigationStack {
+            TabView(selection: $selectedTab) {
+                MealsView()
+                    .tabItem { Label("Meals", systemImage: "fork.knife.circle") }
+                    .tag(0)
 
-                    // Archived Grocery List Tab
-                    ArchivedGroceryListsView(username: UserDefaults.standard.string(forKey: "loggedInUsername") ?? "")
-                        .tabItem {
-                            Image(systemName: "archivebox")
-                            Text("Archived Lists")
-                        }
-                        .tag(2)
-                }
+                ActiveGroceryListView()
+                    .tabItem { Label("Active Lists", systemImage: "list.dash") }
+                    .tag(1)
+
+                ArchivedGroceryListsView(username: UserDefaults.standard.string(forKey: "loggedInUsername") ?? "")
+                    .tabItem { Label("Archived", systemImage: "archivebox") }
+                    .tag(2)
             }
-            .navigationTitle("Nutrition")
+            .navigationTitle("Grocery")
         }
     }
 }

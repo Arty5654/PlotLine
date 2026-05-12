@@ -2,227 +2,191 @@
 //  DietaryPreferencesView.swift
 //  PlotLine
 //
-//  Created by Yash Mehta on 2/26/25.
-//
 
 import SwiftUI
+
+private struct DietaryRow: View {
+    let icon: String
+    let label: String
+    let color: Color
+    let isEditing: Bool
+    @Binding var value: Bool
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .foregroundColor(color)
+                .frame(width: 28)
+
+            Text(label)
+
+            Spacer()
+
+            if isEditing {
+                Toggle("", isOn: $value)
+                    .labelsHidden()
+            } else {
+                Text(value ? "Yes" : "No")
+                    .font(.subheadline)
+                    .foregroundColor(value ? color : .secondary)
+                    .fontWeight(value ? .semibold : .regular)
+            }
+        }
+    }
+}
 
 struct DietaryPreferencesView: View {
     @Binding var dietaryRestrictions: DietaryRestrictions?
     var onClose: () -> Void
-    
-    // State variable to track whether we are editing
+
     @State private var isEditing = false
-    
-    @Environment(\.presentationMode) var presentationMode
+    @State private var isSaving = false
+
+    // Local editable copy
+    @State private var lactoseIntolerant = false
+    @State private var vegetarian = false
+    @State private var vegan = false
+    @State private var glutenFree = false
+    @State private var kosher = false
+    @State private var dairyFree = false
+    @State private var nutFree = false
 
     var body: some View {
-        VStack {
-            HStack {
-                Text(isEditing ? "Edit Preferences" : "View Preferences")
-                    .font(.title2)
-                    .fontWeight(.bold)
-                    .padding()
-                    .frame(alignment: .leading)
+        Form {
+                Section {
+                    activeBadges
+                } header: {
+                    Text("Active Restrictions")
+                }
 
-                Spacer()
-
-                Button(action: {
+                Section {
+                    DietaryRow(icon: "drop.fill",        label: "Lactose Intolerant", color: .blue,   isEditing: isEditing, value: $lactoseIntolerant)
+                    DietaryRow(icon: "leaf.fill",        label: "Vegetarian",          color: .green,  isEditing: isEditing, value: $vegetarian)
+                    DietaryRow(icon: "leaf.circle.fill", label: "Vegan",               color: .green,  isEditing: isEditing, value: veganBinding)
+                    DietaryRow(icon: "allergens",        label: "Gluten Free",         color: .orange, isEditing: isEditing, value: $glutenFree)
+                    DietaryRow(icon: "star.fill",        label: "Kosher",              color: .purple, isEditing: isEditing, value: $kosher)
+                    DietaryRow(icon: "cup.and.saucer.fill", label: "Dairy Free",       color: .cyan,   isEditing: isEditing, value: $dairyFree)
+                    DietaryRow(icon: "exclamationmark.triangle.fill", label: "Nut Free", color: .red,  isEditing: isEditing, value: $nutFree)
+                } header: {
+                    Text("Preferences")
+                } footer: {
                     if isEditing {
-                        // When Done is clicked, save changes
-                        Task {
-                            await updatePreferencesInBackend()
-                        }
+                        Text("Enabling Vegan automatically enables Vegetarian and Dairy Free.")
                     }
-                    isEditing.toggle()
-                }) {
-                    Text(isEditing ? "Save" : "Edit")
-                        .fontWeight(.bold)
-                        .padding()
-                        .background(Color.green)
-                        .foregroundColor(.white)
-                        .cornerRadius(10)
                 }
             }
-
-            // Editable or non-editable form
-            VStack(spacing: 20) {
-                // Lactose Intolerant
-                HStack {
-                    Text("Lactose Intolerant:")
-                        .frame(width: 180, alignment: .leading)
-                    
-                    if isEditing {
-                        Toggle(isOn: Binding(
-                            get: { dietaryRestrictions?.lactoseIntolerant ?? false },
-                            set: { dietaryRestrictions?.lactoseIntolerant = $0 }
-                        )) {
-                            EmptyView()
-                        }
+            .navigationTitle("Dietary Preferences")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    if isSaving {
+                        ProgressView()
                     } else {
-                        Text(dietaryRestrictions?.lactoseIntolerant == true ? "Yes" : "No")
-                            .frame(maxWidth: .infinity, alignment: .trailing)
+                        Button(isEditing ? "Save" : "Edit") {
+                            if isEditing {
+                                commitChanges()
+                                Task { await updatePreferencesInBackend() }
+                            } else {
+                                startEditing()
+                            }
+                            isEditing.toggle()
+                        }
+                        .fontWeight(.semibold)
                     }
                 }
-                .frame(height: 40)
-
-                // Vegetarian
-                HStack {
-                    Text("Vegetarian:")
-                        .frame(width: 180, alignment: .leading)
-                    if isEditing {
-                        Toggle(isOn: Binding(
-                            get: { dietaryRestrictions?.vegetarian ?? false },
-                            set: { dietaryRestrictions?.vegetarian = $0 }
-                        )) {
-                            EmptyView()
-                        }
-                    } else {
-                        Text(dietaryRestrictions?.vegetarian == true ? "Yes" : "No")
-                            .frame(maxWidth: .infinity, alignment: .trailing)
-                    }
-                }
-                .frame(height: 40)
-
-                // Vegan
-                HStack {
-                    Text("Vegan:")
-                        .frame(width: 180, alignment: .leading)
-                    if isEditing {
-                        Toggle(isOn: Binding(
-                            get: { dietaryRestrictions?.vegan ?? false },
-                            set: { newValue in
-                                        dietaryRestrictions?.vegan = newValue
-                                        // If Vegan is selected, automatically select Vegetarian and Dairy Free
-                                        if newValue {
-                                            dietaryRestrictions?.vegetarian = true
-                                            dietaryRestrictions?.dairyFree = true
-                                        }
-                                    }
-                        )) {
-                            EmptyView()
-                        }
-                    } else {
-                        Text(dietaryRestrictions?.vegan == true ? "Yes" : "No")
-                            .frame(maxWidth: .infinity, alignment: .trailing)
-                    }
-                }
-                .frame(height: 40)
-
-                // Gluten Free
-                HStack {
-                    Text("Gluten Free:")
-                        .frame(width: 180, alignment: .leading)
-                    if isEditing {
-                        Toggle(isOn: Binding(
-                            get: { dietaryRestrictions?.glutenFree ?? false },
-                            set: { dietaryRestrictions?.glutenFree = $0 }
-                        )) {
-                            EmptyView()
-                        }
-                    } else {
-                        Text(dietaryRestrictions?.glutenFree == true ? "Yes" : "No")
-                            .frame(maxWidth: .infinity, alignment: .trailing)
-                    }
-                }
-                .frame(height: 40)
-
-                // Kosher
-                HStack {
-                    Text("Kosher:")
-                        .frame(width: 180, alignment: .leading)
-                    if isEditing {
-                        Toggle(isOn: Binding(
-                            get: { dietaryRestrictions?.kosher ?? false },
-                            set: { dietaryRestrictions?.kosher = $0 }
-                        )) {
-                            EmptyView()
-                        }
-                    } else {
-                        Text(dietaryRestrictions?.kosher == true ? "Yes" : "No")
-                            .frame(maxWidth: .infinity, alignment: .trailing)
-                    }
-                }
-                .frame(height: 40)
-
-                // Dairy Free
-                HStack {
-                    Text("Dairy Free:")
-                        .frame(width: 180, alignment: .leading)
-                    if isEditing {
-                        Toggle(isOn: Binding(
-                            get: { dietaryRestrictions?.dairyFree ?? false },
-                            set: { dietaryRestrictions?.dairyFree = $0 }
-                        )) {
-                            EmptyView()
-                        }
-                    } else {
-                        Text(dietaryRestrictions?.dairyFree == true ? "Yes" : "No")
-                            .frame(maxWidth: .infinity, alignment: .trailing)
-                    }
-                }
-                .frame(height: 40)
-
-                // Nut Free
-                HStack {
-                    Text("Nut Free:")
-                        .frame(width: 180, alignment: .leading)
-                    if isEditing {
-                        Toggle(isOn: Binding(
-                            get: { dietaryRestrictions?.nutFree ?? false },
-                            set: { dietaryRestrictions?.nutFree = $0 }
-                        )) {
-                            EmptyView()
-                        }
-                    } else {
-                        Text(dietaryRestrictions?.nutFree == true ? "Yes" : "No")
-                            .frame(maxWidth: .infinity, alignment: .trailing)
-                    }
-                }
-                .frame(height: 40)
             }
-
-            Button(action: {
-                onClose()
-                presentationMode.wrappedValue.dismiss()
-            }) {
-                Text("Close")
-                    .fontWeight(.bold)
-                    .padding()
-                    .background(Color.red)
-                    .foregroundColor(.white)
-                    .cornerRadius(10)
-            }
-            .padding()
-
-            Spacer()
-        }
-        .padding()
-        .frame(width: 350, height: 600) // Increased the size of the window
-        .background(Color.white)
-        .cornerRadius(20)
-        .shadow(radius: 10)
-        .padding(40)
+            .onAppear { loadFromBinding() }
     }
 
-    // API call to update preferences
-    func updatePreferencesInBackend() {
-        guard let dietaryRestrictions = dietaryRestrictions else {
-            return
-        }
-        
-        // Proceed with the update API call without using `await` or `try`
-        DietaryRestrictionsAPI.shared.updateDietaryRestrictions(
-            username: dietaryRestrictions.username,
-            dietaryRestrictions: dietaryRestrictions
-        ) { result in
-            switch result {
-            case .success(let message):
-                print("Dietary preferences updated successfully: \(message)")
-            case .failure(let error):
-                print(String(describing: error))
-                print("Frontend Failed to update dietary preferences: \(error.localizedDescription)")
+    // MARK: - Active Badges
+
+    @ViewBuilder
+    private var activeBadges: some View {
+        let active = activeList
+        if active.isEmpty {
+            Text("None set")
+                .foregroundColor(.secondary)
+                .font(.subheadline)
+        } else {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(active, id: \.label) { item in
+                        Label(item.label, systemImage: item.icon)
+                            .font(.caption.bold())
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(item.color.opacity(0.15))
+                            .foregroundColor(item.color)
+                            .clipShape(Capsule())
+                    }
+                }
+                .padding(.vertical, 4)
             }
+        }
+    }
+
+    private struct ActiveItem { let label: String; let icon: String; let color: Color }
+
+    private var activeList: [ActiveItem] {
+        var list: [ActiveItem] = []
+        if lactoseIntolerant { list.append(.init(label: "Lactose Free",  icon: "drop.fill",        color: .blue))   }
+        if vegetarian        { list.append(.init(label: "Vegetarian",    icon: "leaf.fill",        color: .green))  }
+        if vegan             { list.append(.init(label: "Vegan",         icon: "leaf.circle.fill", color: .green))  }
+        if glutenFree        { list.append(.init(label: "Gluten Free",   icon: "allergens",        color: .orange)) }
+        if kosher            { list.append(.init(label: "Kosher",        icon: "star.fill",        color: .purple)) }
+        if dairyFree         { list.append(.init(label: "Dairy Free",    icon: "cup.and.saucer.fill", color: .cyan)) }
+        if nutFree           { list.append(.init(label: "Nut Free",      icon: "exclamationmark.triangle.fill", color: .red)) }
+        return list
+    }
+
+    // MARK: - Vegan cascades to vegetarian + dairy free
+
+    private var veganBinding: Binding<Bool> {
+        Binding(
+            get: { vegan },
+            set: { newValue in
+                vegan = newValue
+                if newValue { vegetarian = true; dairyFree = true }
+            }
+        )
+    }
+
+    // MARK: - Sync helpers
+
+    private func loadFromBinding() {
+        lactoseIntolerant = dietaryRestrictions?.lactoseIntolerant ?? false
+        vegetarian        = dietaryRestrictions?.vegetarian        ?? false
+        vegan             = dietaryRestrictions?.vegan             ?? false
+        glutenFree        = dietaryRestrictions?.glutenFree        ?? false
+        kosher            = dietaryRestrictions?.kosher            ?? false
+        dairyFree         = dietaryRestrictions?.dairyFree         ?? false
+        nutFree           = dietaryRestrictions?.nutFree           ?? false
+    }
+
+    private func startEditing() {
+        loadFromBinding()
+    }
+
+    private func commitChanges() {
+        dietaryRestrictions?.lactoseIntolerant = lactoseIntolerant
+        dietaryRestrictions?.vegetarian        = vegetarian
+        dietaryRestrictions?.vegan             = vegan
+        dietaryRestrictions?.glutenFree        = glutenFree
+        dietaryRestrictions?.kosher            = kosher
+        dietaryRestrictions?.dairyFree         = dairyFree
+        dietaryRestrictions?.nutFree           = nutFree
+    }
+
+    // MARK: - API
+
+    func updatePreferencesInBackend() async {
+        guard let restrictions = dietaryRestrictions else { return }
+        await MainActor.run { isSaving = true }
+        DietaryRestrictionsAPI.shared.updateDietaryRestrictions(
+            username: restrictions.username,
+            dietaryRestrictions: restrictions
+        ) { result in
+            DispatchQueue.main.async { isSaving = false }
         }
     }
 }

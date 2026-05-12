@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.plotline.backend.dto.FriendList;
 import com.plotline.backend.dto.FriendPost;
+import static com.plotline.backend.util.UsernameUtils.normalize;
 
 import org.springframework.stereotype.Service;
 import io.github.cdimascio.dotenv.Dotenv;
@@ -89,7 +90,7 @@ public class FriendsFeedService {
   public List<FriendPost> getFriendsFeed(String username) {
     try {
       String postsKey = "friends-feed/posts.json";
-      String friendsKey = "users/" + username + "/friends.json";
+      String friendsKey = "users/" + normalize(username) + "/friends.json";
 
       ObjectMapper objectMapper = new ObjectMapper();
 
@@ -126,12 +127,12 @@ public class FriendsFeedService {
       // friendsList.add(username); // Always see your own posts
 
       // 3. Always include the user themself
-      friendsList.add(username);
+      friendsList.add(normalize(username));
 
-      // 4. Filter posts
+      // 4. Filter posts — normalize both sides so casing never breaks the match
       List<FriendPost> filteredPosts = new ArrayList<>();
       for (FriendPost post : allPosts) {
-        if (friendsList.contains(post.getUsername())) {
+        if (friendsList.contains(normalize(post.getUsername()))) {
           filteredPosts.add(post);
         }
       }
@@ -180,9 +181,10 @@ public class FriendsFeedService {
 
   public boolean toggleLike(String username, UUID postId) {
     try {
-      List<FriendPost> posts = loadPosts(); // write a helper that reads JSON
+      List<FriendPost> posts = loadPosts();
       for (FriendPost post : posts) {
         if (post.getId().equals(postId)) {
+          if (post.getLikedBy() == null) post.setLikedBy(new java.util.HashSet<>());
           Set<String> likedBy = post.getLikedBy();
           if (likedBy.contains(username)) {
             likedBy.remove(username);
@@ -192,7 +194,7 @@ public class FriendsFeedService {
           break;
         }
       }
-      savePosts(posts); // write a helper that writes JSON
+      savePosts(posts);
       return true;
     } catch (Exception e) {
       e.printStackTrace();
@@ -205,6 +207,7 @@ public class FriendsFeedService {
       List<FriendPost> posts = loadPosts();
       for (FriendPost post : posts) {
         if (post.getId().equals(postId)) {
+          if (post.getComments() == null) post.setComments(new java.util.ArrayList<>());
           post.getComments().add(username + ": " + comment);
           break;
         }

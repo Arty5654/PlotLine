@@ -157,7 +157,7 @@ class NutritionAPI {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty,
               let encoded = trimmed.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let url = URL(string: "https://world.openfoodfacts.org/cgi/search.pl?search_terms=\(encoded)&json=1&page_size=30&fields=product_name,brands,serving_size,serving_quantity,nutriments,code") else {
+              let url = URL(string: "https://world.openfoodfacts.org/cgi/search.pl?search_terms=\(encoded)&json=1&page_size=50&sort_by=popularity_key&lc=en&fields=product_name,brands,serving_size,serving_quantity,nutriments,code") else {
             return []
         }
 
@@ -169,13 +169,17 @@ class NutritionAPI {
 
         guard let products = result.products else { return [] }
 
-        return products.compactMap { product -> FoodItem? in
-            let name = [product.brands, product.productName]
-                .compactMap { $0 }
-                .filter { !$0.isEmpty }
-                .joined(separator: " – ")
+        let lowerQuery = trimmed.lowercased()
 
-            guard !name.isEmpty else { return nil }
+        return products.compactMap { product -> FoodItem? in
+            let productName = product.productName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let brand = product.brands?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+            if productName.isEmpty && brand.isEmpty { return nil }
+            let name: String
+            if productName.isEmpty { name = brand }
+            else if brand.isEmpty { name = productName }
+            else { name = "\(productName) – \(brand)" }
 
             let serving = product.servingSize ?? "1 serving"
             let n = product.nutriments
@@ -185,7 +189,6 @@ class NutritionAPI {
             let carb = n?.carbohydratesServing ?? n?.carbohydrates100g ?? 0
             let fat = n?.fatServing ?? n?.fat100g ?? 0
 
-            // Skip entries with zero nutrition data
             if cal == 0 && pro == 0 && carb == 0 && fat == 0 { return nil }
 
             return FoodItem(
@@ -198,6 +201,22 @@ class NutritionAPI {
                 fat: round(fat * 10) / 10,
                 source: .search
             )
+        }
+        .reduce(into: [FoodItem]()) { acc, item in
+            if !acc.contains(where: { $0.name.lowercased() == item.name.lowercased() }) {
+                acc.append(item)
+            }
+        }
+        .sorted { a, b in
+            let aLower = a.name.lowercased()
+            let bLower = b.name.lowercased()
+            let aStarts = aLower.hasPrefix(lowerQuery)
+            let bStarts = bLower.hasPrefix(lowerQuery)
+            if aStarts != bStarts { return aStarts }
+            let aContains = aLower.contains(lowerQuery)
+            let bContains = bLower.contains(lowerQuery)
+            if aContains != bContains { return aContains }
+            return aLower.count < bLower.count
         }
     }
 

@@ -1,13 +1,11 @@
 import SwiftUI
 import UIKit
 
-// MARK: - Local design tokens
 private enum PLColor {
     static let surface       = Color(.secondarySystemBackground)
     static let cardBorder    = Color.black.opacity(0.08)
     static let textPrimary   = Color.primary
     static let textSecondary = Color.secondary
-    static let accent        = Color.blue
     static let success       = Color.green
     static let danger        = Color.red
     static let warning       = Color.orange
@@ -38,7 +36,7 @@ private struct PrimaryButton: ButtonStyle {
             .foregroundColor(.white)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 12)
-            .background(PLColor.accent.opacity(configuration.isPressed ? 0.85 : 1))
+            .background(Color.blue.opacity(configuration.isPressed ? 0.85 : 1))
             .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
     }
 }
@@ -55,9 +53,11 @@ private struct SecondaryButton: ButtonStyle {
 }
 
 // MARK: - View
+
 struct GroceryListDetailView: View {
     var groceryList: GroceryList
-    
+
+    @Environment(\.colorScheme) var colorScheme
     @Environment(\.presentationMode) var presentationMode
 
     @State private var items: [GroceryItem] = []
@@ -66,7 +66,7 @@ struct GroceryListDetailView: View {
 
     @State private var selectedItem: GroceryItem? = nil
     @State private var isEditPresented: Bool = false
-    
+
     @State private var shareSuccess: Bool? = nil
     @State private var canArchiveList: Bool = false
     @State private var archiveSuccess: Bool? = nil
@@ -77,11 +77,11 @@ struct GroceryListDetailView: View {
         guard totalItems > 0 else { return 0 }
         return Double(purchasedItems) / Double(totalItems)
     }
-    
+
     @State private var showGroceryAddedAlert = false
     @State private var recentlyAddedGroceryAmount: Double? = nil
     @State private var canUndoGroceryAddition = false
-    
+
     @State private var isGenerating: Bool = false
     @State private var errorMessage: String? = nil
     @State private var showError: Bool = false
@@ -89,31 +89,33 @@ struct GroceryListDetailView: View {
     @State private var showDietaryInfo: Bool = false
     @State private var showMealCreatedAlert: Bool = false
     @State private var mealCreatedMessage: String = ""
-    
+
     @State private var groceryBudget: Double? = nil
-    
-    // Want to update budeget?
     @State private var showUpdateWeeklyDialog: Bool = false
-    
+
     @AppStorage private var savedEstimate: Double
     init(groceryList: GroceryList) {
         self.groceryList = groceryList
         _savedEstimate = AppStorage(wrappedValue: 0, "estimate-\(groceryList.id.uuidString)")
     }
-    
+
+    private var adaptiveTextColor: Color {
+        colorScheme == .dark ? .white : .blue
+    }
     private var itemText: String { totalItems == 1 ? "Item" : "Items" }
 
     var body: some View {
-        VStack(spacing: PLSpacing.md) {
+        VStack(spacing: 0) {
             ScrollView {
                 VStack(spacing: PLSpacing.lg) {
-                    // Header
+
+                    // Header card
                     HStack(alignment: .center, spacing: PLSpacing.md) {
-                        VStack(alignment: .leading, spacing: 2) {
+                        VStack(alignment: .leading, spacing: 4) {
                             Text(groceryList.name)
                                 .font(.title2).bold()
                             if let mealName = groceryList.mealName {
-                                Text(mealName)
+                                Label(mealName, systemImage: "fork.knife")
                                     .font(.subheadline)
                                     .foregroundColor(PLColor.textSecondary)
                                     .lineLimit(1)
@@ -126,14 +128,14 @@ struct GroceryListDetailView: View {
                         Spacer()
                         if let budget = groceryBudget {
                             let currentTotal = items.reduce(0.0) { $0 + ($1.price ?? 0.0) }
-                            HStack(spacing: 6) {
+                            HStack(spacing: 5) {
                                 Image(systemName: "dollarsign.circle")
-                                Text("\(currentTotal, specifier: "%.2f") / \(budget, specifier: "%.2f")")
+                                Text(String(format: "%.2f / %.2f", currentTotal, budget))
                             }
-                            .font(.caption)
+                            .font(.caption.bold())
                             .padding(.vertical, 6)
                             .padding(.horizontal, 10)
-                            .background((currentTotal > budget ? PLColor.danger.opacity(0.12) : PLColor.success.opacity(0.12)))
+                            .background((currentTotal > budget ? PLColor.danger : PLColor.success).opacity(0.12))
                             .foregroundColor(currentTotal > budget ? PLColor.danger : PLColor.success)
                             .clipShape(RoundedRectangle(cornerRadius: 8))
                         }
@@ -143,16 +145,20 @@ struct GroceryListDetailView: View {
                         } label: {
                             Image(systemName: "square.and.arrow.up")
                                 .font(.headline)
+                                .foregroundColor(adaptiveTextColor)
                         }
                     }
                     .plCard()
-                    
-                    // Progress / Archive bar
+
+                    // Progress + archive
                     if totalItems > 0 {
                         VStack(alignment: .leading, spacing: PLSpacing.sm) {
                             HStack {
-                                Text("\(totalItems) \(itemText) • \(purchasedItems) checked")
-                                    .foregroundColor(PLColor.textSecondary)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("\(purchasedItems) of \(totalItems) \(itemText) checked")
+                                        .font(.subheadline)
+                                        .foregroundColor(PLColor.textSecondary)
+                                }
                                 Spacer()
                                 Button {
                                     archiveList()
@@ -162,25 +168,30 @@ struct GroceryListDetailView: View {
                                         Text("Archive")
                                             .fontWeight(.semibold)
                                     }
+                                    .font(.subheadline)
                                     .foregroundColor(.white)
-                                    .padding(.vertical, 8)
+                                    .padding(.vertical, 7)
                                     .padding(.horizontal, 12)
-                                    .background((canArchiveList ? PLColor.success : Color.gray))
+                                    .background(canArchiveList ? PLColor.success : Color.gray)
                                     .clipShape(RoundedRectangle(cornerRadius: 10))
                                 }
                                 .disabled(!canArchiveList)
                             }
-                            
+
                             ProgressView(value: completionRatio)
-                                .tint(canArchiveList ? PLColor.success : PLColor.accent)
+                                .tint(canArchiveList ? PLColor.success : adaptiveTextColor)
                         }
                         .plCard()
                     }
-                    
+
                     // Items list
                     if items.isEmpty {
-                        VStack(spacing: 8) {
-                            Text("No items in this grocery list.")
+                        VStack(spacing: PLSpacing.sm) {
+                            Image(systemName: "cart")
+                                .font(.system(size: 36))
+                                .foregroundColor(PLColor.textSecondary)
+                                .padding(.bottom, 4)
+                            Text("No items yet")
                                 .font(.headline)
                                 .foregroundColor(PLColor.textSecondary)
                             Text("Add an item below to get started.")
@@ -201,7 +212,7 @@ struct GroceryListDetailView: View {
                                             .foregroundColor(item.checked ? PLColor.success : PLColor.textSecondary)
                                             .font(.title3)
                                     }
-                                    
+
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(item.name)
                                             .font(.body)
@@ -211,7 +222,7 @@ struct GroceryListDetailView: View {
                                                 selectedItem = item
                                                 isEditPresented = true
                                             }
-                                        HStack(spacing: 10) {
+                                        HStack(spacing: 8) {
                                             Text("Qty: \(item.quantity)")
                                                 .foregroundColor(PLColor.textSecondary)
                                                 .font(.caption)
@@ -236,7 +247,7 @@ struct GroceryListDetailView: View {
                                     }
                                 }
                                 .padding(.vertical, 8)
-                                .padding(.horizontal, 8)
+                                .padding(.horizontal, PLSpacing.sm)
                                 .background(Color(.systemBackground))
                                 .clipShape(RoundedRectangle(cornerRadius: 10))
                                 .overlay(RoundedRectangle(cornerRadius: 10).stroke(PLColor.cardBorder))
@@ -244,15 +255,15 @@ struct GroceryListDetailView: View {
                         }
                         .plCard()
                     }
-                    
-                    // Actions (Generate meal / Done shopping)
+
+                    // Action buttons
                     if !items.isEmpty {
                         HStack(spacing: PLSpacing.md) {
                             Button {
                                 generateMealFromListView()
                             } label: {
                                 HStack(spacing: 8) {
-                                    if isGenerating { ProgressView() }
+                                    if isGenerating { ProgressView().tint(.white) }
                                     Image(systemName: "sparkles")
                                     Text(isGenerating ? "Generating…" : "Generate Meal")
                                 }
@@ -260,7 +271,7 @@ struct GroceryListDetailView: View {
                             .buttonStyle(PrimaryButton())
                             .disabled(isGenerating)
                             .opacity(isGenerating ? 0.75 : 1)
-                            
+
                             Button {
                                 checkallItems()
                                 showUpdateWeeklyDialog = true
@@ -274,7 +285,7 @@ struct GroceryListDetailView: View {
                         }
                         .plCard()
                     }
-                    
+
                     // Undo banner
                     if canUndoGroceryAddition, let undoAmount = recentlyAddedGroceryAmount {
                         HStack(spacing: PLSpacing.md) {
@@ -290,24 +301,28 @@ struct GroceryListDetailView: View {
                                 )
                             }
                             .foregroundColor(PLColor.danger)
+                            .fontWeight(.semibold)
                         }
                         .padding(.horizontal, PLSpacing.md)
                         .padding(.vertical, 10)
                         .background(PLColor.warning.opacity(0.12))
                         .clipShape(RoundedRectangle(cornerRadius: 12))
-                        .padding(.horizontal, 2)
                     }
-                    
-                    // Add item
-                    VStack(spacing: PLSpacing.sm) {
-                        Text("Add Item")
+
+                    // Add item card
+                    VStack(alignment: .leading, spacing: PLSpacing.sm) {
+                        Label("Add Item", systemImage: "plus.circle")
                             .font(.headline)
+                            .foregroundColor(adaptiveTextColor)
+
                         HStack(spacing: PLSpacing.sm) {
                             TextField("e.g., Eggs", text: $newItemName)
                                 .textFieldStyle(.roundedBorder)
+                                .tint(adaptiveTextColor)
                             Stepper(value: $newItemQuantity, in: 1...999) {
                                 Text("Qty \(newItemQuantity)")
-                                    .frame(minWidth: 70, alignment: .trailing)
+                                    .frame(minWidth: 60, alignment: .trailing)
+                                    .font(.subheadline)
                             }
                         }
                         Button {
@@ -325,26 +340,28 @@ struct GroceryListDetailView: View {
                         .opacity(newItemName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.6 : 1)
                     }
                     .plCard()
+
+                    if showDietaryInfo {
+                        Text(dietaryMessage ?? "")
+                            .foregroundColor(PLColor.danger)
+                            .font(.caption)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal)
+                    }
                 }
                 .padding(.horizontal, PLSpacing.lg)
-                .padding(.top, PLSpacing.lg)
+                .padding(.vertical, PLSpacing.lg)
             }
 
-            // Overlay editor (unchanged behavior)
+            // Item editor overlay
             if isEditPresented {
                 Color.black.opacity(0.45).ignoresSafeArea()
                 GroceryItemInfoView(item: $selectedItem, onClose: {
                     isEditPresented = false
                 })
             }
-            
-            if showDietaryInfo {
-                Text(dietaryMessage ?? "")
-                    .foregroundColor(PLColor.danger)
-                    .padding(.bottom, PLSpacing.sm)
-            }
         }
-        .navigationTitle("Grocery List Details")
+        .navigationTitle(groceryList.name)
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             fetchItems()
@@ -353,7 +370,6 @@ struct GroceryListDetailView: View {
         .onChange(of: items) { _ in
             canArchiveList = isListCompleted()
         }
-        // Alerts (unchanged)
         .alert("Share Result", isPresented: .constant(shareSuccess != nil)) {
             Button("OK") { shareSuccess = nil }
         } message: {
@@ -394,7 +410,8 @@ struct GroceryListDetailView: View {
         }
     }
 
-    // MARK: - Your logic (UNTOUCHED)
+    // MARK: - Logic (unchanged)
+
     func fetchItems() {
         Task {
             do {
@@ -413,14 +430,11 @@ struct GroceryListDetailView: View {
 
     func addItemToList() {
         guard !newItemName.isEmpty else { return }
-
         Task {
             do {
                 let listIdString = groceryList.id.uuidString
                 let newItem = GroceryItem(listId: groceryList.id, id: UUID(), name: newItemName, quantity: newItemQuantity, checked: false, price: nil, store: "", notes: "")
-
                 try await GroceryListAPI.addItem(listId: listIdString, item: newItem)
-
                 items.append(newItem)
                 estimateCostForNewItem(itemID: newItem.id, name: newItem.name, quantity: newItem.quantity)
                 newItemName = ""
@@ -430,21 +444,21 @@ struct GroceryListDetailView: View {
             }
         }
     }
-    
+
     func estimateCostForNewItem(itemID: UUID, name: String, quantity: Int) {
         let payload: [String: Any] = [
             "location": "Indiana",
             "items": [["name": name, "quantity": quantity]]
         ]
         guard let jsonData = try? JSONSerialization.data(withJSONObject: payload) else { return }
-        
+
         var request = URLRequest(
             url: URL(string: "\(BackendConfig.baseURLString)/api/groceryLists/estimate-grocery-cost-live")!
         )
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = jsonData
-        
+
         URLSession.shared.dataTask(with: request) { data, _, _ in
             guard let data = data,
                   let estimatedCost = try? JSONDecoder().decode(Double.self, from: data)
@@ -455,7 +469,6 @@ struct GroceryListDetailView: View {
                 }
                 return
             }
-            
             DispatchQueue.main.async {
                 if let idx = items.firstIndex(where: { $0.id == itemID }) {
                     items[idx].price = estimatedCost
@@ -533,7 +546,7 @@ struct GroceryListDetailView: View {
         }
         return result
     }
-    
+
     func archiveList() {
         let username: String? = UserDefaults.standard.string(forKey: "loggedInUsername")
         GroceryListAPI.archiveGroceryList(username: username ?? "", groceryList: groceryList) { result in
@@ -546,7 +559,7 @@ struct GroceryListDetailView: View {
             }
         }
     }
-    
+
     func estimateGroceryCostAndUpdateBudget() {
         let username = UserDefaults.standard.string(forKey: "loggedInUsername") ?? "UnknownUser"
         let totalToAdd = items.reduce(0.0) { $0 + ($1.price ?? 0.0) }
@@ -585,7 +598,7 @@ struct GroceryListDetailView: View {
             }.resume()
         }.resume()
     }
-    
+
     func undoGroceryCost(username: String, amount: Double) {
         let getURL = URL(string: "\(BackendConfig.baseURLString)/api/costs/\(username)/weekly")!
         URLSession.shared.dataTask(with: getURL) { data, _, _ in
@@ -615,7 +628,7 @@ struct GroceryListDetailView: View {
             }.resume()
         }.resume()
     }
-    
+
     func checkallItems() {
         Task {
             let uncheckedItems = items.filter { !$0.checked }
@@ -646,7 +659,7 @@ struct GroceryListDetailView: View {
             }
         }
     }
-    
+
     func generateMealFromListView() -> [(name: String, quantity: Int)] {
         let listItems = items
         var items_short: [(name: String, quantity: Int)] = []
@@ -654,7 +667,7 @@ struct GroceryListDetailView: View {
         generateMealFromList(groceryListItems: items_short)
         return items_short
     }
-    
+
     func fetchGroceryBudget() {
         let username = UserDefaults.standard.string(forKey: "loggedInUsername") ?? "UnknownUser"
         let url = URL(string: "\(BackendConfig.baseURLString)/api/budget/\(username)/monthly/groceries")!

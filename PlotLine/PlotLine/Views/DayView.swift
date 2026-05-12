@@ -111,25 +111,95 @@ private struct DayEventsList: View {
     @ObservedObject var viewModel: CalendarViewModel
     @Binding var selectedEvent: Event?
 
+    @Environment(\.colorScheme) var colorScheme
+    private var adaptiveTextColor: Color { colorScheme == .dark ? .white : .blue }
+
+    @State private var eventToMove: Event? = nil
+    @State private var showMoveDatePicker = false
+    @State private var moveTargetDate = Date()
+
     var body: some View {
         List {
             ForEach(events) { event in
-                Button {
-                    selectedEvent = event
-                } label: {
-                    EventRow(event: event)
+                HStack {
+                    Button {
+                        selectedEvent = event
+                    } label: {
+                        EventRow(event: event)
+                    }
+                    .buttonStyle(PlainButtonStyle())
+
+                    Menu {
+                        Button {
+                            selectedEvent = event
+                        } label: {
+                            Label("Edit", systemImage: "pencil")
+                        }
+                        Button {
+                            eventToMove = event
+                            moveTargetDate = event.startDate
+                            showMoveDatePicker = true
+                        } label: {
+                            Label("Move to Date", systemImage: "calendar.badge.plus")
+                        }
+                        Button(role: .destructive) {
+                            viewModel.deleteEvent(event.id)
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                            .foregroundColor(adaptiveTextColor)
+                            .font(.title3)
+                    }
                 }
             }
             .onDelete(perform: delete)
         }
         .listStyle(InsetGroupedListStyle())
+        .sheet(isPresented: $showMoveDatePicker) {
+            NavigationView {
+                Form {
+                    Section(header: Text("New Date")) {
+                        DatePicker("Date", selection: $moveTargetDate, displayedComponents: .date)
+                            .accentColor(adaptiveTextColor)
+                    }
+                    if let event = eventToMove {
+                        Section(header: Text("Event")) {
+                            Text(event.title).font(.subheadline.bold())
+                        }
+                    }
+                }
+                .navigationBarTitle("Move Event", displayMode: .inline)
+                .navigationBarItems(
+                    leading: Button("Cancel") { showMoveDatePicker = false },
+                    trailing: Button("Move") {
+                        if let event = eventToMove { moveEvent(event, to: moveTargetDate) }
+                        showMoveDatePicker = false
+                    }.bold()
+                )
+            }
+        }
     }
-    
+
     private func delete(at offsets: IndexSet) {
         offsets.forEach { index in
-            let eventToDelete = events[index]
-            viewModel.deleteEvent(eventToDelete.id)
+            viewModel.deleteEvent(events[index].id)
         }
+    }
+
+    private func moveEvent(_ event: Event, to newDate: Date) {
+        let cal = Calendar.current
+        let duration = event.endDate.timeIntervalSince(event.startDate)
+        let timeComps = cal.dateComponents([.hour, .minute], from: event.startDate)
+        var dateComps = cal.dateComponents([.year, .month, .day], from: newDate)
+        dateComps.hour = timeComps.hour
+        dateComps.minute = timeComps.minute
+        guard let newStart = cal.date(from: dateComps) else { return }
+        var updated = event
+        updated.startDate = newStart
+        updated.endDate = newStart.addingTimeInterval(duration)
+        viewModel.updateEvent(event: updated)
     }
 }
 

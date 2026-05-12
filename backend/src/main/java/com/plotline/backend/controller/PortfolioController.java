@@ -37,9 +37,6 @@ public class PortfolioController {
     private PortfolioService portfolioService;
 
     @Autowired
-    private IncomeController incomeController;
-
-    @Autowired
     private S3Service s3Service;
 
     @Autowired
@@ -281,20 +278,23 @@ public class PortfolioController {
     }
 
     @PostMapping("/portfolio/rate")
-    public ResponseEntity<String> ratePortfolio(@RequestBody Map<String, String> body) {
+    public ResponseEntity<?> ratePortfolio(@RequestBody Map<String, String> body) {
         try {
             String portfolioText = body.get("portfolio");
             String accountType = body.getOrDefault("accountType", "BROKERAGE");
 
             if (portfolioText == null || portfolioText.isBlank()) {
-                return ResponseEntity.badRequest().body("Portfolio text is required");
+                return ResponseEntity.badRequest().body(Map.of("error", "Portfolio text is required"));
             }
 
             String rating = openAIService.ratePortfolio(portfolioText, accountType);
-            return ResponseEntity.ok(rating);
+            // Parse into JsonNode so the response is always raw JSON, not a quoted string
+            ObjectMapper mapper = new ObjectMapper();
+            JsonNode ratingNode = mapper.readTree(rating);
+            return ResponseEntity.ok(ratingNode);
         } catch (Exception e) {
             e.printStackTrace();
-            return ResponseEntity.status(500).body("Error rating portfolio");
+            return ResponseEntity.status(500).body(Map.of("error", "Error rating portfolio"));
         }
     }
 

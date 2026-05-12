@@ -19,7 +19,10 @@ struct FriendProfileView: View {
     
     @EnvironmentObject var viewModel: FriendsViewModel
     @State private var friendStatus: FriendStatus? = nil
-    @State private var currentUsername: String = UserDefaults.standard.string(forKey: "loggedInUsername") ?? "Guest" // searcher uname
+    @State private var currentUsername: String = UserDefaults.standard.string(forKey: "loggedInUsername") ?? "Guest"
+
+    @Environment(\.colorScheme) var colorScheme
+    private var adaptiveTextColor: Color { colorScheme == .dark ? .white : .blue }
 
     let columns = [GridItem(.flexible()), GridItem(.flexible())]
 
@@ -38,7 +41,7 @@ struct FriendProfileView: View {
                                         .scaledToFill()
                                         .frame(width: 120, height: 120)
                                         .clipShape(Circle())
-                                        .overlay(Circle().stroke(Color.blue, lineWidth: 2))
+                                        .overlay(Circle().stroke(adaptiveTextColor, lineWidth: 2))
                                 } else {
                                     Circle()
                                         .frame(width: 120, height: 120)
@@ -55,13 +58,13 @@ struct FriendProfileView: View {
                         VStack(spacing: 8) {
                             Text(displayName)
                                 .font(.custom("AvenirNext-Bold", size: 20))
-                                .foregroundColor(.blue)
+                                .foregroundColor(adaptiveTextColor)
 
                             Text(city == "Unknown"
                                  ? "No Hometown given"
                                  : "Based out of \(city)")
                                 .font(.custom("AvenirNext-Bold", size: 16))
-                                .foregroundColor(.blue)
+                                .foregroundColor(adaptiveTextColor)
                         }
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: .infinity)
@@ -79,10 +82,8 @@ struct FriendProfileView: View {
                             case .notFriends:
                                 Button("Add Friend") {
                                     Task {
-                                        let resp = await viewModel.sendFriendRequest(sender: currentUsername, receiver: username)
-                                        await MainActor.run { friendStatus = .pendingRequest }
-                                        await fetchFriendStatus()
-                                        print("Sent request: \(resp)")
+                                        _ = await viewModel.sendFriendRequest(sender: currentUsername, receiver: username)
+                                        friendStatus = .pendingRequest
                                     }
                                 }
                                 .buttonStyle(.borderedProminent)
@@ -122,10 +123,9 @@ struct FriendProfileView: View {
                                             .frame(maxWidth: .infinity)
                                     }
                                     .buttonStyle(.bordered)
-        }
-        .task { await fetchFriendStatus() }
-    }
-}
+                                }
+                            }
+                        }
 
 
                         // Trophy Section
@@ -269,27 +269,22 @@ struct FriendProfileView: View {
     }
     
     private func fetchFriendStatus() async {
-        Task {
-            do {
-                let friends = try await FriendsAPI.fetchFriendList(username: currentUsername).friends
-                let incoming = try await FriendsAPI.fetchFriendRequests(username: currentUsername).pendingRequests
-                let outgoing = try await FriendsAPI.fetchFriendRequests(username: username).pendingRequests
-                
+        do {
+            let friends = try await FriendsAPI.fetchFriendList(username: currentUsername).friends
+            let incoming = try await FriendsAPI.fetchFriendRequests(username: currentUsername).pendingRequests
+            let outgoing = try await FriendsAPI.fetchFriendRequests(username: username).pendingRequests
 
-                await MainActor.run {
-                    if friends.contains(username) {
-                        friendStatus = .friends
-                    } else if incoming.contains(username) {
-                        friendStatus = .incomingRequest
-                    } else if outgoing.contains(currentUsername) {
-                        friendStatus = .pendingRequest
-                    } else {
-                        friendStatus = .notFriends
-                    }
-                }
-            } catch {
-                print("Error fetching friend status: \(error)")
+            if friends.contains(username) {
+                friendStatus = .friends
+            } else if incoming.contains(username) {
+                friendStatus = .incomingRequest
+            } else if outgoing.contains(currentUsername) {
+                friendStatus = .pendingRequest
+            } else {
+                friendStatus = .notFriends
             }
+        } catch {
+            print("Error fetching friend status: \(error)")
         }
     }
 

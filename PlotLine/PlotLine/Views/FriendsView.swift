@@ -40,6 +40,17 @@ struct FriendsView: View {
         .navigationTitle("My Friends")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                if let inviteURL = URL(string: "\(BackendConfig.baseURLString)/invite?from=\(currentUsername)") {
+                    ShareLink(
+                        item: inviteURL,
+                        message: Text("Add me as a friend on PlotLine!")
+                    ) {
+                        Image(systemName: "link.badge.plus")
+                            .font(.title2)
+                    }
+                }
+            }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button { showSearchSheet.toggle() } label: {
                     Image(systemName: "plus.circle.fill")

@@ -2,7 +2,11 @@ import SwiftUI
 
 struct ChatMessageRow: View {
     @EnvironmentObject var vm: ChatViewModel
+    @Environment(\.colorScheme) var colorScheme
+    private var adaptiveTextColor: Color { colorScheme == .dark ? .white : .blue }
+
     let msg: ChatMessage
+    let currentUsername: String
     let allEmojis: [String]
     let onReactTap: () -> Void
     let onReplyTap: ()  -> Void
@@ -10,20 +14,25 @@ struct ChatMessageRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
 
-            HStack {
-                Text(msg.creator).bold()
-                Spacer()
-                Text(msg.timestamp, style: .time)
-                    .font(.caption)
-            }
+            // Tappable content area — opens reply thread
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text(msg.creator == currentUsername ? "\(msg.creator) (Me)" : msg.creator).bold()
+                    Spacer()
+                    Text(msg.timestamp, style: .time)
+                        .font(.caption)
+                }
 
-            Text(msg.content)
-                .font(.body)
+                Text(msg.content)
+                    .font(.body)
 
-            if !msg.reactions.isEmpty {
-                ReactionBubbles(message: msg)
-                    .environmentObject(vm)
+                if !msg.reactions.isEmpty {
+                    ReactionBubbles(message: msg)
+                        .environmentObject(vm)
+                }
             }
+            .contentShape(Rectangle())
+            .onTapGesture { onReplyTap() }
 
             HStack(spacing: 24) {
                 Button(action: onReactTap) {
@@ -33,7 +42,7 @@ struct ChatMessageRow: View {
 
                 Button(action: onReplyTap) {
                     Image(systemName: "arrowshape.turn.up.left\(msg.replies.isEmpty ? "" : ".fill")")
-                        .foregroundColor(msg.replies.isEmpty ? .primary : .blue)
+                        .foregroundColor(msg.replies.isEmpty ? .primary : adaptiveTextColor)
                 }
                 .buttonStyle(BorderlessButtonStyle())
             }

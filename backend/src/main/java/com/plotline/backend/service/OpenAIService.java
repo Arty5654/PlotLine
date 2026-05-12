@@ -686,7 +686,7 @@ public class OpenAIService {
     }
   }
 
-    public String ratePortfolio(String portfolioText, String accountType) {
+  public String ratePortfolio(String portfolioText, String accountType) {
     if (openAIClient == null) {
       return "{\"error\": \"OpenAI not configured\"}";
     }
@@ -695,22 +695,11 @@ public class OpenAIService {
           ? "This is a Roth IRA portfolio (tax-free qualified withdrawals, long-term growth focus)."
           : "This is a taxable brokerage portfolio (tax efficiency matters, liquidity may be needed).";
 
-      String systemMessage = """
-          You are an expert investment portfolio analyst. Rate the given portfolio and return ONLY a JSON object in this exact format with no extra text or markdown:
-          {
-            "overallScore": <number 1-10>,
-            "letter": "<A+/A/A-/B+/B/B-/C+/C/C-/D/F>",
-            "summary": "<2-3 sentence overall assessment>",
-            "breakdown": {
-              "diversification": {"score": <1-10>, "comment": "<brief comment>"},
-              "riskBalance": {"score": <1-10>, "comment": "<brief comment>"},
-              "growthPotential": {"score": <1-10>, "comment": "<brief comment>"},
-              "costEfficiency": {"score": <1-10>, "comment": "<brief comment>"},
-              "accountFit": {"score": <1-10>, "comment": "<brief comment>"}
-            },
-            "suggestions": ["<suggestion 1>", "<suggestion 2>", "<suggestion 3>"]
-          }
-          """;
+      String systemMessage = "You are an expert investment portfolio analyst. "
+          + "Rate the given portfolio and return ONLY a valid JSON object with no markdown or extra text. "
+          + "Required keys: overallScore (number 1-10), letter (grade like A+/B/C-), summary (string), "
+          + "breakdown (object with keys diversification, riskBalance, growthPotential, costEfficiency, accountFit, "
+          + "each having score (number 1-10) and comment (string)), suggestions (array of 3 strings).";
 
       String userMessage = accountHint + "\n\nPortfolio:\n" + portfolioText;
 
@@ -724,14 +713,24 @@ public class OpenAIService {
       ResponseOutputText rot = response.output().get(0).message().get().content().get(0).asOutputText();
       String output = rot.text().trim();
 
+      // Strip markdown fences
       if (output.startsWith("```json")) output = output.substring(7);
       else if (output.startsWith("```")) output = output.substring(3);
       if (output.endsWith("```")) output = output.substring(0, output.length() - 3);
+      output = output.trim();
 
-      return output.trim();
-    } catch (OpenAIException e) {
+      // Extract JSON by brace boundaries
+      int start = output.indexOf('{');
+      int end = output.lastIndexOf('}');
+      if (start >= 0 && end > start) {
+        output = output.substring(start, end + 1);
+      }
+
+      return output;
+    } catch (Exception e) {
       e.printStackTrace();
-      return "{\"error\": \"Service Error\"}";
+      System.err.println("ratePortfolio failed: " + e.getClass().getName() + ": " + e.getMessage());
+      return "{\"error\": \"" + e.getClass().getSimpleName() + ": " + e.getMessage().replace("\"", "'") + "\"}";
     }
   }
 

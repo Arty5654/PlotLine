@@ -4,6 +4,8 @@ struct ReplySheet: View {
     @EnvironmentObject private var vm: ChatViewModel
     @EnvironmentObject private var friendsVM: FriendsViewModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
+    private var adaptiveTextColor: Color { colorScheme == .dark ? .white : .blue }
 
     let message: ChatMessage
     @State private var text = ""
@@ -42,7 +44,7 @@ struct ReplySheet: View {
                                             }) {
                                                 Text(user)
                                                     .bold()
-                                                    .foregroundColor(.blue)
+                                                    .foregroundColor(adaptiveTextColor)
                                             }
                                             Text(reply)
                                         }

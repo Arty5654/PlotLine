@@ -29,7 +29,15 @@ struct PlotLineApp: App {
                     .environmentObject(friendsVM)
                     .environmentObject(chatVM)
                     .onOpenURL { url in
-                        GIDSignIn.sharedInstance.handle(url)
+                        if url.scheme == "plotline" {
+                            var userInfo: [String: Any] = ["destination": url.host ?? ""]
+                            if let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems {
+                                for item in items { userInfo[item.name] = item.value ?? "" }
+                            }
+                            NotificationCenter.default.post(name: .plotlineDeepLink, object: nil, userInfo: userInfo)
+                        } else {
+                            GIDSignIn.sharedInstance.handle(url)
+                        }
                     }
             }
         }
@@ -37,8 +45,13 @@ struct PlotLineApp: App {
             guard phase == .active else { return }
             let username = UserDefaults.standard.string(forKey: "loggedInUsername") ?? ""
             guard !username.isEmpty else { return }
+            WidgetDataWriter.writeCredentials()
             calendarVM.fetchEvents()
             Task { await friendsVM.loadFriends(for: username) }
         }
     }
+}
+
+extension NSNotification.Name {
+    static let plotlineDeepLink = NSNotification.Name("PlotLineDeepLink")
 }

@@ -59,4 +59,15 @@ class ChatViewModel: ObservableObject {
             print("Remove reaction error:", error)
         }
     }
+
+    // Tapping an existing reaction bubble: try to remove (user un-reacts),
+    // fall back to adding if the server says they hadn't reacted yet.
+    func toggleReaction(to msg: ChatMessage, emoji: String) async {
+        do {
+            try await api.removeReaction(owner: msg.creator, messageId: msg.id, emoji: emoji)
+        } catch {
+            try? await api.addReaction(owner: msg.creator, messageId: msg.id, emoji: emoji)
+        }
+        await load()
+    }
 }

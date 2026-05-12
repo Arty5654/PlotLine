@@ -80,6 +80,15 @@ struct NutritionView: View {
     @State private var copyTargetDate = Date()
     @State private var isMoveMode = false  // true = move, false = copy
 
+    // Add to grocery list
+    @State private var foodToAddToGrocery: FoodItem?
+    @State private var showGroceryPicker = false
+
+    // Shop for meal
+    @State private var isShoppingForMeal = false
+    @State private var shopMealSuccess: String?
+    @State private var showShopMealAlert = false
+
     private let api = NutritionAPI.shared
 
     var body: some View {
@@ -116,9 +125,21 @@ struct NutritionView: View {
                     userData.goals = nil
                 } else {
                     userData.goals = newGoal
+                    let username = UserDefaults.standard.string(forKey: "loggedInUsername") ?? ""
+                    Task { await ProfileAPI.incrementTrophy(username: username, trophyId: "nutrition-goal-setter") }
                 }
                 persistUserData()
             }
+        }
+        .sheet(isPresented: $showGroceryPicker) {
+            if let food = foodToAddToGrocery {
+                AddFoodToGrocerySheet(food: food)
+            }
+        }
+        .alert("Grocery List Created", isPresented: $showShopMealAlert) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(shopMealSuccess ?? "")
         }
         .sheet(isPresented: $showCamera) { CameraPickerView { img in handleCapturedPhoto(img) } }
         .photosPicker(isPresented: $showPhotoPicker, selection: $selectedPhoto, matching: .images)
@@ -182,7 +203,7 @@ struct NutritionView: View {
                 Button { showGoalSettings = true } label: {
                     Image(systemName: "target")
                         .font(.subheadline)
-                        .foregroundColor(userData.goals != nil ? PLColor.accent : PLColor.textSecondary)
+                        .foregroundColor(userData.goals != nil ? adaptiveTextColor : PLColor.textSecondary)
                 }
             }
 
@@ -194,7 +215,7 @@ struct NutritionView: View {
 
                 ZStack {
                     Circle()
-                        .stroke(Color.blue.opacity(0.15), lineWidth: 10)
+                        .stroke(adaptiveTextColor.opacity(0.15), lineWidth: 10)
                     Circle()
                         .trim(from: 0, to: progress)
                         .stroke(eaten > goal.calorieGoal ? PLColor.danger : PLColor.accent, style: StrokeStyle(lineWidth: 10, lineCap: .round))
@@ -204,7 +225,7 @@ struct NutritionView: View {
                     VStack(spacing: 2) {
                         Text("\(Int(remaining))")
                             .font(.system(size: 32, weight: .bold, design: .rounded))
-                            .foregroundColor(eaten > goal.calorieGoal ? PLColor.danger : PLColor.accent)
+                            .foregroundColor(eaten > goal.calorieGoal ? PLColor.danger : adaptiveTextColor)
                         Text("remaining")
                             .font(.caption)
                             .foregroundColor(PLColor.textSecondary)
@@ -213,7 +234,7 @@ struct NutritionView: View {
                 .frame(width: 130, height: 130)
 
                 HStack(spacing: PLSpacing.lg) {
-                    calorieInfoColumn(value: Int(eaten), label: "Eaten", color: PLColor.accent)
+                    calorieInfoColumn(value: Int(eaten), label: "Eaten", color: adaptiveTextColor)
                     calorieInfoColumn(value: Int(goal.calorieGoal), label: "Goal", color: PLColor.textSecondary)
                 }
                 .font(.caption)
@@ -229,7 +250,7 @@ struct NutritionView: View {
                 // No goal set
                 Text("\(Int(entry?.totalCalories ?? 0))")
                     .font(.system(size: 42, weight: .bold, design: .rounded))
-                    .foregroundColor(PLColor.accent)
+                    .foregroundColor(adaptiveTextColor)
                 Text("calories")
                     .font(.subheadline)
                     .foregroundColor(PLColor.textSecondary)
@@ -244,7 +265,7 @@ struct NutritionView: View {
                 Button { showGoalSettings = true } label: {
                     Text("Set Calorie Goal")
                         .font(.caption.bold())
-                        .foregroundColor(PLColor.accent)
+                        .foregroundColor(adaptiveTextColor)
                 }
                 .padding(.top, 4)
             }
@@ -335,8 +356,8 @@ struct NutritionView: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 14)
-            .background(PLColor.accent.opacity(0.1))
-            .foregroundColor(PLColor.accent)
+            .background(adaptiveTextColor.opacity(0.1))
+            .foregroundColor(adaptiveTextColor)
             .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
         }
     }
@@ -360,8 +381,8 @@ struct NutritionView: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 14)
-            .background(PLColor.accent.opacity(0.1))
-            .foregroundColor(PLColor.accent)
+            .background(adaptiveTextColor.opacity(0.1))
+            .foregroundColor(adaptiveTextColor)
             .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
         }
     }
@@ -395,10 +416,10 @@ struct NutritionView: View {
             HStack {
                 Image(systemName: type.icon)
                     .font(.caption)
-                    .foregroundColor(PLColor.accent)
+                    .foregroundColor(adaptiveTextColor)
                 Text(type.displayName)
                     .font(.subheadline.bold())
-                    .foregroundColor(PLColor.accent)
+                    .foregroundColor(adaptiveTextColor)
                 Spacer()
                 let totalCal = foods.reduce(0) { $0 + $1.calories }
                 Text("\(Int(totalCal)) cal")
@@ -440,6 +461,12 @@ struct NutritionView: View {
                 Button { toggleFavorite(food) } label: {
                     let isFav = userData.favorites.contains { $0.name == food.name }
                     Label(isFav ? "Unfavorite" : "Favorite", systemImage: isFav ? "star.slash" : "star")
+                }
+                Button {
+                    foodToAddToGrocery = food
+                    showGroceryPicker = true
+                } label: {
+                    Label("Add to Grocery List", systemImage: "cart.badge.plus")
                 }
                 Button {
                     foodToCopy = food
@@ -588,21 +615,43 @@ struct NutritionView: View {
                         .padding(.vertical)
                 } else {
                     ForEach(userData.savedMeals) { meal in
-                        Button {
-                            for var food in meal.foods {
-                                food.id = UUID().uuidString
-                                addFood(food)
+                        HStack(spacing: 12) {
+                            Button {
+                                for var food in meal.foods {
+                                    food.id = UUID().uuidString
+                                    addFood(food)
+                                }
+                                showSavedMeals = false
+                            } label: {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(meal.name).font(.headline).foregroundColor(.primary)
+                                    Text("\(meal.foods.count) item\(meal.foods.count == 1 ? "" : "s") · \(Int(meal.totalCalories)) cal")
+                                        .font(.caption).foregroundColor(.secondary)
+                                    Text("P:\(Int(meal.totalProtein))g  C:\(Int(meal.totalCarbs))g  F:\(Int(meal.totalFat))g")
+                                        .font(.caption2).foregroundColor(.secondary)
+                                }
+                                .padding(.vertical, 4)
                             }
-                            showSavedMeals = false
-                        } label: {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(meal.name).font(.headline).foregroundColor(.primary)
-                                Text("\(meal.foods.count) item\(meal.foods.count == 1 ? "" : "s") - \(Int(meal.totalCalories)) cal")
-                                    .font(.caption).foregroundColor(.secondary)
-                                Text("P:\(Int(meal.totalProtein))g  C:\(Int(meal.totalCarbs))g  F:\(Int(meal.totalFat))g")
-                                    .font(.caption2).foregroundColor(.secondary)
+
+                            Spacer()
+
+                            Button {
+                                shopForMeal(meal)
+                            } label: {
+                                if isShoppingForMeal {
+                                    ProgressView().frame(width: 32, height: 32)
+                                } else {
+                                    VStack(spacing: 2) {
+                                        Image(systemName: "cart.badge.plus")
+                                            .font(.title3)
+                                            .foregroundColor(.green)
+                                        Text("Shop")
+                                            .font(.caption2)
+                                            .foregroundColor(.green)
+                                    }
+                                }
                             }
-                            .padding(.vertical, 4)
+                            .disabled(isShoppingForMeal)
                         }
                     }
                     .onDelete { indices in
@@ -620,6 +669,7 @@ struct NutritionView: View {
     private var createMealSheet: some View {
         CreateMealSheet(
             todayFoods: entry?.foods ?? [],
+            favorites: userData.favorites,
             onSave: { meal in
                 userData.savedMeals.append(meal)
                 persistUserData()
@@ -662,6 +712,41 @@ struct NutritionView: View {
         }
     }
 
+    // MARK: - Grocery Integration
+
+    private func shopForMeal(_ meal: SavedMeal) {
+        guard !isShoppingForMeal else { return }
+        isShoppingForMeal = true
+        Task {
+            do {
+                let listId = try await GroceryListAPI.createGroceryList(name: meal.name)
+                let trimmedId = listId.trimmingCharacters(in: .whitespacesAndNewlines)
+                    .trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+                guard let listUUID = UUID(uuidString: trimmedId) else {
+                    await MainActor.run { isShoppingForMeal = false }
+                    return
+                }
+                for food in meal.foods {
+                    let item = GroceryItem(
+                        listId: listUUID,
+                        id: UUID(),
+                        name: food.name,
+                        quantity: 1,
+                        checked: false
+                    )
+                    try await GroceryListAPI.addItem(listId: trimmedId, item: item)
+                }
+                await MainActor.run {
+                    isShoppingForMeal = false
+                    shopMealSuccess = "Added \(meal.foods.count) item\(meal.foods.count == 1 ? "" : "s") to \"\(meal.name)\" grocery list."
+                    showShopMealAlert = true
+                }
+            } catch {
+                await MainActor.run { isShoppingForMeal = false }
+            }
+        }
+    }
+
     // MARK: - Data Operations
 
     private func loadEntry() {
@@ -671,14 +756,35 @@ struct NutritionView: View {
             await MainActor.run {
                 entry = fetched ?? NutritionEntry(date: selectedDate, foods: [])
                 isLoading = false
+                writeNutritionToWidget()
             }
         }
+    }
+
+    private func writeNutritionToWidget() {
+        guard Calendar.current.isDateInToday(selectedDate) else { return }
+        let e = entry
+        let g = userData.goals
+        WidgetDataWriter.writeNutrition(
+            calories:    e?.totalCalories ?? 0,
+            protein:     e?.totalProtein  ?? 0,
+            carbs:       e?.totalCarbs    ?? 0,
+            fat:         e?.totalFat      ?? 0,
+            calorieGoal: g?.calorieGoal   ?? 0,
+            proteinGoal: g?.proteinGoal   ?? 0,
+            carbsGoal:   g?.carbsGoal     ?? 0,
+            fatGoal:     g?.fatGoal       ?? 0
+        )
+        WidgetDataWriter.reloadWidgets()
     }
 
     private func loadUserData() {
         Task {
             if let data = try? await api.fetchUserData() {
-                await MainActor.run { userData = data }
+                await MainActor.run {
+                    userData = data
+                    writeNutritionToWidget()
+                }
             }
         }
     }
@@ -694,19 +800,54 @@ struct NutritionView: View {
         entry?.foods.append(foodWithMeal)
         saveEntry()
 
-        // Increment nutrition-logger trophy
         let username = UserDefaults.standard.string(forKey: "loggedInUsername") ?? ""
         Task { await ProfileAPI.incrementTrophy(username: username, trophyId: "nutrition-logger") }
+        checkDailyNutritionTrophies()
     }
 
     private func deleteFood(_ food: FoodItem) {
         entry?.foods.removeAll { $0.id == food.id }
         saveEntry()
+        checkDailyNutritionTrophies()
     }
 
     private func saveEntry() {
         guard let entry = entry else { return }
         Task { try? await api.saveEntry(entry) }
+    }
+
+    private func checkDailyNutritionTrophies() {
+        guard Calendar.current.isDateInToday(selectedDate) else { return }
+        let username = UserDefaults.standard.string(forKey: "loggedInUsername") ?? ""
+        guard !username.isEmpty else { return }
+
+        let todayStr = {
+            let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"
+            return f.string(from: Date())
+        }()
+
+        let foods = entry?.foods ?? []
+
+        // Streak: first time logging food today
+        if !foods.isEmpty {
+            let streakKey = "nutritionStreakDate_\(username)"
+            if UserDefaults.standard.string(forKey: streakKey) != todayStr {
+                UserDefaults.standard.set(todayStr, forKey: streakKey)
+                Task { await ProfileAPI.incrementTrophy(username: username, trophyId: "nutrition-streak") }
+            }
+        }
+
+        // Under goal: logged food and total calories ≤ calorie goal
+        if let goal = userData.goals, goal.calorieGoal > 0, !foods.isEmpty {
+            let total = entry?.totalCalories ?? 0
+            if total > 0 && total <= goal.calorieGoal {
+                let underGoalKey = "nutritionUnderGoalDate_\(username)"
+                if UserDefaults.standard.string(forKey: underGoalKey) != todayStr {
+                    UserDefaults.standard.set(todayStr, forKey: underGoalKey)
+                    Task { await ProfileAPI.incrementTrophy(username: username, trophyId: "nutrition-under-goal") }
+                }
+            }
+        }
     }
 
     private func toggleFavorite(_ food: FoodItem) {
@@ -817,8 +958,11 @@ struct NutritionView: View {
 // MARK: - Create Meal Sheet
 struct CreateMealSheet: View {
     let todayFoods: [FoodItem]
+    let favorites: [FoodItem]
     let onSave: (SavedMeal) -> Void
     @Environment(\.dismiss) var dismiss
+    @Environment(\.colorScheme) var colorScheme
+    private var adaptiveTextColor: Color { colorScheme == .dark ? .white : .blue }
 
     @State private var mealName = ""
     @State private var selectedFoodIds: Set<String> = []
@@ -838,10 +982,8 @@ struct CreateMealSheet: View {
     @State private var manualFat = ""
     @State private var extraFoods: [FoodItem] = []
 
-    private var allAvailableFoods: [FoodItem] { todayFoods + extraFoods }
-
     private var selectedFoods: [FoodItem] {
-        allAvailableFoods.filter { selectedFoodIds.contains($0.id) }
+        (todayFoods + favorites + extraFoods).filter { selectedFoodIds.contains($0.id) }
     }
 
     var body: some View {
@@ -849,32 +991,35 @@ struct CreateMealSheet: View {
             Form {
                 Section(header: Text("Meal Name")) {
                     TextField("e.g. Breakfast, Chicken Bowl", text: $mealName)
+                        .tint(adaptiveTextColor)
                 }
 
-                Section(header: Text("Select Foods")) {
-                    if allAvailableFoods.isEmpty {
-                        Text("No foods logged today. Add foods manually below.")
-                            .foregroundColor(.secondary)
-                    } else {
-                        ForEach(allAvailableFoods) { food in
-                            Button {
-                                if selectedFoodIds.contains(food.id) {
-                                    selectedFoodIds.remove(food.id)
-                                } else {
-                                    selectedFoodIds.insert(food.id)
-                                }
-                            } label: {
-                                HStack {
-                                    Image(systemName: selectedFoodIds.contains(food.id) ? "checkmark.circle.fill" : "circle")
-                                        .foregroundColor(selectedFoodIds.contains(food.id) ? .blue : .secondary)
-                                    Text(food.name).foregroundColor(.primary)
-                                    Spacer()
-                                    Text("\(Int(food.calories)) cal").font(.caption).foregroundColor(.secondary)
-                                }
-                            }
-                        }
+                if !todayFoods.isEmpty {
+                    Section(header: Text("Today's Log")) {
+                        ForEach(todayFoods) { food in foodToggleRow(food) }
                     }
+                }
 
+                if !favorites.isEmpty {
+                    Section(header: Text("Favorites")) {
+                        ForEach(favorites) { food in foodToggleRow(food) }
+                    }
+                }
+
+                if !extraFoods.isEmpty {
+                    Section(header: Text("Added")) {
+                        ForEach(extraFoods) { food in foodToggleRow(food) }
+                    }
+                }
+
+                if todayFoods.isEmpty && favorites.isEmpty && extraFoods.isEmpty {
+                    Section {
+                        Text("Use the button below to add foods to your meal.")
+                            .foregroundColor(.secondary)
+                    }
+                }
+
+                Section {
                     Menu {
                         Button { showAddSearch = true } label: {
                             Label("Search Food", systemImage: "magnifyingglass")
@@ -887,6 +1032,7 @@ struct CreateMealSheet: View {
                         }
                     } label: {
                         Label("Add Food", systemImage: "plus.circle")
+                            .foregroundColor(adaptiveTextColor)
                     }
                 }
 
@@ -951,6 +1097,24 @@ struct CreateMealSheet: View {
         }
     }
 
+    private func foodToggleRow(_ food: FoodItem) -> some View {
+        Button {
+            if selectedFoodIds.contains(food.id) {
+                selectedFoodIds.remove(food.id)
+            } else {
+                selectedFoodIds.insert(food.id)
+            }
+        } label: {
+            HStack {
+                Image(systemName: selectedFoodIds.contains(food.id) ? "checkmark.circle.fill" : "circle")
+                    .foregroundColor(selectedFoodIds.contains(food.id) ? adaptiveTextColor : .secondary)
+                Text(food.name).foregroundColor(.primary)
+                Spacer()
+                Text("\(Int(food.calories)) cal").font(.caption).foregroundColor(.secondary)
+            }
+        }
+    }
+
     private func lookupBarcode(_ barcode: String) {
         Task {
             if let food = try? await NutritionAPI.shared.lookupBarcode(barcode) {
@@ -967,6 +1131,8 @@ struct CreateMealSheet: View {
 struct FoodSearchSheet: View {
     let onSelect: (FoodItem) -> Void
     @Environment(\.dismiss) var dismiss
+    @Environment(\.colorScheme) var colorScheme
+    private var adaptiveTextColor: Color { colorScheme == .dark ? .white : .blue }
 
     @State private var query = ""
     @State private var results: [FoodItem] = []
@@ -992,6 +1158,7 @@ struct FoodSearchSheet: View {
                         .disableAutocorrection(true)
                         .submitLabel(.search)
                         .onSubmit { performSearch() }
+                        .tint(adaptiveTextColor)
                     if !query.isEmpty {
                         Button { query = ""; results = []; hasSearched = false } label: {
                             Image(systemName: "xmark.circle.fill")
@@ -1125,6 +1292,8 @@ struct FoodSearchSheet: View {
 // MARK: - Manual Food Entry Sheet
 struct ManualFoodEntrySheet: View {
     @Environment(\.dismiss) var dismiss
+    @Environment(\.colorScheme) var colorScheme
+    private var adaptiveTextColor: Color { colorScheme == .dark ? .white : .blue }
     let onSave: (FoodItem) -> Void
 
     @State private var name = ""
@@ -1139,16 +1308,16 @@ struct ManualFoodEntrySheet: View {
         NavigationView {
             Form {
                 Section(header: Text("Food Info")) {
-                    TextField("Food name", text: $name)
-                    TextField("Serving size (e.g. 1 cup, 100g)", text: $servingSize)
+                    TextField("Food name", text: $name).tint(adaptiveTextColor)
+                    TextField("Serving size (e.g. 1 cup, 100g)", text: $servingSize).tint(adaptiveTextColor)
                     TextField("Number of servings", text: $servings)
-                        .keyboardType(.decimalPad)
+                        .keyboardType(.decimalPad).tint(adaptiveTextColor)
                 }
                 Section(header: Text("Nutrition per total servings")) {
-                    TextField("Calories", text: $calories).keyboardType(.decimalPad)
-                    TextField("Protein (g)", text: $protein).keyboardType(.decimalPad)
-                    TextField("Carbs (g)", text: $carbs).keyboardType(.decimalPad)
-                    TextField("Fat (g)", text: $fat).keyboardType(.decimalPad)
+                    TextField("Calories", text: $calories).keyboardType(.decimalPad).tint(adaptiveTextColor)
+                    TextField("Protein (g)", text: $protein).keyboardType(.decimalPad).tint(adaptiveTextColor)
+                    TextField("Carbs (g)", text: $carbs).keyboardType(.decimalPad).tint(adaptiveTextColor)
+                    TextField("Fat (g)", text: $fat).keyboardType(.decimalPad).tint(adaptiveTextColor)
                 }
             }
             .navigationBarTitle("Add Food", displayMode: .inline)
@@ -1180,6 +1349,8 @@ struct ServingsAdjustmentSheet: View {
     var barcode: String = ""
     let onSave: (FoodItem) -> Void
     @Environment(\.dismiss) var dismiss
+    @Environment(\.colorScheme) var colorScheme
+    private var adaptiveTextColor: Color { colorScheme == .dark ? .white : .blue }
 
     @State private var servings: String = "1"
     @State private var editCalories: String = ""
@@ -1228,6 +1399,7 @@ struct ServingsAdjustmentSheet: View {
             Section(header: Text("How many servings?")) {
                 TextField("Servings", text: $servings)
                     .keyboardType(.decimalPad)
+                    .tint(adaptiveTextColor)
             }
             Section(header: Text(dataLooksIncomplete ? "Nutrition (per serving)" : "Nutrition (editable)")) {
                 HStack {
@@ -1237,6 +1409,7 @@ struct ServingsAdjustmentSheet: View {
                         .keyboardType(.decimalPad)
                         .multilineTextAlignment(.trailing)
                         .frame(width: 80)
+                        .tint(adaptiveTextColor)
                 }
                 HStack {
                     Text("Protein (g)")
@@ -1245,6 +1418,7 @@ struct ServingsAdjustmentSheet: View {
                         .keyboardType(.decimalPad)
                         .multilineTextAlignment(.trailing)
                         .frame(width: 80)
+                        .tint(adaptiveTextColor)
                 }
                 HStack {
                     Text("Carbs (g)")
@@ -1253,6 +1427,7 @@ struct ServingsAdjustmentSheet: View {
                         .keyboardType(.decimalPad)
                         .multilineTextAlignment(.trailing)
                         .frame(width: 80)
+                        .tint(adaptiveTextColor)
                 }
                 HStack {
                     Text("Fat (g)")
@@ -1261,6 +1436,7 @@ struct ServingsAdjustmentSheet: View {
                         .keyboardType(.decimalPad)
                         .multilineTextAlignment(.trailing)
                         .frame(width: 80)
+                        .tint(adaptiveTextColor)
                 }
             }
             if !dataLooksIncomplete {
@@ -1325,6 +1501,139 @@ struct CameraPickerView: UIViewControllerRepresentable {
 
         func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
             picker.dismiss(animated: true)
+        }
+    }
+}
+
+// MARK: - Add Food to Grocery List Sheet
+
+struct AddFoodToGrocerySheet: View {
+    let food: FoodItem
+
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
+    private var adaptiveTextColor: Color { colorScheme == .dark ? .white : .blue }
+
+    @State private var groceryLists: [GroceryList] = []
+    @State private var isLoading = true
+    @State private var isAdding = false
+    @State private var showNewListField = false
+    @State private var newListName = ""
+    @State private var successMessage: String?
+
+    private var username: String { UserDefaults.standard.string(forKey: "loggedInUsername") ?? "" }
+
+    var body: some View {
+        NavigationView {
+            Group {
+                if let msg = successMessage {
+                    VStack(spacing: 16) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 56))
+                            .foregroundColor(.green)
+                        Text(msg)
+                            .font(.subheadline)
+                            .multilineTextAlignment(.center)
+                            .foregroundColor(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if isLoading {
+                    ProgressView("Loading lists…")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    List {
+                        Section {
+                            if showNewListField {
+                                HStack {
+                                    TextField("List name", text: $newListName)
+                                        .tint(adaptiveTextColor)
+                                    Button("Create") { createAndAdd() }
+                                        .disabled(newListName.trimmingCharacters(in: .whitespaces).isEmpty || isAdding)
+                                        .foregroundColor(adaptiveTextColor)
+                                }
+                            } else {
+                                Button {
+                                    newListName = food.name
+                                    showNewListField = true
+                                } label: {
+                                    Label("New Grocery List", systemImage: "plus.circle.fill")
+                                        .foregroundColor(adaptiveTextColor)
+                                }
+                            }
+                        }
+
+                        if !groceryLists.isEmpty {
+                            Section("Existing Lists") {
+                                ForEach(groceryLists) { list in
+                                    Button {
+                                        addToList(list)
+                                    } label: {
+                                        HStack {
+                                            Image(systemName: "cart")
+                                                .foregroundColor(adaptiveTextColor)
+                                            Text(list.name).foregroundColor(.primary)
+                                            Spacer()
+                                            Text("\(list.items.count) item\(list.items.count == 1 ? "" : "s")")
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
+                                        }
+                                    }
+                                    .disabled(isAdding)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Add \"\(food.name)\"")
+            .navigationBarTitleDisplayMode(.inline)
+            .navigationBarItems(leading: Button("Cancel") { dismiss() })
+            .task { await loadLists() }
+        }
+    }
+
+    private func loadLists() async {
+        isLoading = true
+        let lists = (try? await GroceryListAPI.getGroceryLists(username: username)) ?? []
+        await MainActor.run { groceryLists = lists; isLoading = false }
+    }
+
+    private func addToList(_ list: GroceryList) {
+        isAdding = true
+        Task {
+            let item = GroceryItem(listId: list.id, id: UUID(), name: food.name, quantity: 1, checked: false)
+            try? await GroceryListAPI.addItem(listId: list.id.uuidString, item: item)
+            await MainActor.run {
+                isAdding = false
+                successMessage = "Added to \"\(list.name)\""
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { dismiss() }
+            }
+        }
+    }
+
+    private func createAndAdd() {
+        let name = newListName.trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty else { return }
+        isAdding = true
+        Task {
+            do {
+                let listId = try await GroceryListAPI.createGroceryList(name: name)
+                let trimmedId = listId.trimmingCharacters(in: .whitespacesAndNewlines)
+                    .trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+                guard let listUUID = UUID(uuidString: trimmedId) else {
+                    await MainActor.run { isAdding = false }
+                    return
+                }
+                let item = GroceryItem(listId: listUUID, id: UUID(), name: food.name, quantity: 1, checked: false)
+                try await GroceryListAPI.addItem(listId: trimmedId, item: item)
+                await MainActor.run {
+                    isAdding = false
+                    successMessage = "Added to \"\(name)\""
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { dismiss() }
+                }
+            } catch {
+                await MainActor.run { isAdding = false }
+            }
         }
     }
 }

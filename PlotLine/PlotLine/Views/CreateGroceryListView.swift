@@ -2,18 +2,14 @@
 //  CreateGroceryListView.swift
 //  PlotLine
 //
-//  Created by Yash Mehta on 2/22/25.
-//
 
 import SwiftUI
 
-// Local tokens (scoped to this file)
 private enum PLColor {
     static let surface       = Color(.secondarySystemBackground)
     static let cardBorder    = Color.black.opacity(0.08)
     static let textPrimary   = Color.primary
     static let textSecondary = Color.secondary
-    static let accent        = Color.blue
 }
 private enum PLSpacing {
     static let sm: CGFloat = 10
@@ -40,7 +36,7 @@ private struct PrimaryButton: ButtonStyle {
             .foregroundColor(.white)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 12)
-            .background(PLColor.accent.opacity(configuration.isPressed ? 0.85 : 1))
+            .background(Color.blue.opacity(configuration.isPressed ? 0.85 : 1))
             .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
     }
 }
@@ -49,14 +45,17 @@ struct CreateGroceryListView: View {
     @Binding var newGroceryListName: String
     var onGroceryListCreated: () -> Void
 
-    // Keep same alert-driven flow
+    @Environment(\.colorScheme) var colorScheme
+    @Environment(\.dismiss) private var dismiss
+
     @State private var isShowingAlert = false
     @State private var alertMessage = ""
     @State private var alertTitle = ""
-
-    // Small UX niceties
     @FocusState private var nameFocused: Bool
-    @Environment(\.dismiss) private var dismiss
+
+    private var adaptiveTextColor: Color {
+        colorScheme == .dark ? .white : .blue
+    }
 
     private var isCreateDisabled: Bool {
         newGroceryListName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -64,54 +63,53 @@ struct CreateGroceryListView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: PLSpacing.lg) {
-                // Header
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("New Grocery List")
-                        .font(.title3).bold()
-                        .foregroundColor(PLColor.textPrimary)
-                    Text("Give your list a short, clear name. You can add items after creating it.")
-                        .font(.subheadline)
-                        .foregroundColor(PLColor.textSecondary)
+            ScrollView {
+                VStack(spacing: PLSpacing.lg) {
+                    // Header card
+                    VStack(alignment: .leading, spacing: 6) {
+                        Label("New Grocery List", systemImage: "cart.badge.plus")
+                            .font(.title3).bold()
+                            .foregroundColor(PLColor.textPrimary)
+                        Text("Give your list a short, clear name. You can add items after creating it.")
+                            .font(.subheadline)
+                            .foregroundColor(PLColor.textSecondary)
+                    }
+                    .plCard()
+
+                    // Name field card
+                    VStack(alignment: .leading, spacing: PLSpacing.sm) {
+                        Label("List Name", systemImage: "cart")
+                            .font(.subheadline)
+                            .foregroundColor(PLColor.textSecondary)
+
+                        TextField("e.g., Weekly Meal Prep", text: $newGroceryListName)
+                            .textFieldStyle(.roundedBorder)
+                            .tint(adaptiveTextColor)
+                            .focused($nameFocused)
+                            .submitLabel(.done)
+                            .onSubmit {
+                                if !isCreateDisabled { createNewGroceryList() }
+                            }
+
+                        Text("You can rename it later.")
+                            .font(.caption)
+                            .foregroundColor(PLColor.textSecondary)
+                    }
+                    .plCard()
+
+                    Button {
+                        createNewGroceryList()
+                    } label: {
+                        Text("Create Grocery List")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(PrimaryButton())
+                    .disabled(isCreateDisabled)
+                    .opacity(isCreateDisabled ? 0.6 : 1)
                 }
-                .plCard()
-
-                // Name field card
-                VStack(alignment: .leading, spacing: PLSpacing.sm) {
-                    Label("List Name", systemImage: "cart")
-                        .font(.subheadline).foregroundColor(PLColor.textSecondary)
-
-                    TextField("e.g., Weekly Meal Prep", text: $newGroceryListName)
-                        .textFieldStyle(.roundedBorder)
-                        .focused($nameFocused)
-                        .submitLabel(.done)
-                        .onSubmit {
-                            // Keep logic the same; just call the same function
-                            if !isCreateDisabled { createNewGroceryList() }
-                        }
-
-                    // tiny helper text
-                    Text("You can rename it later.")
-                        .font(.caption)
-                        .foregroundColor(PLColor.textSecondary)
-                }
-                .plCard()
-
-                // Create button
-                Button {
-                    createNewGroceryList()
-                } label: {
-                    Text("Create Grocery List")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(PrimaryButton())
-                .disabled(isCreateDisabled)
-                .opacity(isCreateDisabled ? 0.6 : 1)
-
-                Spacer()
+                .padding(.horizontal, PLSpacing.lg)
+                .padding(.top, PLSpacing.lg)
             }
-            .padding(.horizontal, PLSpacing.lg)
-            .padding(.top, PLSpacing.lg)
             .navigationTitle("Create List")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -124,7 +122,6 @@ struct CreateGroceryListView: View {
                     title: Text(alertTitle),
                     message: Text(alertMessage),
                     dismissButton: .default(Text("OK")) {
-                        // Preserve your existing success flow
                         if alertTitle == "Success" {
                             dismiss()
                             onGroceryListCreated()
@@ -134,14 +131,15 @@ struct CreateGroceryListView: View {
             }
         }
         .onAppear {
-            newGroceryListName = ""   // preserve your original behavior
+            newGroceryListName = ""
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 nameFocused = true
             }
         }
     }
 
-    // MARK: - Network (unchanged logic)
+    // MARK: - Network (logic unchanged)
+
     private func createNewGroceryList() {
         Task {
             do {

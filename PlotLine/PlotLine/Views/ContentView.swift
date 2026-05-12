@@ -50,6 +50,11 @@ struct ContentView: View {
     @State private var isProfilePresented = false
     @State private var isFriendsPresented = false
     @State private var navigateToCalendar = false
+    @State private var navigateToNutrition = false
+    @State private var navigateToBudget = false
+    @State private var navigateToGoals = false
+    @State private var friendInviteSender: String = ""
+    @State private var isFriendInvitePresented = false
 
     var body: some View {
         NavigationStack {
@@ -115,16 +120,36 @@ struct ContentView: View {
                     .environmentObject(friendsVM)
                     .environmentObject(chatVM)
             }
-            .background(
-                NavigationLink(
-                    destination: CalendarView()
-                        .environmentObject(calendarVM)
-                        .environmentObject(friendsVM),
-                    isActive: $navigateToCalendar
-                ) {
-                    EmptyView()
+            .sheet(isPresented: $isFriendInvitePresented) {
+                NavigationStack {
+                    FriendProfileView(username: friendInviteSender)
+                        .environmentObject(friendsVM)
                 }
-                .hidden()
+            }
+            .background(
+                Group {
+                    NavigationLink(
+                        destination: CalendarView()
+                            .environmentObject(calendarVM)
+                            .environmentObject(friendsVM),
+                        isActive: $navigateToCalendar
+                    ) { EmptyView() }.hidden()
+
+                    NavigationLink(
+                        destination: NutritionView(),
+                        isActive: $navigateToNutrition
+                    ) { EmptyView() }.hidden()
+
+                    NavigationLink(
+                        destination: BudgetView().environmentObject(calendarVM),
+                        isActive: $navigateToBudget
+                    ) { EmptyView() }.hidden()
+
+                    NavigationLink(
+                        destination: GoalsView().environmentObject(calendarVM),
+                        isActive: $navigateToGoals
+                    ) { EmptyView() }.hidden()
+                }
             )
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("NavigateToCalendar"))) { notification in
                 if let userInfo = notification.userInfo,
@@ -148,6 +173,20 @@ struct ContentView: View {
                     }
                 }
                 navigateToCalendar = true
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .plotlineDeepLink)) { notification in
+                guard let destination = notification.userInfo?["destination"] as? String else { return }
+                switch destination {
+                case "nutrition":   navigateToNutrition = true
+                case "budget":      navigateToBudget = true
+                case "goals":       navigateToGoals = true
+                case "add-friend":
+                    if let sender = notification.userInfo?["from"] as? String, !sender.isEmpty {
+                        friendInviteSender = sender
+                        isFriendInvitePresented = true
+                    }
+                default: break
+                }
             }
         }
         .task {

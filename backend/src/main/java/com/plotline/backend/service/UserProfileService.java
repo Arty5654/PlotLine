@@ -117,6 +117,15 @@ public class UserProfileService {
     new Trophy("nutrition-meal-creator", "Meal Master", "Create saved meals!",
     0, 0, new int[]{1, 5, 10, 25}, ZonedDateTime.now(ZoneOffset.UTC).format(formatter)),
 
+    new Trophy("nutrition-streak", "Consistent Logger", "Log food every day to build your streak!",
+    0, 0, new int[]{3, 7, 30, 100}, ZonedDateTime.now(ZoneOffset.UTC).format(formatter)),
+
+    new Trophy("nutrition-under-goal", "Goal Crusher", "Stay under your calorie goal for the day!",
+    0, 0, new int[]{3, 7, 21, 60}, ZonedDateTime.now(ZoneOffset.UTC).format(formatter)),
+
+    new Trophy("nutrition-goal-setter", "Goal Setter", "Set a calorie goal to track your nutrition!",
+    0, 0, new int[]{0, 0, 0, 1}, ZonedDateTime.now(ZoneOffset.UTC).format(formatter)),
+
   //special trophies
 
     new Trophy("all-around", "All-Around Achiever", "Achieve at least one trophy from each PlotLine Category!", 

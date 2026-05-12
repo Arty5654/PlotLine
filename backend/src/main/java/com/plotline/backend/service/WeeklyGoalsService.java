@@ -47,8 +47,7 @@ public class WeeklyGoalsService {
 
   public Map<String, Object> getWeeklyGoals(String username) {
     try {
-      String key = "users/" + normalize(username) + "/weekly-goals.json"; // Path to JSON file in S3
-      System.out.println("\n\n\n\n\n\n\nFetching from S3: " + key + "\n\n\n\n\n\n\n"); // Debugging log
+      String key = "users/" + normalize(username) + "/weekly-goals.json";
 
       GetObjectRequest getObjectRequest = GetObjectRequest.builder()
           .bucket(bucketName)
@@ -58,9 +57,13 @@ public class WeeklyGoalsService {
       ResponseBytes<GetObjectResponse> objectBytes = s3Client.getObjectAsBytes(getObjectRequest);
       byte[] data = objectBytes.asByteArray();
 
-      // Convert JSON to Java Map
       ObjectMapper objectMapper = new ObjectMapper();
       return objectMapper.readValue(data, Map.class);
+    } catch (NoSuchKeyException e) {
+      System.out.println("⚠️ No weekly goals file found for " + username + ", returning empty list.");
+      Map<String, Object> emptyData = new HashMap<>();
+      emptyData.put("weeklyGoals", new ArrayList<>());
+      return emptyData;
     } catch (IOException e) {
       throw new RuntimeException("Error parsing JSON from S3", e);
     } catch (Exception e) {

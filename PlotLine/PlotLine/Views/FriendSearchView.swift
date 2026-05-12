@@ -8,6 +8,9 @@ struct FriendSearchView: View {
     @State private var searchText = ""
     @State private var suggestions: [String] = []
 
+    @Environment(\.colorScheme) var colorScheme
+    private var adaptiveTextColor: Color { colorScheme == .dark ? .white : .blue }
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 16) {
@@ -15,7 +18,7 @@ struct FriendSearchView: View {
                 // Brought up
                 Text("Search by Username")
                     .font(.custom("AvenirNext-Bold", size: 16))
-                    .foregroundColor(.blue)
+                    .foregroundColor(adaptiveTextColor)
                     .padding(.top, 8)
 
                 // Search bar + Suggestions

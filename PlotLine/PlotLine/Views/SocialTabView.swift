@@ -4,6 +4,9 @@ struct SocialTabView: View {
     @EnvironmentObject var friendsVM: FriendsViewModel
     @EnvironmentObject var chatVM: ChatViewModel
 
+    @Environment(\.colorScheme) var colorScheme
+    private var adaptiveTint: Color { colorScheme == .dark ? .white : .blue }
+
     @State private var selection: Tab = .friends
     enum Tab { case friends, chat, third }
 
@@ -36,10 +39,10 @@ struct SocialTabView: View {
                     .navigationTitle("Friends Feed")
                     .navigationBarTitleDisplayMode(.inline)
             }
-            .tabItem { Image(systemName: "ellipsis.circle.fill") }
+            .tabItem { Image(systemName: "newspaper.fill") }
             .tag(Tab.third)
         }
-        .accentColor(.blue)
+        .tint(adaptiveTint)
     }
 }
 

@@ -52,8 +52,9 @@ public class ChatMessageService {
                                    ChatMessage message) throws JsonProcessingException {
 
         String normUser = normalize(username);
-        // 1) assign ID + timestamp
+        // 1) assign ID + timestamp + normalize creator
         message.setId(UUID.randomUUID().toString());
+        message.setCreator(normUser);
         message.setTimestamp(
             ZonedDateTime.now(ZoneOffset.UTC).format(FORMATTER)
         );
@@ -119,7 +120,7 @@ public class ChatMessageService {
     }
 
     private ChatMessage fetchRaw(String owner, String messageId) throws IOException {
-      String key = String.format("chat-messages/%s/%s.json", owner, messageId);
+      String key = String.format("chat-messages/%s/%s.json", normalize(owner), messageId);
       GetObjectRequest getReq = GetObjectRequest.builder()
           .bucket(bucketName)
           .key(key)
@@ -131,7 +132,7 @@ public class ChatMessageService {
 
   // helper to serialize & save
   private ChatMessage saveRaw(String owner, ChatMessage msg) throws JsonProcessingException {
-      String key = String.format("chat-messages/%s/%s.json", owner, msg.getId());
+      String key = String.format("chat-messages/%s/%s.json", normalize(owner), msg.getId());
       byte[] json = objectMapper.writeValueAsBytes(msg);
 
       PutObjectRequest putReq = PutObjectRequest.builder()

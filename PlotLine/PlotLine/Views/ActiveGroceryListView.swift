@@ -2,18 +2,14 @@
 //  ActiveGroceryListView.swift
 //  PlotLine
 //
-//  Created by Yash Mehta on 2/27/25.
-//
 
 import SwiftUI
 
-// --- Lightweight tokens (scoped to this file only) ---
 private enum PLColor {
     static let surface       = Color(.secondarySystemBackground)
     static let cardBorder    = Color.black.opacity(0.06)
     static let textPrimary   = Color.primary
     static let textSecondary = Color.secondary
-    static let accent        = Color.blue
     static let success       = Color.green
 }
 private enum PLSpacing {
@@ -36,17 +32,6 @@ private struct CardModifier: ViewModifier {
 private extension View { func plCard() -> some View { modifier(CardModifier()) } }
 
 private struct PrimaryButton: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.headline)
-            .foregroundColor(.white)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .background(PLColor.accent.opacity(configuration.isPressed ? 0.85 : 1))
-            .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
-    }
-}
-private struct SecondaryButton: ButtonStyle {
     let color: Color
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -59,9 +44,10 @@ private struct SecondaryButton: ButtonStyle {
     }
 }
 
-// MARK: - Small subviews (pure UI)
+// MARK: - Action Bar
 
 private struct GroceryActionBar: View {
+    let adaptiveTextColor: Color
     var onCreateTapped: () -> Void
     var onMealTapped: () -> Void
     var onPrefsTapped: () -> Void
@@ -76,28 +62,30 @@ private struct GroceryActionBar: View {
                     Label("New List", systemImage: "plus.circle.fill")
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(SecondaryButton(color: PLColor.success))
+                .buttonStyle(PrimaryButton(color: PLColor.success))
 
                 Button(action: onMealTapped) {
                     Label("From Meal", systemImage: "fork.knife")
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(PrimaryButton())
+                .buttonStyle(PrimaryButton(color: .blue))
             }
 
             Button(action: onPrefsTapped) {
                 HStack(spacing: 6) {
                     Image(systemName: "slider.horizontal.3")
-                    Text("Preferences")
+                    Text("Dietary Preferences")
                 }
                 .font(.subheadline)
-                .foregroundColor(PLColor.accent)
+                .foregroundColor(adaptiveTextColor)
             }
             .buttonStyle(.plain)
         }
         .plCard()
     }
 }
+
+// MARK: - Loading / Empty States
 
 private struct GroceryLoadingState: View {
     var body: some View {
@@ -107,7 +95,7 @@ private struct GroceryLoadingState: View {
                 .foregroundColor(PLColor.textSecondary)
                 .font(.subheadline)
         }
-        .frame(maxWidth: .infinity, minHeight: 220)
+        .frame(maxWidth: .infinity, minHeight: 200)
         .plCard()
     }
 }
@@ -116,24 +104,30 @@ private struct GroceryEmptyState: View {
     var body: some View {
         VStack(spacing: PLSpacing.sm) {
             Image(systemName: "cart")
-                .font(.largeTitle)
+                .font(.system(size: 40))
                 .foregroundColor(PLColor.textSecondary)
-            Text("No active grocery lists.")
-                .foregroundColor(PLColor.textSecondary)
+                .padding(.bottom, 4)
+            Text("No active grocery lists")
+                .font(.headline)
+                .foregroundColor(PLColor.textPrimary)
             Text("Create a new list or generate one from a meal.")
-                .font(.footnote)
+                .font(.subheadline)
                 .foregroundColor(PLColor.textSecondary)
+                .multilineTextAlignment(.center)
         }
-        .frame(maxWidth: .infinity, minHeight: 220)
+        .frame(maxWidth: .infinity, minHeight: 200)
         .plCard()
     }
 }
 
+// MARK: - List Rows
+
 private struct GroceryListRows: View {
     let lists: [GroceryList]
+    let adaptiveTextColor: Color
 
     var body: some View {
-        List {
+        VStack(spacing: PLSpacing.sm) {
             ForEach(lists) { groceryList in
                 NavigationLink(destination: GroceryListDetailView(groceryList: groceryList)) {
                     HStack(spacing: PLSpacing.md) {
@@ -152,23 +146,27 @@ private struct GroceryListRows: View {
                         Spacer()
                         if groceryList.isAI == true {
                             Image(systemName: "sparkles")
-                                .foregroundColor(PLColor.accent)
+                                .foregroundColor(adaptiveTextColor)
+                                .font(.subheadline)
                         }
                         Image(systemName: "chevron.right")
                             .font(.footnote)
                             .foregroundColor(PLColor.textSecondary)
                     }
-                    .padding(.vertical, 6)
+                    .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
+                .plCard()
             }
         }
-        .listStyle(.insetGrouped)
     }
 }
 
-// MARK: - Main View (logic unchanged)
+// MARK: - Main View
 
 struct ActiveGroceryListView: View {
+    @Environment(\.colorScheme) var colorScheme
+
     @State private var groceryLists: [GroceryList] = []
     @State private var showingCreateGroceryList = false
     @State private var showingMealGenerator = false
@@ -180,31 +178,37 @@ struct ActiveGroceryListView: View {
     @State private var navigateToPreferences = false
     @State private var dietaryRestrictions: DietaryRestrictions?
 
-    var body: some View {
-        VStack(spacing: PLSpacing.lg) {
-            GroceryActionBar(
-                onCreateTapped: { showingCreateGroceryList.toggle() },
-                onMealTapped: { showingMealGenerator.toggle() },
-                onPrefsTapped: { navigateToPreferencesScreen() }
-            )
-            .padding(.horizontal, PLSpacing.lg)
-            .padding(.top, PLSpacing.sm)
+    private var adaptiveTextColor: Color {
+        colorScheme == .dark ? .white : .blue
+    }
 
-            Group {
-                if isLoading {
-                    GroceryLoadingState()
-                        .padding(.horizontal, PLSpacing.lg)
-                } else if groceryLists.isEmpty {
-                    GroceryEmptyState()
-                        .padding(.horizontal, PLSpacing.lg)
-                } else {
-                    GroceryListRows(lists: groceryLists)
+    var body: some View {
+        ScrollView {
+            VStack(spacing: PLSpacing.lg) {
+                GroceryActionBar(
+                    adaptiveTextColor: adaptiveTextColor,
+                    onCreateTapped: { showingCreateGroceryList.toggle() },
+                    onMealTapped: { showingMealGenerator.toggle() },
+                    onPrefsTapped: { navigateToPreferencesScreen() }
+                )
+
+                Group {
+                    if isLoading {
+                        GroceryLoadingState()
+                    } else if groceryLists.isEmpty {
+                        GroceryEmptyState()
+                    } else {
+                        GroceryListRows(lists: groceryLists, adaptiveTextColor: adaptiveTextColor)
+                    }
                 }
+                .animation(.easeInOut, value: isLoading)
+                .animation(.easeInOut, value: groceryLists.count)
             }
-            .animation(.easeInOut, value: isLoading)
-            .animation(.easeInOut, value: groceryLists.count)
+            .padding(.horizontal, PLSpacing.lg)
+            .padding(.top, PLSpacing.lg)
+            .padding(.bottom, PLSpacing.lg)
         }
-        .navigationTitle("Active Grocery Lists")
+        .navigationTitle("Active Lists")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             Task {
@@ -227,7 +231,6 @@ struct ActiveGroceryListView: View {
                 }
             )
         }
-        // Hidden navigation to preferences (same logic)
         .background(
             NavigationLink(
                 destination: DietaryPreferencesView(
@@ -239,7 +242,7 @@ struct ActiveGroceryListView: View {
         )
     }
 
-    // --- Logic below is unchanged ---
+    // MARK: - Logic (unchanged)
 
     private func createNewGroceryList() {
         guard !newGroceryListName.isEmpty else { return }
@@ -310,4 +313,3 @@ struct ActiveGroceryListView: View {
         return mostRecentList
     }
 }
-

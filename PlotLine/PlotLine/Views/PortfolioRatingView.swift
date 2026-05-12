@@ -41,6 +41,8 @@ struct PortfolioRatingView: View {
         }
     }
 
+    @Environment(\.colorScheme) var colorScheme
+
     @State private var viewAccount: ViewAccount = .brokerage
     @State private var holdings: [HoldingEntry] = [HoldingEntry()]
     @State private var isLoading = false
@@ -48,6 +50,10 @@ struct PortfolioRatingView: View {
     @State private var errorText: String? = nil
 
     private let username = UserDefaults.standard.string(forKey: "loggedInUsername") ?? "UnknownUser"
+
+    private var adaptiveTextColor: Color {
+        colorScheme == .dark ? .white : .blue
+    }
 
     private var totalPercentage: Double {
         holdings.compactMap { Double($0.percentage) }.reduce(0, +)
@@ -76,6 +82,7 @@ struct PortfolioRatingView: View {
                         Button(action: loadSavedPortfolio) {
                             Label("Load Saved", systemImage: "arrow.down.circle")
                                 .font(.caption)
+                                .foregroundColor(adaptiveTextColor)
                         }
                     }
 
@@ -88,6 +95,7 @@ struct PortfolioRatingView: View {
                                 .padding(8)
                                 .background(Color(.systemBackground))
                                 .cornerRadius(8)
+                                .tint(adaptiveTextColor)
 
                             TextField("%", text: $holding.percentage)
                                 .keyboardType(.decimalPad)
@@ -95,6 +103,7 @@ struct PortfolioRatingView: View {
                                 .padding(8)
                                 .background(Color(.systemBackground))
                                 .cornerRadius(8)
+                                .tint(adaptiveTextColor)
 
                             Text("%")
                                 .foregroundColor(.secondary)
@@ -117,6 +126,7 @@ struct PortfolioRatingView: View {
                     } label: {
                         Label("Add Holding", systemImage: "plus.circle")
                             .font(.subheadline)
+                            .foregroundColor(adaptiveTextColor)
                     }
 
                     HStack {
@@ -136,6 +146,7 @@ struct PortfolioRatingView: View {
                 .cornerRadius(12)
 
                 // Rate button
+                let canSubmit = !holdings.filter { !$0.ticker.isEmpty }.isEmpty && abs(totalPercentage - 100) < 1
                 Button {
                     Task { await ratePortfolio() }
                 } label: {
@@ -151,10 +162,10 @@ struct PortfolioRatingView: View {
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
                     .padding()
-                    .background(holdings.filter { !$0.ticker.isEmpty }.isEmpty ? Color.gray : Color.purple)
+                    .background(canSubmit ? Color.purple : Color.gray)
                     .cornerRadius(10)
                 }
-                .disabled(isLoading || holdings.filter { !$0.ticker.isEmpty }.isEmpty)
+                .disabled(isLoading || !canSubmit)
 
                 if let error = errorText {
                     Text(error)
@@ -176,6 +187,10 @@ struct PortfolioRatingView: View {
         }
         .navigationTitle("AI Portfolio Rating")
         .onAppear { loadSavedPortfolio() }
+        .scrollDismissesKeyboard(.interactively)
+        .simultaneousGesture(TapGesture().onEnded {
+            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        })
     }
 
     private func loadSavedPortfolio() {
@@ -242,12 +257,28 @@ struct PortfolioRatingView: View {
 
         do {
             let (data, _) = try await URLSession.shared.data(for: request)
-            let decoded = try JSONDecoder().decode(PortfolioRating.self, from: data)
-            await MainActor.run { self.rating = decoded; self.isLoading = false }
-        } catch {
+
+            if let decoded = try? JSONDecoder().decode(PortfolioRating.self, from: data) {
+                await MainActor.run { self.rating = decoded; self.isLoading = false }
+                return
+            }
+
+            // Fallback: unwrap JSON-encoded string then decode
+            if let jsonString = try? JSONDecoder().decode(String.self, from: data),
+               let inner = jsonString.data(using: .utf8),
+               let decoded = try? JSONDecoder().decode(PortfolioRating.self, from: inner) {
+                await MainActor.run { self.rating = decoded; self.isLoading = false }
+                return
+            }
+
             await MainActor.run {
                 self.isLoading = false
                 self.errorText = "Could not parse rating. Please try again."
+            }
+        } catch {
+            await MainActor.run {
+                self.isLoading = false
+                self.errorText = "Request failed. Check your connection and try again."
             }
         }
     }
