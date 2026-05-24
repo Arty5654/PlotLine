@@ -1,6 +1,8 @@
 package com.plotline.backend.dto;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public class EventRequest {
   private String username;
@@ -12,6 +14,10 @@ public class EventRequest {
   private String eventType;
   private String recurrence;
   private List<String> invitedFriends;
+  private boolean friendsCanSee = true;
+  private String addedBy = null;
+  private String status = "approved";
+  private Map<String, String> inviteStatuses = new HashMap<>();
 
   public EventRequest() {
   }
@@ -100,4 +106,15 @@ public class EventRequest {
     this.invitedFriends = invitedFriends;
   }
 
+  public boolean isFriendsCanSee() { return friendsCanSee; }
+  public void setFriendsCanSee(boolean friendsCanSee) { this.friendsCanSee = friendsCanSee; }
+
+  public String getAddedBy() { return addedBy; }
+  public void setAddedBy(String addedBy) { this.addedBy = addedBy; }
+
+  public String getStatus() { return status; }
+  public void setStatus(String status) { this.status = status; }
+
+  public Map<String, String> getInviteStatuses() { return inviteStatuses; }
+  public void setInviteStatuses(Map<String, String> inviteStatuses) { this.inviteStatuses = inviteStatuses; }
 }

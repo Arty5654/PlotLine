@@ -7,28 +7,50 @@
 
 import SwiftUI
 import Combine
+import UserNotifications
+import GoogleSignIn
 
 class CalendarViewModel: ObservableObject {
-    
+
     var username: String {
         UserDefaults.standard.string(forKey: "loggedInUsername") ?? "Guest"
     }
-    
-    @Published var currentDate: Date = Date()  // current date
+
+    @Published var currentDate: Date = Date()
     @Published var displayMode: DisplayMode = .month
     @Published var events: [Event] = []
 
     @Published var selectedDay: Date? = nil
-    @Published var navigateToDayView: Date? = nil // Set this to navigate to a specific day's event page
-    
+    @Published var navigateToDayView: Date? = nil
+
+    // MARK: - Friend Calendar Overlay
+    @Published var accessData: CalendarAccessData = CalendarAccessData()
+    @Published var friendCalendars: [String: [Event]] = [:]
+    @Published var friendColors: [String: Color] = [:]
+    @Published var showFriendOverlays: Bool = true
+
+    private let friendColorPalette: [Color] = [.purple, .orange, .pink, .teal, .indigo, .mint]
+
+    var pendingEvents: [Event] {
+        events.filter { $0.status == "pending" }
+    }
+
+    var pendingInviteEvents: [Event] {
+        events.filter { $0.status == "invite-pending" }
+    }
+
     enum DisplayMode {
         case month
         case week
     }
-    
+
     init() {
-        // fetch events right away
-         Task { await fetchEvents() }
+        Task {
+            await fetchEvents()
+            fetchAccessData()
+            fetchFriendCalendars()
+            syncGoogleCalendarIfConnected()
+        }
     }
     
     // cal nav
@@ -84,8 +106,7 @@ class CalendarViewModel: ObservableObject {
             return []
         }
         
-        // all events on a given day
-        let allEvents =  events.filter { event in
+        let allEvents = events.filter { event in
             event.startDate < dayEnd && event.endDate >= dayStart
         }
         
@@ -144,24 +165,46 @@ class CalendarViewModel: ObservableObject {
     
     // create new and store in backend
     @MainActor
-    func createEvent(title: String, description: String, startDate: Date, endDate: Date, eventType: String, recurrence: String, invitedFriends: [String]) {
+    func createEvent(id: String = UUID().uuidString, title: String, description: String,
+                     startDate: Date, endDate: Date, eventType: String, recurrence: String,
+                     invitedFriends: [String], friendsCanSee: Bool = true,
+                     publishToCalendars: [String] = []) {
         Task {
             do {
                 let newEvent = Event(
-                    id: UUID().uuidString,
+                    id: id,
                     title: title,
                     description: description,
                     startDate: startDate,
                     endDate: endDate,
                     eventType: eventType,
                     recurrence: recurrence,
-                    invitedFriends: invitedFriends
+                    invitedFriends: invitedFriends,
+                    friendsCanSee: friendsCanSee
                 )
-                // db append
                 let saved = try await CalendarAPI.createEvent(newEvent, username: username)
-                // local append
                 events.append(saved)
                 print("Created new event: \(saved.title)")
+
+                // Publish to selected friend calendars (they have given us "add" access)
+                for friend in publishToCalendars {
+                    let publishEvent = Event(
+                        id: id,  // same ID so deduplication works in the overlay
+                        title: title,
+                        description: description,
+                        startDate: startDate,
+                        endDate: endDate,
+                        eventType: eventType,
+                        recurrence: recurrence,
+                        invitedFriends: [],
+                        friendsCanSee: friendsCanSee,
+                        addedBy: username,
+                        status: "pending"
+                    )
+                    _ = try? await CalendarAPI.createEvent(publishEvent, username: friend.lowercased())
+                    print("Published event to \(friend)'s calendar")
+                }
+
                 fetchEvents()
             } catch {
                 print("Error creating event: \(error)")
@@ -288,6 +331,128 @@ class CalendarViewModel: ObservableObject {
         return result
     }
 
+    // MARK: - Calendar Access
+
+    func fetchAccessData() {
+        Task {
+            do {
+                let data = try await CalendarAccessAPI.getAccessData(username: username)
+                await MainActor.run { self.accessData = data }
+            } catch {
+                print("Error fetching access data: \(error)")
+            }
+        }
+    }
+
+    func fetchFriendCalendars() {
+        Task {
+            do {
+                let friendList = try await FriendsAPI.fetchFriendList(username: username)
+                var newCalendars: [String: [Event]] = [:]
+                var colorIdx = friendColors.count
+                for friend in friendList.friends {
+                    if let events = try? await CalendarAccessAPI.getSharedEvents(owner: friend, requester: username), !events.isEmpty {
+                        newCalendars[friend] = events
+                        if friendColors[friend] == nil {
+                            await MainActor.run {
+                                friendColors[friend] = friendColorPalette[colorIdx % friendColorPalette.count]
+                            }
+                            colorIdx += 1
+                        }
+                    }
+                }
+                await MainActor.run {
+                    self.friendCalendars = newCalendars
+                    self.friendColors = self.friendColors.filter { newCalendars.keys.contains($0.key) }
+                }
+            } catch {
+                print("Error fetching friend calendars: \(error)")
+            }
+        }
+    }
+
+    func sendCalendarInvite(to friend: String, level: String, requireApproval: Bool) {
+        Task {
+            do {
+                _ = try await CalendarAccessAPI.sendInvite(from: username, to: friend, level: level, requireApproval: requireApproval)
+                fetchAccessData()
+            } catch {
+                print("Error sending calendar invite: \(error)")
+            }
+        }
+    }
+
+    func respondToCalendarInvite(inviteId: String, accept: Bool) {
+        Task {
+            do {
+                try await CalendarAccessAPI.respondToInvite(recipient: username, inviteId: inviteId, accept: accept)
+                fetchAccessData()
+                fetchFriendCalendars()
+            } catch {
+                print("Error responding to calendar invite: \(error)")
+            }
+        }
+    }
+
+    @MainActor
+    func approveCalendarEvent(eventId: String) {
+        Task {
+            do {
+                try await CalendarAccessAPI.approveEvent(owner: username, eventId: eventId)
+                fetchEvents()
+            } catch {
+                print("Error approving event: \(error)")
+            }
+        }
+    }
+
+    @MainActor
+    func rejectCalendarEvent(eventId: String) {
+        Task {
+            do {
+                try await CalendarAccessAPI.rejectEvent(owner: username, eventId: eventId)
+                fetchEvents()
+            } catch {
+                print("Error rejecting event: \(error)")
+            }
+        }
+    }
+
+    @MainActor
+    func respondToEventInvite(eventId: String, accept: Bool) {
+        Task {
+            do {
+                try await CalendarAPI.respondToEventInvite(username: username, eventId: eventId, accept: accept)
+                fetchEvents()
+            } catch {
+                print("Error responding to event invite: \(error)")
+            }
+        }
+    }
+
+    func revokeCalendarAccess(from friend: String, keepEvents: Bool) {
+        Task {
+            do {
+                try await CalendarAccessAPI.revokeAccess(owner: username, friend: friend, keepEvents: keepEvents)
+                fetchAccessData()
+                fetchFriendCalendars()
+            } catch {
+                print("Error revoking calendar access: \(error)")
+            }
+        }
+    }
+
+    func friendEventsOnDay(_ date: Date) -> [(event: Event, friend: String, color: Color)] {
+        guard showFriendOverlays else { return [] }
+        let dayStart = Calendar.current.startOfDay(for: date)
+        let dayEnd = Calendar.current.date(byAdding: .day, value: 1, to: dayStart)!
+        let ownIds = Set(events.map { $0.id })
+        return friendCalendars.flatMap { (friend, evts) in
+            evts.filter { $0.startDate < dayEnd && $0.endDate >= dayStart && !ownIds.contains($0.id) }
+                .map { (event: $0, friend: friend, color: friendColors[friend] ?? .purple) }
+        }
+    }
+
     func addMonthlyInvestmentReminder(dayOfMonth: Int = 1) {
         let calendar = Calendar.current
         let today = Date()
@@ -354,5 +519,54 @@ class CalendarViewModel: ObservableObject {
         }
     }
 
+    // MARK: - Google Calendar Sync
+
+    // Called on app launch — silently restores session and syncs if connected
+    func syncGoogleCalendarIfConnected() {
+        Task {
+            await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+                GIDSignIn.sharedInstance.restorePreviousSignIn { _, _ in c.resume() }
+            }
+            guard GIDSignIn.sharedInstance.currentUser != nil else { return }
+            await syncGoogleCalendar()
+        }
+    }
+
+    // Fetches Google Calendar events and batch-syncs them in a single backend call
+    @MainActor
+    func syncGoogleCalendar() async {
+        do {
+            let token = try await GoogleCalendarAPI.requestCalendarAccess()
+            let now = Date()
+            let cal = Calendar.current
+            let from = cal.date(byAdding: .month, value: -1, to: now)!
+            let to   = cal.date(byAdding: .month, value: 6, to: now)!
+            let googleEvents = try await GoogleCalendarAPI.fetchEvents(accessToken: token, from: from, to: to)
+
+            let gcalPlotlineEvents = googleEvents.map { e in
+                Event(id: "gcal_\(e.id)", title: e.title, description: e.description,
+                      startDate: e.start, endDate: e.end,
+                      eventType: "user", recurrence: "none", invitedFriends: [])
+            }
+
+            let allEvents = try await CalendarAPI.batchSyncGcal(gcalPlotlineEvents, username: username)
+            self.events = expandRecurringEvents(allEvents)
+        } catch {
+            print("Google Calendar sync skipped: \(error.localizedDescription)")
+        }
+    }
+
+    // Signs out and deletes all imported Google Calendar events
+    @MainActor
+    func disconnectGoogleCalendar() {
+        GIDSignIn.sharedInstance.signOut()
+        let gcalIds = events.filter { $0.id.hasPrefix("gcal_") }.map { $0.id }
+        events.removeAll { $0.id.hasPrefix("gcal_") }
+        Task {
+            for id in gcalIds {
+                try? await CalendarAPI.deleteEvent(id, username: username)
+            }
+        }
+    }
 
 }

@@ -8,7 +8,7 @@ enum FriendStatus {
 }
 
 struct FriendProfileView: View {
-    
+
     let username: String // friend uname
 
     @State private var displayName: String = ""
@@ -16,13 +16,38 @@ struct FriendProfileView: View {
     @State private var profileImageURL: URL?
     @State private var friendTrophies: [Trophy] = []
     @State private var selectedTrophy: Trophy? = nil
-    
+
     @EnvironmentObject var viewModel: FriendsViewModel
+    @EnvironmentObject var calendarVM: CalendarViewModel
     @State private var friendStatus: FriendStatus? = nil
     @State private var currentUsername: String = UserDefaults.standard.string(forKey: "loggedInUsername") ?? "Guest"
 
+    // Calendar invite UI state
+    @State private var showInviteSheet = false
+    @State private var inviteLevel: String = "view"
+    @State private var inviteRequireApproval: Bool = false
+    @State private var showRevokeAlert = false
+
     @Environment(\.colorScheme) var colorScheme
     private var adaptiveTextColor: Color { colorScheme == .dark ? .white : .blue }
+
+    // Derived calendar access status for this friend
+    private var calendarInviteStatus: CalendarInviteStatus {
+        if calendarVM.accessData.pendingOutgoing.contains(where: { $0.toUsername.lowercased() == username.lowercased() }) {
+            return .pendingOutgoing
+        }
+        if calendarVM.accessData.pendingIncoming.contains(where: { $0.fromUsername.lowercased() == username.lowercased() }) {
+            return .pendingIncoming
+        }
+        if calendarVM.accessData.granted.contains(where: { $0.friendUsername.lowercased() == username.lowercased() }) {
+            return .granted
+        }
+        return .none
+    }
+
+    enum CalendarInviteStatus {
+        case none, pendingOutgoing, pendingIncoming, granted
+    }
 
     let columns = [GridItem(.flexible()), GridItem(.flexible())]
 
@@ -113,6 +138,82 @@ struct FriendProfileView: View {
                                     Text("You are friends")
                                         .foregroundColor(.green)
                                         .fontWeight(.bold)
+
+                                    // Calendar invite section
+                                    switch calendarInviteStatus {
+                                    case .none:
+                                        Button("Invite to My Calendar") {
+                                            showInviteSheet = true
+                                        }
+                                        .buttonStyle(.borderedProminent)
+                                        .tint(.purple)
+
+                                    case .pendingOutgoing:
+                                        Text("Calendar invite sent")
+                                            .foregroundColor(.secondary)
+                                            .italic()
+                                            .font(.subheadline)
+
+                                    case .pendingIncoming:
+                                        if let invite = calendarVM.accessData.pendingIncoming.first(where: { $0.fromUsername.lowercased() == username.lowercased() }) {
+                                            VStack(spacing: 4) {
+                                                Text("\(username) invited you to their calendar")
+                                                    .font(.subheadline)
+                                                HStack(spacing: 12) {
+                                                    Button("Accept") {
+                                                        calendarVM.respondToCalendarInvite(inviteId: invite.id, accept: true)
+                                                    }
+                                                    .buttonStyle(.borderedProminent)
+                                                    .tint(.green)
+                                                    Button("Decline") {
+                                                        calendarVM.respondToCalendarInvite(inviteId: invite.id, accept: false)
+                                                    }
+                                                    .buttonStyle(.bordered)
+                                                    .tint(.red)
+                                                }
+                                            }
+                                        }
+
+                                    case .granted:
+                                        VStack(spacing: 8) {
+                                            HStack(spacing: 6) {
+                                                Image(systemName: "calendar.badge.checkmark")
+                                                    .foregroundColor(.purple)
+                                                Text("Calendar access active")
+                                                    .font(.subheadline)
+                                                    .foregroundColor(.purple)
+                                            }
+                                            Button("Revoke Calendar Access") {
+                                                showRevokeAlert = true
+                                            }
+                                            .buttonStyle(.bordered)
+                                            .tint(.red)
+                                            .font(.subheadline)
+                                        }
+                                        .alert("Revoke Calendar Access", isPresented: $showRevokeAlert) {
+                                            Button("Remove Their Events", role: .destructive) {
+                                                calendarVM.revokeCalendarAccess(from: username, keepEvents: false)
+                                            }
+                                            Button("Keep Their Events", role: .none) {
+                                                calendarVM.revokeCalendarAccess(from: username, keepEvents: true)
+                                            }
+                                            Button("Cancel", role: .cancel) {}
+                                        } message: {
+                                            Text("This will remove \(username)'s access to your calendar. Do you want to keep the events they added, or remove them?")
+                                        }
+                                    }
+
+                                    // Show when friend has granted us access to their calendar
+                                    if calendarVM.accessData.receivedAccess.contains(where: { $0.friendUsername.lowercased() == username.lowercased() }) {
+                                        HStack(spacing: 6) {
+                                            Image(systemName: "calendar.badge.checkmark")
+                                                .foregroundColor(.green)
+                                            Text("You can view their calendar")
+                                                .font(.subheadline)
+                                                .foregroundColor(.green)
+                                        }
+                                    }
+
                                     Button(role: .destructive) {
                                         Task {
                                             await viewModel.removeFriend(user: currentUsername, friend: username)
@@ -123,6 +224,33 @@ struct FriendProfileView: View {
                                             .frame(maxWidth: .infinity)
                                     }
                                     .buttonStyle(.bordered)
+                                }
+                                .sheet(isPresented: $showInviteSheet) {
+                                    NavigationView {
+                                        Form {
+                                            Section(header: Text("Access Level")) {
+                                                Picker("Level", selection: $inviteLevel) {
+                                                    Text("View only").tag("view")
+                                                    Text("View & add events").tag("add")
+                                                }
+                                                .pickerStyle(.segmented)
+                                            }
+                                            if inviteLevel == "add" {
+                                                Section(header: Text("Approval")) {
+                                                    Toggle("Require my approval for added events", isOn: $inviteRequireApproval)
+                                                        .tint(.blue)
+                                                }
+                                            }
+                                        }
+                                        .navigationBarTitle("Invite to Calendar", displayMode: .inline)
+                                        .navigationBarItems(
+                                            leading: Button("Cancel") { showInviteSheet = false },
+                                            trailing: Button("Send") {
+                                                calendarVM.sendCalendarInvite(to: username, level: inviteLevel, requireApproval: inviteRequireApproval)
+                                                showInviteSheet = false
+                                            }.bold()
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -183,6 +311,7 @@ struct FriendProfileView: View {
                             fetchFriendProfile()
                             fetchFriendTrophies()
                             await fetchFriendStatus()
+                            calendarVM.fetchAccessData()
                         }
                     }
                 }

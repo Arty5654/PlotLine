@@ -14,7 +14,7 @@ struct CalendarView: View {
     @Environment(\.colorScheme) var colorScheme
 
     @State private var showingAddEventSheet = false
-    // 7 columns for the 7 days of the week
+    @State private var showingGoogleImport = false
     private let monthColumns = Array(repeating: GridItem(.flexible()), count: 7)
 
     // Adaptive color: white in dark mode, blue in light mode
@@ -25,6 +25,130 @@ struct CalendarView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading) {
+
+                // Friend calendar overlays toggle
+                if !viewModel.friendColors.isEmpty {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Friends' Calendars")
+                                .font(.subheadline.bold())
+                                .foregroundColor(.primary)
+                            HStack(spacing: 8) {
+                                ForEach(Array(viewModel.friendColors.keys), id: \.self) { friend in
+                                    HStack(spacing: 4) {
+                                        Circle()
+                                            .fill(viewModel.friendColors[friend] ?? .purple)
+                                            .frame(width: 8, height: 8)
+                                        Text(friend)
+                                            .font(.caption2)
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
+                            }
+                        }
+                        Spacer()
+                        Toggle("", isOn: $viewModel.showFriendOverlays)
+                            .toggleStyle(SwitchToggleStyle(tint: .blue))
+                            .labelsHidden()
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(Color(.systemGray6))
+                    .cornerRadius(12)
+                    .padding(.horizontal)
+                    .padding(.top, 8)
+                }
+
+                // Pending event invites (current user was invited by someone)
+                let invites = viewModel.pendingInviteEvents
+                if !invites.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Event Invites")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal)
+                        ForEach(invites) { event in
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(event.title)
+                                        .font(.subheadline.bold())
+                                    if let from = event.addedBy {
+                                        Text("From \(from)")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
+                                    Text(formatEventDate(event.startDate))
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                }
+                                Spacer()
+                                Button {
+                                    viewModel.respondToEventInvite(eventId: event.id, accept: true)
+                                } label: {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .foregroundColor(.green)
+                                        .font(.title3)
+                                }
+                                Button {
+                                    viewModel.respondToEventInvite(eventId: event.id, accept: false)
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .foregroundColor(.red)
+                                        .font(.title3)
+                                }
+                            }
+                            .padding(.horizontal)
+                            .padding(.vertical, 6)
+                            .background(Color.blue.opacity(0.08))
+                            .cornerRadius(8)
+                            .padding(.horizontal)
+                        }
+                    }
+                    .padding(.top, 4)
+                }
+
+                // Pending event approvals (calendar-sharing add flow)
+                let pending = viewModel.pendingEvents
+                if !pending.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Pending Approvals")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal)
+                        ForEach(pending) { event in
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(event.title)
+                                        .font(.subheadline.bold())
+                                    if let addedBy = event.addedBy {
+                                        Text("Added by \(addedBy)")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
+                                Spacer()
+                                Button {
+                                    viewModel.approveCalendarEvent(eventId: event.id)
+                                } label: {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .foregroundColor(.green)
+                                }
+                                Button {
+                                    viewModel.rejectCalendarEvent(eventId: event.id)
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .foregroundColor(.red)
+                                }
+                            }
+                            .padding(.horizontal)
+                            .padding(.vertical, 4)
+                            .background(Color.orange.opacity(0.1))
+                            .cornerRadius(8)
+                            .padding(.horizontal)
+                        }
+                    }
+                    .padding(.top, 4)
+                }
 
                 HStack {
                         if viewModel.displayMode == .month {
@@ -80,39 +204,64 @@ struct CalendarView: View {
                         WeekContent(viewModel: viewModel).environmentObject(friendVM)
                     }
                     
-                    Button(action: {
-                        showingAddEventSheet = true
-                    }) {
-                        Text("Add Event")
-                            .font(.headline)
+                    HStack(spacing: 10) {
+                        Button(action: {
+                            showingAddEventSheet = true
+                        }) {
+                            Text("Add Event")
+                                .font(.headline)
+                                .padding()
+                                .frame(maxWidth: .infinity)
+                                .foregroundColor(.white)
+                                .background(Color.blue)
+                                .cornerRadius(10)
+                        }
+
+                        Button(action: {
+                            showingGoogleImport = true
+                        }) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "arrow.down.circle.fill")
+                                Text("Google Cal")
+                                    .font(.subheadline.bold())
+                            }
                             .padding()
-                            .frame(maxWidth: .infinity)
                             .foregroundColor(.white)
-                            .background(Color.blue)
+                            .background(Color(red: 0.26, green: 0.52, blue: 0.96))
                             .cornerRadius(10)
+                        }
                     }
                     .padding(.horizontal)
                     .padding(.vertical, 12)
 
                 }
                 .onAppear {
-                    // Reset to monthly view when opening calendar normally
                     viewModel.showMonthView()
                     viewModel.fetchEvents()
+                    viewModel.fetchAccessData()
+                    viewModel.fetchFriendCalendars()
                 }
             }
             .sheet(isPresented: $showingAddEventSheet) {
-                AddEventSheet(defaultDate: viewModel.selectedDay ?? viewModel.currentDate, existingEvents: viewModel.events) { title, description, start, end, recurrence, friends, eventType in
+                let publishable = viewModel.accessData.receivedAccess.filter { $0.level == "add" }.map { $0.friendUsername }
+                AddEventSheet(defaultDate: viewModel.selectedDay ?? viewModel.currentDate, existingEvents: viewModel.events, publishableFriendCalendars: publishable) { eventId, title, description, start, end, recurrence, friends, eventType, friendsCanSee, publishTo in
                     viewModel.createEvent(
+                        id: eventId,
                         title: title,
                         description: description,
                         startDate: start,
                         endDate: end,
                         eventType: eventType,
                         recurrence: recurrence,
-                        invitedFriends: friends
+                        invitedFriends: friends,
+                        friendsCanSee: friendsCanSee,
+                        publishToCalendars: publishTo
                     )
                 }.environmentObject(friendVM)
+            }
+            .sheet(isPresented: $showingGoogleImport) {
+                GoogleCalendarImportView()
+                    .environmentObject(viewModel)
             }
             .background(
                 // Programmatic navigation to DayView
@@ -132,6 +281,13 @@ struct CalendarView: View {
                 }
                 .hidden()
             )
+    }
+
+    private func formatEventDate(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.dateStyle = .medium
+        f.timeStyle = .short
+        return f.string(from: date)
     }
 
     private func monthTitle(for date: Date) -> String {
@@ -206,14 +362,30 @@ struct MonthContent: View {
                         Text("")
                     }
                     ForEach(daysInMonth, id: \.self) { day in
+                        let ownEvents = viewModel.eventsOnDay(day)
+                        let friendDots: [String] = {
+                            guard viewModel.showFriendOverlays else { return [] }
+                            let friends = viewModel.friendEventsOnDay(day).map { $0.friend }
+                            return Array(Set(friends)).sorted().prefix(3).map { $0 }
+                        }()
+
                         NavigationLink(destination: DayView(day: day, viewModel: viewModel).environmentObject(friendVM)) {
-                            Text(dayNumber(day))
-                                .foregroundColor(adaptiveTextColor)
-                                .frame(width: 30, height: 30)
-                                .background(
-                                    colorForDay(day)
-                                )
-                                .clipShape(Circle())
+                            VStack(spacing: 2) {
+                                Text(dayNumber(day))
+                                    .foregroundColor(adaptiveTextColor)
+                                    .frame(width: 30, height: 30)
+                                    .background(colorForDay(day))
+                                    .clipShape(Circle())
+
+                                HStack(spacing: 3) {
+                                    ForEach(friendDots, id: \.self) { friend in
+                                        Circle()
+                                            .fill(viewModel.friendColors[friend] ?? .purple)
+                                            .frame(width: 5, height: 5)
+                                    }
+                                }
+                                .frame(height: 6)
+                            }
                         }.environmentObject(friendVM)
                     }
                 }
@@ -260,6 +432,9 @@ struct WeekContent: View {
     @State private var eventToMove: Event? = nil
     @State private var showMoveDatePicker = false
     @State private var moveTargetDate = Date()
+    @State private var eventToDuplicate: Event? = nil
+    @State private var showDuplicateDatePicker = false
+    @State private var duplicateTargetDate = Date()
 
     // Adaptive color: white in dark mode, blue in light mode
     private var adaptiveTextColor: Color {
@@ -316,6 +491,13 @@ struct WeekContent: View {
                                     } label: {
                                         Label("Move to Date", systemImage: "calendar.badge.plus")
                                     }
+                                    Button {
+                                        eventToDuplicate = event
+                                        duplicateTargetDate = event.startDate
+                                        showDuplicateDatePicker = true
+                                    } label: {
+                                        Label("Duplicate", systemImage: "doc.on.doc")
+                                    }
                                     Button(role: .destructive) {
                                         viewModel.deleteEvent(event.id)
                                     } label: {
@@ -340,7 +522,7 @@ struct WeekContent: View {
             }
         }
         .sheet(item: $selectedEvent) { eventToEdit in
-            AddEventSheet(existingEvent: eventToEdit, existingEvents: viewModel.events) { newTitle, newDesc, newStart, newEnd, newRecurrence, newFriends, newEventType in
+            AddEventSheet(existingEvent: eventToEdit, existingEvents: viewModel.events) { _, newTitle, newDesc, newStart, newEnd, newRecurrence, newFriends, newEventType, newFriendsCanSee, _ in
                 var updatedEvent = eventToEdit
                 updatedEvent.title = newTitle
                 updatedEvent.description = newDesc
@@ -349,6 +531,7 @@ struct WeekContent: View {
                 updatedEvent.recurrence = newRecurrence
                 updatedEvent.invitedFriends = newFriends
                 updatedEvent.eventType = newEventType
+                updatedEvent.friendsCanSee = newFriendsCanSee
                 viewModel.updateEvent(event: updatedEvent)
             }.environmentObject(friendVM)
         }
@@ -374,7 +557,52 @@ struct WeekContent: View {
                     }.bold()
                 )
             }
+            .tint(adaptiveTextColor)
         }
+        .sheet(isPresented: $showDuplicateDatePicker) {
+            NavigationView {
+                Form {
+                    Section(header: Text("Duplicate To")) {
+                        DatePicker("Date", selection: $duplicateTargetDate, displayedComponents: .date)
+                            .accentColor(adaptiveTextColor)
+                    }
+                    if let event = eventToDuplicate {
+                        Section(header: Text("Event")) {
+                            Text(event.title).font(.subheadline.bold())
+                        }
+                    }
+                }
+                .navigationBarTitle("Duplicate Event", displayMode: .inline)
+                .navigationBarItems(
+                    leading: Button("Cancel") { showDuplicateDatePicker = false },
+                    trailing: Button("Duplicate") {
+                        if let event = eventToDuplicate { duplicateEvent(event, to: duplicateTargetDate) }
+                        showDuplicateDatePicker = false
+                    }.bold()
+                )
+            }
+            .tint(adaptiveTextColor)
+        }
+    }
+
+    private func duplicateEvent(_ event: Event, to newDate: Date) {
+        let cal = Calendar.current
+        let duration = event.endDate.timeIntervalSince(event.startDate)
+        let timeComps = cal.dateComponents([.hour, .minute], from: event.startDate)
+        var dateComps = cal.dateComponents([.year, .month, .day], from: newDate)
+        dateComps.hour = timeComps.hour
+        dateComps.minute = timeComps.minute
+        guard let newStart = cal.date(from: dateComps) else { return }
+        viewModel.createEvent(
+            title: event.title,
+            description: event.description,
+            startDate: newStart,
+            endDate: newStart.addingTimeInterval(duration),
+            eventType: event.eventType,
+            recurrence: event.recurrence,
+            invitedFriends: event.invitedFriends,
+            friendsCanSee: event.friendsCanSee
+        )
     }
 
     private func moveEvent(_ event: Event, to newDate: Date) {

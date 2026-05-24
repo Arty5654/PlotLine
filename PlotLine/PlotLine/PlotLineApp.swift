@@ -20,6 +20,14 @@ struct PlotLineApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @Environment(\.scenePhase) private var scenePhase
 
+    init() {
+        // Navigation bar back button and bar button items: white in dark mode, system blue in light mode
+        let adaptiveColor = UIColor { traits in
+            traits.userInterfaceStyle == .dark ? .white : .systemBlue
+        }
+        UINavigationBar.appearance().tintColor = adaptiveColor
+    }
+
     var body: some Scene {
         WindowGroup {
             NavigationStack {

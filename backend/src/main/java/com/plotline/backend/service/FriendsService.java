@@ -25,10 +25,14 @@ public class FriendsService {
     private final S3Client s3Client;
     private final String bucketName = "plotline-database-bucket";
     private final ObjectMapper objectMapper;
+    private final CalendarAccessService calendarAccessService;
+    private final CalendarService calendarService;
 
-    public FriendsService(S3Client s3Client) {
+    public FriendsService(S3Client s3Client, CalendarAccessService calendarAccessService, CalendarService calendarService) {
         this.s3Client = s3Client;
         this.objectMapper = new ObjectMapper();
+        this.calendarAccessService = calendarAccessService;
+        this.calendarService = calendarService;
     }
 
     // read json from s3
@@ -198,5 +202,14 @@ public class FriendsService {
         RequestList reqB = getFriendRequests(u2);
         reqB.getPendingRequests().removeIf(f -> f.equalsIgnoreCase(u1));
         writeJson("users/" + u2 + "/friend_requests.json", reqB);
+
+        // revoke calendar access both ways
+        try {
+            calendarAccessService.revokeAccess(u1, u2, true);
+            calendarAccessService.revokeAccess(u2, u1, true);
+        } catch (Exception ignored) {}
+
+        // remove event invites between them in both directions
+        calendarService.removeEventInvitesBetween(u1, u2);
     }
 }

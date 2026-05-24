@@ -33,7 +33,6 @@ public class CalendarController {
     @PostMapping("/create-event")
     public ResponseEntity<EventResponse> createEvent(@RequestBody EventRequest request) {
         try {
-            // Convert EventRequest to an EventDto
             EventDto newEvent = new EventDto(
                 request.getId(),
                 request.getTitle(),
@@ -44,6 +43,10 @@ public class CalendarController {
                 request.getRecurrence(),
                 request.getInvitedFriends()
             );
+            newEvent.setFriendsCanSee(request.isFriendsCanSee());
+            newEvent.setAddedBy(request.getAddedBy());
+            newEvent.setStatus(request.getStatus());
+            if (request.getInviteStatuses() != null) newEvent.setInviteStatuses(request.getInviteStatuses());
 
             EventDto createdEvent = calendarService.createEvent(newEvent, request.getUsername());
             return ResponseEntity.ok(new EventResponse(true, null, createdEvent));
@@ -55,7 +58,6 @@ public class CalendarController {
     @PostMapping("/update-event")
     public ResponseEntity<EventResponse> updateEvent(@RequestBody EventRequest request) {
         try {
-            // Convert EventRequest to an EventDto
             EventDto updatedEvent = new EventDto(
                 request.getId(),
                 request.getTitle(),
@@ -66,6 +68,10 @@ public class CalendarController {
                 request.getRecurrence(),
                 request.getInvitedFriends()
             );
+            updatedEvent.setFriendsCanSee(request.isFriendsCanSee());
+            updatedEvent.setAddedBy(request.getAddedBy());
+            updatedEvent.setStatus(request.getStatus());
+            if (request.getInviteStatuses() != null) updatedEvent.setInviteStatuses(request.getInviteStatuses());
 
             EventDto savedEvent = calendarService.updateEvent(updatedEvent, request.getUsername());
             return ResponseEntity.ok(new EventResponse(true, null, savedEvent));
@@ -82,6 +88,31 @@ public class CalendarController {
       } catch (Exception e) {
           return ResponseEntity.badRequest().body(new EventResponse(false, e.getMessage(), null));
       }
+    }
+
+    // POST /calendar/respond-event-invite
+    // Body: { username, eventId, accept }
+    @PostMapping("/respond-event-invite")
+    public ResponseEntity<String> respondToEventInvite(@RequestBody java.util.Map<String, Object> body) {
+        try {
+            String username = (String) body.get("username");
+            String eventId  = (String) body.get("eventId");
+            boolean accept  = Boolean.TRUE.equals(body.get("accept"));
+            boolean ok = calendarService.respondToEventInvite(username, eventId, accept);
+            return ok ? ResponseEntity.ok("Success") : ResponseEntity.badRequest().body("Invite not found");
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
+    }
+
+    @PostMapping("/batch-sync-gcal")
+    public ResponseEntity<EventsResponse> batchSyncGcal(@RequestBody BatchSyncGcalRequest request) {
+        try {
+            List<EventDto> result = calendarService.batchSyncGcalEvents(request.getUsername(), request.getEvents());
+            return ResponseEntity.ok(new EventsResponse(true, null, result));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(new EventsResponse(false, e.getMessage(), null));
+        }
     }
 
     @DeleteMapping("/delete-by-type")

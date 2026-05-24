@@ -32,28 +32,36 @@ struct AddEventSheet: View {
         colorScheme == .dark ? .white : .blue
     }
 
-    // Reminder selections
+    // Reminder selections — id is secondsBefore (stable across sessions)
     struct ReminderOption: Identifiable {
-        let id = UUID()
+        let id: TimeInterval
         let label: String
-        let secondsBefore: TimeInterval
+        var secondsBefore: TimeInterval { id }
     }
     private let reminderOptions: [ReminderOption] = [
-        ReminderOption(label: "15 minutes before", secondsBefore: 15 * 60),
-        ReminderOption(label: "1 hour before", secondsBefore: 60 * 60),
-        ReminderOption(label: "1 day before", secondsBefore: 24 * 60 * 60),
-        ReminderOption(label: "At start time", secondsBefore: 0)
+        ReminderOption(id: 15 * 60,      label: "15 minutes before"),
+        ReminderOption(id: 60 * 60,      label: "1 hour before"),
+        ReminderOption(id: 24 * 60 * 60, label: "1 day before"),
+        ReminderOption(id: 0,            label: "At start time")
     ]
-    @State private var selectedReminders: Set<UUID> = []
+    @State private var selectedReminders: Set<TimeInterval> = []
+    @State private var internalEventId: String = ""
 
+    @State private var friendsCanSee: Bool = true
+    @State private var selectedPublishCalendars: Set<String> = []
 
-    let onSave: (String, String, Date, Date, String, [String], String) -> Void
+    // Friends whose calendars the current user can publish to (received "add" access)
+    let publishableFriendCalendars: [String]
+
+    // onSave: (eventId, title, description, start, end, recurrence, friends, eventType, friendsCanSee, publishToCalendars)
+    let onSave: (String, String, String, Date, Date, String, [String], String, Bool, [String]) -> Void
 
     // MARK: - Init for creating a new event
-    init(defaultDate: Date, existingEvents: [Event] = [], onSave: @escaping (String, String, Date, Date, String, [String], String) -> Void) {
+    init(defaultDate: Date, existingEvents: [Event] = [], publishableFriendCalendars: [String] = [], onSave: @escaping (String, String, String, Date, Date, String, [String], String, Bool, [String]) -> Void) {
         self.defaultDate = defaultDate
         self.existingEvents = existingEvents
         self.editingEventId = nil
+        self.publishableFriendCalendars = publishableFriendCalendars
         self.onSave = onSave
 
         _title = State(initialValue: "")
@@ -61,13 +69,17 @@ struct AddEventSheet: View {
         _startDate = State(initialValue: defaultDate)
         _endDate = State(initialValue: defaultDate)
         _recurrence = State(initialValue: "none")
+        _internalEventId = State(initialValue: UUID().uuidString)
+        _selectedReminders = State(initialValue: [])
+        _friendsCanSee = State(initialValue: true)
     }
 
     // MARK: - Init for editing an existing event
-    init(existingEvent: Event, existingEvents: [Event] = [], onSave: @escaping (String, String, Date, Date, String, [String], String) -> Void) {
+    init(existingEvent: Event, existingEvents: [Event] = [], onSave: @escaping (String, String, String, Date, Date, String, [String], String, Bool, [String]) -> Void) {
         self.defaultDate = existingEvent.startDate
         self.existingEvents = existingEvents
         self.editingEventId = existingEvent.id
+        self.publishableFriendCalendars = []
         self.onSave = onSave
 
         let isSub = existingEvent.eventType.lowercased().hasPrefix("subscription")
@@ -78,17 +90,19 @@ struct AddEventSheet: View {
         _isRecurring = State(initialValue: existingEvent.recurrence != "none")
         _recurrence = State(initialValue: existingEvent.recurrence)
         _isSubscription = State(initialValue: isSub)
-        // Prepopulate selected friends if the event already has invited friends
         _selectedFriends = State(initialValue: existingEvent.invitedFriends.filter { !$0.contains("-creator-user-") }
             .map { Friend(username: $0) })
+        _internalEventId = State(initialValue: existingEvent.id)
+        _friendsCanSee = State(initialValue: existingEvent.friendsCanSee)
 
-        // Extract cost and description from existing subscription events
+        // Restore previously saved reminder selections
+        let saved = UserDefaults.standard.array(forKey: "event_reminders_\(existingEvent.id)") as? [Double] ?? []
+        _selectedReminders = State(initialValue: Set(saved.map { TimeInterval($0) }))
+
         if isSub {
-            // Description format: "Subscription reminder ($10.99)" or user text
             let desc = existingEvent.description
             if let range = desc.range(of: #"\$(\d+\.?\d*)"#, options: .regularExpression) {
-                _monthlyCost = State(initialValue: String(desc[range].dropFirst())) // drop the $
-                // Description without the cost part
+                _monthlyCost = State(initialValue: String(desc[range].dropFirst()))
                 let cleanDesc = desc.replacingOccurrences(of: #"Subscription reminder\s*\(\$\d+\.?\d*\)"#, with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
                 _description = State(initialValue: cleanDesc)
             } else {
@@ -211,14 +225,21 @@ struct AddEventSheet: View {
                     }
 
                     if showFriendDropdown {
-                        VStack(spacing: 0) {
-                            Divider()
-                            ScrollView {
-                                VStack(spacing: 0) {
-                                    ForEach(friendVM.friends.map { Friend(username: $0) }
-                                        .filter { !$0.id.contains("-creator-user-") }
-                                    ) { friend in
-                                        if !selectedFriends.contains(friend) {
+                        let availableFriends = friendVM.friends
+                            .map { Friend(username: $0) }
+                            .filter { !$0.id.contains("-creator-user-") && !selectedFriends.contains($0) }
+
+                        if availableFriends.isEmpty {
+                            Text(friendVM.friends.isEmpty ? "No friends added yet" : "All friends already invited")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                                .padding(.vertical, 8)
+                        } else {
+                            VStack(spacing: 0) {
+                                Divider()
+                                ScrollView {
+                                    VStack(spacing: 0) {
+                                        ForEach(availableFriends) { friend in
                                             Button(action: {
                                                 withAnimation {
                                                     selectedFriends.append(friend)
@@ -235,13 +256,12 @@ struct AddEventSheet: View {
                                                 .padding(.horizontal, 12)
                                             }
                                             .buttonStyle(PlainButtonStyle())
-
                                             Divider()
                                         }
                                     }
                                 }
+                                .frame(maxHeight: 150)
                             }
-                            .frame(maxHeight: 150)
                         }
                     }
 
@@ -278,14 +298,34 @@ struct AddEventSheet: View {
                     }
                 }
 
+                // Friends visibility
+                Section(header: Text("Visibility").foregroundColor(adaptiveTextColor)) {
+                    Toggle("Friends can see this event", isOn: $friendsCanSee)
+                }
+
+                // Publish to friend calendars (only for new events, only when access exists)
+                if editingEventId == nil && !publishableFriendCalendars.isEmpty {
+                    Section(header: Text("Also Publish To").foregroundColor(adaptiveTextColor)) {
+                        ForEach(publishableFriendCalendars, id: \.self) { friend in
+                            Toggle(friend, isOn: Binding<Bool>(
+                                get: { selectedPublishCalendars.contains(friend) },
+                                set: { on in
+                                    if on { selectedPublishCalendars.insert(friend) }
+                                    else { selectedPublishCalendars.remove(friend) }
+                                }
+                            ))
+                        }
+                    }
+                }
+
                 // Notifications
                 Section(header: Text("Reminders").foregroundColor(adaptiveTextColor)) {
                     ForEach(reminderOptions) { opt in
                         Toggle(isOn: Binding<Bool>(
-                            get: { selectedReminders.contains(opt.id) },
+                            get: { selectedReminders.contains(opt.secondsBefore) },
                             set: { isOn in
-                                if isOn { selectedReminders.insert(opt.id) }
-                                else { selectedReminders.remove(opt.id) }
+                                if isOn { selectedReminders.insert(opt.secondsBefore) }
+                                else { selectedReminders.remove(opt.secondsBefore) }
                             }
                         )) {
                             Text(opt.label)
@@ -293,9 +333,15 @@ struct AddEventSheet: View {
                     }
                 }
             }
+            .tint(.blue)
             .scrollDismissesKeyboard(.interactively)
-            .onTapGesture { hideKeyboard() }
-            .onAppear { requestNotificationPermission() }
+            .onAppear {
+                requestNotificationPermission()
+                if friendVM.friends.isEmpty {
+                    let username = UserDefaults.standard.string(forKey: "loggedInUsername") ?? ""
+                    Task { await friendVM.loadFriends(for: username) }
+                }
+            }
             .navigationBarTitle("Add Event", displayMode: .inline)
             .navigationBarItems(
                 leading: Button("Cancel") {
@@ -306,7 +352,10 @@ struct AddEventSheet: View {
                         showDuplicateAlert = true
                     } else {
                         let finalEndDate = isRange ? endDate : startDate
-                        scheduleRemindersIfNeeded(eventTitle: title, start: startDate)
+
+                        // Persist reminder selections and reschedule (cancels old ones first)
+                        UserDefaults.standard.set(Array(selectedReminders), forKey: "event_reminders_\(internalEventId)")
+                        scheduleReminders(for: internalEventId, eventTitle: title, start: startDate)
 
                         let eventType = isSubscription ? "subscription" : "user"
                         var finalDescription = description
@@ -319,7 +368,7 @@ struct AddEventSheet: View {
                             }
                         }
 
-                        onSave(title, finalDescription, startDate, finalEndDate, recurrence, selectedFriends.map { $0.id }, eventType)
+                        onSave(internalEventId, title, finalDescription, startDate, finalEndDate, recurrence, selectedFriends.map { $0.id }, eventType, friendsCanSee, Array(selectedPublishCalendars))
                         presentationMode.wrappedValue.dismiss()
                     }
                 }
@@ -331,6 +380,7 @@ struct AddEventSheet: View {
                 Text("An event with this name already exists on this day. Please choose a different name.")
             }
         }
+        .tint(adaptiveTextColor)
     }
 }
 
@@ -345,14 +395,22 @@ private extension AddEventSheet {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
     }
 
-    func scheduleRemindersIfNeeded(eventTitle: String, start: Date) {
+    func scheduleReminders(for eventId: String, eventTitle: String, start: Date) {
         let center = UNUserNotificationCenter.current()
-        let selectedOpts = reminderOptions.filter { selectedReminders.contains($0.id) }
+
+        // Cancel all existing notifications for this event before rescheduling
+        let allIds = reminderOptions.map { "reminder_\(eventId)_\(Int($0.secondsBefore))" }
+        center.removePendingNotificationRequests(withIdentifiers: allIds)
+
+        let selectedOpts = reminderOptions.filter { selectedReminders.contains($0.secondsBefore) }
         guard !selectedOpts.isEmpty else { return }
+
+        let eventName = eventTitle.isEmpty ? "Event" : eventTitle
+        let dateFormatter = ISO8601DateFormatter()
 
         for opt in selectedOpts {
             let triggerDate = start.addingTimeInterval(-opt.secondsBefore)
-            if triggerDate < Date() { continue } // skip past reminders
+            if triggerDate < Date() { continue }
 
             var comps = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: triggerDate)
             comps.second = 0
@@ -360,35 +418,23 @@ private extension AddEventSheet {
 
             let content = UNMutableNotificationContent()
             content.title = "Upcoming Event"
-
-            // Create timing-specific message
-            let eventName = eventTitle.isEmpty ? "Event" : eventTitle
-            if opt.secondsBefore == 0 {
-                content.body = "\(eventName) is starting now!"
-            } else if opt.secondsBefore == 15 * 60 {
-                content.body = "\(eventName) starts in 15 minutes"
-            } else if opt.secondsBefore == 60 * 60 {
-                content.body = "\(eventName) starts in 1 hour"
-            } else if opt.secondsBefore == 24 * 60 * 60 {
-                content.body = "\(eventName) starts in 24 hours"
-            } else {
-                content.body = "\(eventName) starts soon"
+            content.body = switch opt.secondsBefore {
+                case 0:         "\(eventName) is starting now!"
+                case 15 * 60:  "\(eventName) starts in 15 minutes"
+                case 60 * 60:  "\(eventName) starts in 1 hour"
+                default:        "\(eventName) starts in 24 hours"
             }
-
             content.sound = .default
-
-            // Add userInfo to enable navigation to calendar when tapped
-            let dateFormatter = ISO8601DateFormatter()
             content.userInfo = [
                 "eventTitle": eventTitle,
                 "eventDate": dateFormatter.string(from: start),
                 "navigateTo": "calendar",
                 "secondsBefore": opt.secondsBefore,
-                "showDayView": opt.secondsBefore < 24 * 60 * 60 // true if less than 24 hours
+                "showDayView": opt.secondsBefore < 24 * 60 * 60
             ]
 
             let request = UNNotificationRequest(
-                identifier: UUID().uuidString,
+                identifier: "reminder_\(eventId)_\(Int(opt.secondsBefore))",
                 content: content,
                 trigger: trigger
             )

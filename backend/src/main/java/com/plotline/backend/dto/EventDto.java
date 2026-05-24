@@ -1,6 +1,8 @@
 package com.plotline.backend.dto;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public class EventDto {
     private String id;
@@ -11,6 +13,10 @@ public class EventDto {
     private String eventType;
     private String recurrence;
     private List<String> invitedFriends;
+    private boolean friendsCanSee = true;
+    private String addedBy = null;
+    private String status = "approved";    // "approved", "pending", "invite-pending", "accepted", "declined"
+    private Map<String, String> inviteStatuses = new HashMap<>(); // friend -> "pending"/"accepted"/"declined"
 
     // No-arg constructor needed for Jackson
     public EventDto() {}
@@ -89,5 +95,17 @@ public class EventDto {
     public void setInvitedFriends(List<String> invitedFriends) {
         this.invitedFriends = invitedFriends;
     }
+
+    public boolean isFriendsCanSee() { return friendsCanSee; }
+    public void setFriendsCanSee(boolean friendsCanSee) { this.friendsCanSee = friendsCanSee; }
+
+    public String getAddedBy() { return addedBy; }
+    public void setAddedBy(String addedBy) { this.addedBy = addedBy; }
+
+    public String getStatus() { return status; }
+    public void setStatus(String status) { this.status = status; }
+
+    public Map<String, String> getInviteStatuses() { return inviteStatuses; }
+    public void setInviteStatuses(Map<String, String> inviteStatuses) { this.inviteStatuses = inviteStatuses; }
 }
 
