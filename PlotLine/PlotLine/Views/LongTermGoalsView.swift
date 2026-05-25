@@ -173,6 +173,11 @@ struct LongTermGoalsView: View {
         } message: {
             Text(shareAlertMessage)
         }
+        .onTapGesture { hideKeyboard() }
+    }
+
+    private func hideKeyboard() {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     }
 
     // MARK: - Goal card

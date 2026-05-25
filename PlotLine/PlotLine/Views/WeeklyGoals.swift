@@ -105,7 +105,7 @@ struct WeeklyGoalsView: View {
                         Label("Enable Notifications", systemImage: "bell.fill")
                             .font(.subheadline.weight(.medium))
                     }
-                    .tint(adaptiveTextColor)
+                    .tint(.blue)
 
                     if notificationsEnabled {
                         Picker("Notification Type", selection: $notificationType) {
@@ -388,6 +388,11 @@ struct WeeklyGoalsView: View {
                 }
             }
         }
+        .onTapGesture { hideKeyboard() }
+    }
+
+    private func hideKeyboard() {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     }
 
     // MARK: - Logic (unchanged)
