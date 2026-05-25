@@ -462,6 +462,11 @@ struct WeeklyGoalsView: View {
         guard let index = tasks.firstIndex(where: { $0.id == task.id }) else { return }
         tasks[index].isCompleted.toggle()
 
+        // Write optimistically before the network call so the widget updates even if the
+        // user closes the app before the PUT returns.
+        WidgetDataWriter.writeGoals(tasks)
+        WidgetDataWriter.reloadWidgets()
+
         guard let url = URL(string: "\(BackendConfig.baseURLString)/api/goals/\(username)/\(task.id)/completion") else { return }
         var request = URLRequest(url: url)
         request.httpMethod = "PUT"

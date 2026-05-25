@@ -799,6 +799,7 @@ struct NutritionView: View {
         }
         entry?.foods.append(foodWithMeal)
         saveEntry()
+        writeNutritionToWidget()
 
         let username = UserDefaults.standard.string(forKey: "loggedInUsername") ?? ""
         Task { await ProfileAPI.incrementTrophy(username: username, trophyId: "nutrition-logger") }
@@ -808,6 +809,7 @@ struct NutritionView: View {
     private func deleteFood(_ food: FoodItem) {
         entry?.foods.removeAll { $0.id == food.id }
         saveEntry()
+        writeNutritionToWidget()
         checkDailyNutritionTrophies()
     }
 

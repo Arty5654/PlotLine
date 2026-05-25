@@ -432,11 +432,17 @@ struct SpendingTrendChartView: View {
 
         do {
             let (target, series) = try await (t, s)
+            let sorted = series.sorted { $0.date < $1.date }
             await MainActor.run {
                 self.budgetTarget = target
-                self.points = series.sorted { $0.date < $1.date }
+                self.points = sorted
                 self.isLoading = false
             }
+            // Write to widget — use most recent period's spend vs budget
+            let totalSpent = sorted.last?.total ?? 0
+            let period = chartType.lowercased()
+            WidgetDataWriter.writeFinancial(period: period, totalSpent: totalSpent, totalBudget: target)
+            WidgetDataWriter.reloadWidgets()
         } catch {
             await MainActor.run {
                 self.points = []

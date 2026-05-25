@@ -7,6 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		2AE894282FC3E5CD00FA5D5B /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2AE894272FC3E5CC00FA5D5B /* WidgetKit.framework */; };
+		2AE8942A2FC3E5CD00FA5D5B /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2AE894292FC3E5CD00FA5D5B /* SwiftUI.framework */; };
+		2AE8943B2FC3E5CF00FA5D5B /* PlotLineWidgetsExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 2AE894252FC3E5CC00FA5D5B /* PlotLineWidgetsExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		2AFC9F992E9A17F800B1496A /* LinkKit in Frameworks */ = {isa = PBXBuildFile; productRef = 2AFC9F982E9A17F800B1496A /* LinkKit */; };
 		4239F88C2D6946490036D707 /* Config.xcconfig in Resources */ = {isa = PBXBuildFile; fileRef = 4239F88B2D6946490036D707 /* Config.xcconfig */; };
 		CD06D2DE2D64C5D600838ECF /* .gitignore in Resources */ = {isa = PBXBuildFile; fileRef = CD06D2DD2D64C5CD00838ECF /* .gitignore */; };
@@ -15,6 +18,13 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		2AE894392FC3E5CF00FA5D5B /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = CDA3CE592D5299930038ABC2 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 2AE894242FC3E5CC00FA5D5B;
+			remoteInfo = PlotLineWidgetsExtension;
+		};
 		CDA3CE722D5299960038ABC2 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = CDA3CE592D5299930038ABC2 /* Project object */;
@@ -32,6 +42,17 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
+		2AE8943C2FC3E5CF00FA5D5B /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				2AE8943B2FC3E5CF00FA5D5B /* PlotLineWidgetsExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		CDFF674E2D5E38B1009F7BC3 /* Embed Frameworks */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
@@ -45,6 +66,9 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		2AE894252FC3E5CC00FA5D5B /* PlotLineWidgetsExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = PlotLineWidgetsExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		2AE894272FC3E5CC00FA5D5B /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
+		2AE894292FC3E5CD00FA5D5B /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		4239F88B2D6946490036D707 /* Config.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config.xcconfig; sourceTree = "<group>"; };
 		CD06D2DD2D64C5CD00838ECF /* .gitignore */ = {isa = PBXFileReference; lastKnownFileType = text; path = .gitignore; sourceTree = "<group>"; };
 		CDA3CE612D5299930038ABC2 /* PlotLine.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PlotLine.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -60,9 +84,24 @@
 			);
 			target = CDA3CE602D5299930038ABC2 /* PlotLine */;
 		};
+		2AE894402FC3E5CF00FA5D5B /* Exceptions for "PlotLineWidgets" folder in "PlotLineWidgetsExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 2AE894242FC3E5CC00FA5D5B /* PlotLineWidgetsExtension */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		2AE8942B2FC3E5CD00FA5D5B /* PlotLineWidgets */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				2AE894402FC3E5CF00FA5D5B /* Exceptions for "PlotLineWidgets" folder in "PlotLineWidgetsExtension" target */,
+			);
+			path = PlotLineWidgets;
+			sourceTree = "<group>";
+		};
 		CDA3CE632D5299930038ABC2 /* PlotLine */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
@@ -84,6 +123,15 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		2AE894222FC3E5CC00FA5D5B /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				2AE8942A2FC3E5CD00FA5D5B /* SwiftUI.framework in Frameworks */,
+				2AE894282FC3E5CD00FA5D5B /* WidgetKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		CDA3CE5E2D5299930038ABC2 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -111,6 +159,15 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		2AE894262FC3E5CC00FA5D5B /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				2AE894272FC3E5CC00FA5D5B /* WidgetKit.framework */,
+				2AE894292FC3E5CD00FA5D5B /* SwiftUI.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		CDA3CE582D5299930038ABC2 = {
 			isa = PBXGroup;
 			children = (
@@ -119,6 +176,8 @@
 				CDA3CE632D5299930038ABC2 /* PlotLine */,
 				CDA3CE742D5299960038ABC2 /* PlotLineTests */,
 				CDA3CE7E2D5299960038ABC2 /* PlotLineUITests */,
+				2AE8942B2FC3E5CD00FA5D5B /* PlotLineWidgets */,
+				2AE894262FC3E5CC00FA5D5B /* Frameworks */,
 				CDA3CE622D5299930038ABC2 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -129,6 +188,7 @@
 				CDA3CE612D5299930038ABC2 /* PlotLine.app */,
 				CDA3CE712D5299960038ABC2 /* PlotLineTests.xctest */,
 				CDA3CE7B2D5299960038ABC2 /* PlotLineUITests.xctest */,
+				2AE894252FC3E5CC00FA5D5B /* PlotLineWidgetsExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -136,6 +196,28 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		2AE894242FC3E5CC00FA5D5B /* PlotLineWidgetsExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 2AE8943F2FC3E5CF00FA5D5B /* Build configuration list for PBXNativeTarget "PlotLineWidgetsExtension" */;
+			buildPhases = (
+				2AE894212FC3E5CC00FA5D5B /* Sources */,
+				2AE894222FC3E5CC00FA5D5B /* Frameworks */,
+				2AE894232FC3E5CC00FA5D5B /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				2AE8942B2FC3E5CD00FA5D5B /* PlotLineWidgets */,
+			);
+			name = PlotLineWidgetsExtension;
+			packageProductDependencies = (
+			);
+			productName = PlotLineWidgetsExtension;
+			productReference = 2AE894252FC3E5CC00FA5D5B /* PlotLineWidgetsExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		CDA3CE602D5299930038ABC2 /* PlotLine */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = CDA3CE852D5299960038ABC2 /* Build configuration list for PBXNativeTarget "PlotLine" */;
@@ -144,10 +226,12 @@
 				CDA3CE5E2D5299930038ABC2 /* Frameworks */,
 				CDA3CE5F2D5299930038ABC2 /* Resources */,
 				CDFF674E2D5E38B1009F7BC3 /* Embed Frameworks */,
+				2AE8943C2FC3E5CF00FA5D5B /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				2AE8943A2FC3E5CF00FA5D5B /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				CDA3CE632D5299930038ABC2 /* PlotLine */,
@@ -215,9 +299,12 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
-				LastSwiftUpdateCheck = 1620;
+				LastSwiftUpdateCheck = 2610;
 				LastUpgradeCheck = 1620;
 				TargetAttributes = {
+					2AE894242FC3E5CC00FA5D5B = {
+						CreatedOnToolsVersion = 26.1.1;
+					};
 					CDA3CE602D5299930038ABC2 = {
 						CreatedOnToolsVersion = 16.2;
 					};
@@ -252,11 +339,19 @@
 				CDA3CE602D5299930038ABC2 /* PlotLine */,
 				CDA3CE702D5299960038ABC2 /* PlotLineTests */,
 				CDA3CE7A2D5299960038ABC2 /* PlotLineUITests */,
+				2AE894242FC3E5CC00FA5D5B /* PlotLineWidgetsExtension */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		2AE894232FC3E5CC00FA5D5B /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		CDA3CE5F2D5299930038ABC2 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -283,6 +378,13 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		2AE894212FC3E5CC00FA5D5B /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		CDA3CE5D2D5299930038ABC2 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -307,6 +409,11 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		2AE8943A2FC3E5CF00FA5D5B /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 2AE894242FC3E5CC00FA5D5B /* PlotLineWidgetsExtension */;
+			targetProxy = 2AE894392FC3E5CF00FA5D5B /* PBXContainerItemProxy */;
+		};
 		CDA3CE732D5299960038ABC2 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = CDA3CE602D5299930038ABC2 /* PlotLine */;
@@ -320,6 +427,70 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		2AE8943D2FC3E5CF00FA5D5B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_ENTITLEMENTS = PlotLineWidgets/PlotLineWidgets.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 98PZUNW9C3;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = PlotLineWidgets/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = PlotLineWidgets;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.1;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.ArteomAvetissian.PlotLine.PlotLineWidgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		2AE8943E2FC3E5CF00FA5D5B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_ENTITLEMENTS = PlotLineWidgets/PlotLineWidgets.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 98PZUNW9C3;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = PlotLineWidgets/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = PlotLineWidgets;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.1;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.ArteomAvetissian.PlotLine.PlotLineWidgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 		CDA3CE832D5299960038ABC2 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = 4239F88B2D6946490036D707 /* Config.xcconfig */;
@@ -447,6 +618,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = PlotLine/PlotLine.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "\"PlotLine/Preview Content\"";
@@ -481,6 +653,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = PlotLine/PlotLine.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "\"PlotLine/Preview Content\"";
@@ -580,6 +753,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		2AE8943F2FC3E5CF00FA5D5B /* Build configuration list for PBXNativeTarget "PlotLineWidgetsExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				2AE8943D2FC3E5CF00FA5D5B /* Debug */,
+				2AE8943E2FC3E5CF00FA5D5B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		CDA3CE5C2D5299930038ABC2 /* Build configuration list for PBXProject "PlotLine" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

@@ -515,6 +515,7 @@ struct SubsView: View {
             DispatchQueue.main.async {
                 self.inputtedSubscriptionsCost = self.totalSubscriptionsCost
                 self.fullMonthlyCosts["Subscriptions"] = self.totalSubscriptionsCost
+                WidgetDataWriter.refreshFinancialData()
             }
         }.resume()
     }

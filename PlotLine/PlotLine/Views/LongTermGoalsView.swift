@@ -290,6 +290,9 @@ struct LongTermGoalsView: View {
 
         longTermGoals[goalIndex].steps[stepIndex].isCompleted.toggle()
 
+        WidgetDataWriter.writeLongTermGoals(longTermGoals)
+        WidgetDataWriter.reloadWidgets()
+
         guard let url = URL(string: "\(BackendConfig.baseURLString)/api/goals/\(username)/long-term/\(goalId)/steps/\(stepId)") else { return }
         var request = URLRequest(url: url)
         request.httpMethod = "PUT"

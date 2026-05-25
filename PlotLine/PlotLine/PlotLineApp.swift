@@ -54,6 +54,8 @@ struct PlotLineApp: App {
             let username = UserDefaults.standard.string(forKey: "loggedInUsername") ?? ""
             guard !username.isEmpty else { return }
             WidgetDataWriter.writeCredentials()
+            WidgetDataWriter.refreshFinancialData()
+            WidgetDataWriter.refreshGoalsData()
             calendarVM.fetchEvents()
             Task { await friendsVM.loadFriends(for: username) }
         }

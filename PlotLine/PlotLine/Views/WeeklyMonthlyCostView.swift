@@ -1030,6 +1030,7 @@ struct WeeklyMonthlyCostView: View {
                     self.loadMonthlyData()
                     self.fetchMonthlyFeedback(for: self.selectedMonth)
                     self.activeAlert = AppAlert(title: "Success", message: successMsg)
+                    WidgetDataWriter.refreshFinancialData()
                 }
             }
         } else {
@@ -1047,6 +1048,7 @@ struct WeeklyMonthlyCostView: View {
                     self.loadMonthlyData()
                     self.fetchMonthlyFeedback(for: self.selectedMonth)
                     self.activeAlert = AppAlert(title: "Success", message: successMsg)
+                    WidgetDataWriter.refreshFinancialData()
                 }
             }
         }

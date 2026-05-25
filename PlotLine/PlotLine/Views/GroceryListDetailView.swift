@@ -594,6 +594,7 @@ struct GroceryListDetailView: View {
                 DispatchQueue.main.async {
                     showGroceryAddedAlert = true
                     canUndoGroceryAddition = true
+                    WidgetDataWriter.refreshFinancialData()
                 }
             }.resume()
         }.resume()
@@ -624,6 +625,7 @@ struct GroceryListDetailView: View {
                 DispatchQueue.main.async {
                     canUndoGroceryAddition = false
                     recentlyAddedGroceryAmount = nil
+                    WidgetDataWriter.refreshFinancialData()
                 }
             }.resume()
         }.resume()
