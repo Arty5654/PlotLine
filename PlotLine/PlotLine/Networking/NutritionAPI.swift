@@ -151,13 +151,14 @@ class NutritionAPI {
         )
     }
 
-    // MARK: - Food search via Open Food Facts
+    // MARK: - Food search via USDA FoodData Central
+    // Covers whole foods, raw/cooked meats, produce, and branded products.
 
     func searchFoods(_ query: String) async throws -> [FoodItem] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty,
               let encoded = trimmed.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let url = URL(string: "https://world.openfoodfacts.org/cgi/search.pl?search_terms=\(encoded)&json=1&page_size=50&sort_by=popularity_key&lc=en&fields=product_name,brands,serving_size,serving_quantity,nutriments,code") else {
+              let url = URL(string: "https://api.nal.usda.gov/fdc/v1/foods/search?query=\(encoded)&api_key=\(BackendConfig.usdaFdcApiKey)&pageSize=25") else {
             return []
         }
 
@@ -165,59 +166,69 @@ class NutritionAPI {
         request.timeoutInterval = 10
 
         let (data, _) = try await URLSession.shared.data(for: request)
-        let result = try JSONDecoder().decode(OFFSearchResponse.self, from: data)
-
-        guard let products = result.products else { return [] }
+        let result = try JSONDecoder().decode(USDASearchResponse.self, from: data)
 
         let lowerQuery = trimmed.lowercased()
 
-        return products.compactMap { product -> FoodItem? in
-            let productName = product.productName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            let brand = product.brands?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return result.foods
+            .compactMap { food -> FoodItem? in
+                let name = food.description.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !name.isEmpty else { return nil }
 
-            if productName.isEmpty && brand.isEmpty { return nil }
-            let name: String
-            if productName.isEmpty { name = brand }
-            else if brand.isEmpty { name = productName }
-            else { name = "\(productName) – \(brand)" }
+                let nutrients = food.foodNutrients
+                // SR Legacy / Foundation nutrients are per 100g.
+                // Branded foods in the search endpoint also return per-100g values.
+                let cal  = nutrients.first(where: { $0.nutrientName?.contains("Energy") == true && $0.unitName == "KCAL" })?.value ?? 0
+                let pro  = nutrients.first(where: { $0.nutrientName?.contains("Protein") == true })?.value ?? 0
+                let carb = nutrients.first(where: { $0.nutrientName?.contains("Carbohydrate") == true })?.value ?? 0
+                let fat  = nutrients.first(where: { $0.nutrientName?.contains("Total lipid") == true })?.value ?? 0
 
-            let serving = product.servingSize ?? "1 serving"
-            let n = product.nutriments
+                guard cal > 0 || pro > 0 else { return nil }
 
-            let cal = n?.bestCaloriesServing ?? n?.bestCalories100g ?? 0
-            let pro = n?.proteinsServing ?? n?.proteins100g ?? 0
-            let carb = n?.carbohydratesServing ?? n?.carbohydrates100g ?? 0
-            let fat = n?.fatServing ?? n?.fat100g ?? 0
-
-            if cal == 0 && pro == 0 && carb == 0 && fat == 0 { return nil }
-
-            return FoodItem(
-                name: name,
-                servingSize: serving,
-                servings: 1,
-                calories: round(cal * 10) / 10,
-                protein: round(pro * 10) / 10,
-                carbs: round(carb * 10) / 10,
-                fat: round(fat * 10) / 10,
-                source: .search
-            )
-        }
-        .reduce(into: [FoodItem]()) { acc, item in
-            if !acc.contains(where: { $0.name.lowercased() == item.name.lowercased() }) {
-                acc.append(item)
+                return FoodItem(
+                    name: name,
+                    servingSize: "100g",
+                    servings: 1,
+                    calories: round(cal  * 10) / 10,
+                    protein:  round(pro  * 10) / 10,
+                    carbs:    round(carb * 10) / 10,
+                    fat:      round(fat  * 10) / 10,
+                    source: .search
+                )
             }
-        }
-        .sorted { a, b in
-            let aLower = a.name.lowercased()
-            let bLower = b.name.lowercased()
-            let aStarts = aLower.hasPrefix(lowerQuery)
-            let bStarts = bLower.hasPrefix(lowerQuery)
-            if aStarts != bStarts { return aStarts }
-            let aContains = aLower.contains(lowerQuery)
-            let bContains = bLower.contains(lowerQuery)
-            if aContains != bContains { return aContains }
-            return aLower.count < bLower.count
-        }
+            .reduce(into: [FoodItem]()) { acc, item in
+                if !acc.contains(where: { $0.name.lowercased() == item.name.lowercased() }) {
+                    acc.append(item)
+                }
+            }
+            .sorted { a, b in
+                let aLower = a.name.lowercased()
+                let bLower = b.name.lowercased()
+                let aContains = aLower.contains(lowerQuery)
+                let bContains = bLower.contains(lowerQuery)
+                if aContains != bContains { return aContains }
+                return aLower < bLower
+            }
+    }
+
+    // MARK: - USDA FDC Decodable types (search endpoint)
+
+    private struct USDASearchResponse: Decodable {
+        let foods: [USDAFood]
+    }
+
+    private struct USDAFood: Decodable {
+        let description: String
+        let dataType: String?
+        let foodNutrients: [USDANutrient]
+        let servingSize: Double?
+        let servingSizeUnit: String?
+    }
+
+    private struct USDANutrient: Decodable {
+        let nutrientName: String?
+        let unitName: String?
+        let value: Double?
     }
 
     // MARK: - Favorites & Saved Meals

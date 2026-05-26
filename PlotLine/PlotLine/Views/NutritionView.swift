@@ -63,7 +63,6 @@ struct NutritionView: View {
     // Barcode lookup
     @State private var scannedFood: FoodItem?
     @State private var lastScannedBarcode: String = ""
-    @State private var showBarcodeResult = false
     @State private var barcodeError: String?
     @State private var showBarcodeError = false
     @State private var isLookingUpBarcode = false
@@ -80,6 +79,9 @@ struct NutritionView: View {
     @State private var copyTargetDate = Date()
     @State private var isMoveMode = false  // true = move, false = copy
 
+    // Edit logged food
+    @State private var foodToEdit: FoodItem?
+
     // Add to grocery list
     @State private var foodToAddToGrocery: FoodItem?
     @State private var showGroceryPicker = false
@@ -88,6 +90,9 @@ struct NutritionView: View {
     @State private var isShoppingForMeal = false
     @State private var shopMealSuccess: String?
     @State private var showShopMealAlert = false
+
+    // Edit saved meal
+    @State private var mealToEdit: SavedMeal?
 
     private let api = NutritionAPI.shared
 
@@ -112,8 +117,23 @@ struct NutritionView: View {
         }
         .sheet(isPresented: $showFoodSearch) { FoodSearchSheet { food in addFood(food) } }
         .sheet(isPresented: $showManualEntry) { ManualFoodEntrySheet { food in addFood(food) } }
+        .sheet(item: $foodToEdit) { food in
+            NavigationView {
+                ServingsAdjustmentSheet(food: food) { updated in
+                    updateFood(updated)
+                    foodToEdit = nil
+                }
+            }
+        }
         .sheet(isPresented: $showBarcodeScanner) { barcodeScannerSheet }
-        .sheet(isPresented: $showBarcodeResult) { barcodeResultSheet }
+        .sheet(item: $scannedFood) { food in
+            NavigationView {
+                ServingsAdjustmentSheet(food: food, barcode: lastScannedBarcode) { adjusted in
+                    addFood(adjusted)
+                    scannedFood = nil
+                }
+            }
+        }
         .sheet(isPresented: $showPhotoResults) { photoResultsSheet }
         .sheet(isPresented: $showFavorites) { favoritesSheet }
         .sheet(isPresented: $showSavedMeals) { savedMealsSheet }
@@ -438,15 +458,21 @@ struct NutritionView: View {
 
     private func foodRow(_ food: FoodItem) -> some View {
         HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 4) {
-                    Text(food.name).font(.subheadline.bold())
-                    sourceIcon(food.source)
+            Button {
+                foodToEdit = food
+            } label: {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 4) {
+                        Text(food.name).font(.subheadline.bold())
+                        sourceIcon(food.source)
+                    }
+                    Text("\(food.servingSize) x \(food.servings, specifier: "%.1f")")
+                        .font(.caption)
+                        .foregroundColor(PLColor.textSecondary)
                 }
-                Text("\(food.servingSize) x \(food.servings, specifier: "%.1f")")
-                    .font(.caption)
-                    .foregroundColor(PLColor.textSecondary)
             }
+            .buttonStyle(.plain)
+
             Spacer()
             VStack(alignment: .trailing, spacing: 2) {
                 Text("\(Int(food.calories)) cal")
@@ -458,6 +484,11 @@ struct NutritionView: View {
 
             // Action menu
             Menu {
+                Button {
+                    foodToEdit = food
+                } label: {
+                    Label("Edit", systemImage: "pencil")
+                }
                 Button { toggleFavorite(food) } label: {
                     let isFav = userData.favorites.contains { $0.name == food.name }
                     Label(isFav ? "Unfavorite" : "Favorite", systemImage: isFav ? "star.slash" : "star")
@@ -522,17 +553,6 @@ struct NutritionView: View {
         }
     }
 
-    // MARK: - Barcode Result Sheet
-    private var barcodeResultSheet: some View {
-        NavigationView {
-            if let food = scannedFood {
-                ServingsAdjustmentSheet(food: food, barcode: lastScannedBarcode) { adjusted in
-                    addFood(adjusted)
-                    showBarcodeResult = false
-                }
-            }
-        }
-    }
 
     // MARK: - Photo Results Sheet
     private var photoResultsSheet: some View {
@@ -557,7 +577,7 @@ struct NutritionView: View {
             .navigationBarItems(
                 leading: Button("Cancel") { showPhotoResults = false },
                 trailing: Button("Add All") {
-                    for food in photoFoods { addFood(food) }
+                    addFoods(photoFoods)
                     showPhotoResults = false
                 }
                 .bold()
@@ -615,53 +635,64 @@ struct NutritionView: View {
                         .padding(.vertical)
                 } else {
                     ForEach(userData.savedMeals) { meal in
-                        HStack(spacing: 12) {
-                            Button {
-                                for var food in meal.foods {
-                                    food.id = UUID().uuidString
-                                    addFood(food)
-                                }
-                                showSavedMeals = false
-                            } label: {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(meal.name).font(.headline).foregroundColor(.primary)
-                                    Text("\(meal.foods.count) item\(meal.foods.count == 1 ? "" : "s") · \(Int(meal.totalCalories)) cal")
-                                        .font(.caption).foregroundColor(.secondary)
-                                    Text("P:\(Int(meal.totalProtein))g  C:\(Int(meal.totalCarbs))g  F:\(Int(meal.totalFat))g")
-                                        .font(.caption2).foregroundColor(.secondary)
-                                }
-                                .padding(.vertical, 4)
+                        Button {
+                            addFoods(meal.foods)
+                            showSavedMeals = false
+                        } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(meal.name).font(.headline).foregroundColor(.primary)
+                                Text("\(meal.foods.count) item\(meal.foods.count == 1 ? "" : "s") · \(Int(meal.totalCalories)) cal")
+                                    .font(.caption).foregroundColor(.secondary)
+                                Text("P:\(Int(meal.totalProtein))g  C:\(Int(meal.totalCarbs))g  F:\(Int(meal.totalFat))g")
+                                    .font(.caption2).foregroundColor(.secondary)
                             }
-
-                            Spacer()
-
+                            .padding(.vertical, 4)
+                        }
+                        .buttonStyle(.plain)
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button(role: .destructive) {
+                                if let idx = userData.savedMeals.firstIndex(where: { $0.id == meal.id }) {
+                                    userData.savedMeals.remove(at: idx)
+                                    persistUserData()
+                                }
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
                             Button {
                                 shopForMeal(meal)
                             } label: {
-                                if isShoppingForMeal {
-                                    ProgressView().frame(width: 32, height: 32)
-                                } else {
-                                    VStack(spacing: 2) {
-                                        Image(systemName: "cart.badge.plus")
-                                            .font(.title3)
-                                            .foregroundColor(.green)
-                                        Text("Shop")
-                                            .font(.caption2)
-                                            .foregroundColor(.green)
-                                    }
-                                }
+                                Label("Shop", systemImage: "cart.badge.plus")
                             }
+                            .tint(.green)
                             .disabled(isShoppingForMeal)
+                            Button {
+                                mealToEdit = meal
+                            } label: {
+                                Label("Edit", systemImage: "pencil")
+                            }
+                            .tint(.blue)
                         }
-                    }
-                    .onDelete { indices in
-                        userData.savedMeals.remove(atOffsets: indices)
-                        persistUserData()
                     }
                 }
             }
             .navigationBarTitle("Saved Meals", displayMode: .inline)
             .navigationBarItems(leading: Button("Done") { showSavedMeals = false })
+            .sheet(item: $mealToEdit) { meal in
+                CreateMealSheet(
+                    todayFoods: entry?.foods ?? [],
+                    favorites: userData.favorites,
+                    editingMeal: meal,
+                    onSave: { updated in
+                        if let idx = userData.savedMeals.firstIndex(where: { $0.id == meal.id }) {
+                            var saved = updated
+                            saved.id = meal.id
+                            userData.savedMeals[idx] = saved
+                        }
+                        persistUserData()
+                        mealToEdit = nil
+                    }
+                )
+            }
         }
     }
 
@@ -790,14 +821,21 @@ struct NutritionView: View {
     }
 
     private func addFood(_ food: FoodItem) {
+        addFoods([food])
+    }
+
+    // Appends all foods and saves exactly once — avoids the race condition where
+    // looping addFood() fires concurrent PUTs that overwrite each other on the server.
+    private func addFoods(_ foods: [FoodItem]) {
         if entry == nil {
             entry = NutritionEntry(date: selectedDate, foods: [])
         }
-        var foodWithMeal = food
-        if foodWithMeal.mealType == nil {
-            foodWithMeal.mealType = selectedMealType
+        for food in foods {
+            var f = food
+            f.id = UUID().uuidString
+            if f.mealType == nil { f.mealType = selectedMealType }
+            entry?.foods.append(f)
         }
-        entry?.foods.append(foodWithMeal)
         saveEntry()
         writeNutritionToWidget()
 
@@ -808,6 +846,14 @@ struct NutritionView: View {
 
     private func deleteFood(_ food: FoodItem) {
         entry?.foods.removeAll { $0.id == food.id }
+        saveEntry()
+        writeNutritionToWidget()
+        checkDailyNutritionTrophies()
+    }
+
+    private func updateFood(_ updated: FoodItem) {
+        guard let idx = entry?.foods.firstIndex(where: { $0.id == updated.id }) else { return }
+        entry?.foods[idx] = updated
         saveEntry()
         writeNutritionToWidget()
         checkDailyNutritionTrophies()
@@ -870,19 +916,20 @@ struct NutritionView: View {
 
     private func copyOrMoveFood(_ food: FoodItem, to targetDate: Date, move: Bool) {
         Task {
-            // Fetch or create target date entry
             var targetEntry = (try? await api.fetchEntries(for: targetDate)) ?? NutritionEntry(date: targetDate, foods: [])
-
             var newFood = food
             newFood.id = UUID().uuidString
             targetEntry.foods.append(newFood)
-            try? await api.saveEntry(targetEntry)
 
-            if move {
-                await MainActor.run { deleteFood(food) }
+            do {
+                try await api.saveEntry(targetEntry)
+                if move {
+                    await MainActor.run { deleteFood(food) }
+                }
+            } catch {
+                // Save failed — leave source untouched
             }
 
-            // Refresh if we copied to the currently viewed date
             if Calendar.current.isDate(targetDate, inSameDayAs: selectedDate) {
                 await MainActor.run { loadEntry() }
             }
@@ -902,7 +949,6 @@ struct NutritionView: View {
                     await MainActor.run {
                         scannedFood = food
                         isLookingUpBarcode = false
-                        showBarcodeResult = true
                     }
                 } else {
                     await MainActor.run {
@@ -957,24 +1003,26 @@ struct NutritionView: View {
     }
 }
 
-// MARK: - Create Meal Sheet
+// MARK: - Create / Edit Meal Sheet
 struct CreateMealSheet: View {
     let todayFoods: [FoodItem]
     let favorites: [FoodItem]
+    var editingMeal: SavedMeal? = nil
     let onSave: (SavedMeal) -> Void
     @Environment(\.dismiss) var dismiss
     @Environment(\.colorScheme) var colorScheme
     private var adaptiveTextColor: Color { colorScheme == .dark ? .white : .blue }
+    private var isEditing: Bool { editingMeal != nil }
 
     @State private var mealName = ""
     @State private var selectedFoodIds: Set<String> = []
+    @State private var foodBeingEdited: FoodItem?
 
     // Add food options
     @State private var showAddManual = false
     @State private var showAddSearch = false
     @State private var showAddBarcode = false
     @State private var scannedFood: FoodItem?
-    @State private var showScannedResult = false
     @State private var manualName = ""
     @State private var manualServing = ""
     @State private var manualServings = "1"
@@ -1009,8 +1057,14 @@ struct CreateMealSheet: View {
                 }
 
                 if !extraFoods.isEmpty {
-                    Section(header: Text("Added")) {
-                        ForEach(extraFoods) { food in foodToggleRow(food) }
+                    Section(header: Text(isEditing ? "Meal Foods" : "Added")) {
+                        ForEach(extraFoods) { food in
+                            if isEditing {
+                                mealFoodEditRow(food)
+                            } else {
+                                foodToggleRow(food)
+                            }
+                        }
                     }
                 }
 
@@ -1053,16 +1107,22 @@ struct CreateMealSheet: View {
                     }
                 }
             }
-            .navigationBarTitle("Create Meal", displayMode: .inline)
+            .navigationBarTitle(isEditing ? "Edit Meal" : "Create Meal", displayMode: .inline)
             .navigationBarItems(
                 leading: Button("Cancel") { dismiss() },
-                trailing: Button("Save") {
+                trailing: Button(isEditing ? "Update" : "Save") {
                     let meal = SavedMeal(name: mealName.trimmingCharacters(in: .whitespacesAndNewlines), foods: selectedFoods)
                     onSave(meal)
                 }
                 .bold()
                 .disabled(mealName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || selectedFoods.isEmpty)
             )
+            .onAppear {
+                guard let meal = editingMeal else { return }
+                mealName = meal.name
+                extraFoods = meal.foods
+                selectedFoodIds = Set(meal.foods.map { $0.id })
+            }
             .sheet(isPresented: $showAddManual) {
                 ManualFoodEntrySheet { food in
                     extraFoods.append(food)
@@ -1085,14 +1145,23 @@ struct CreateMealSheet: View {
                     .navigationBarItems(leading: Button("Cancel") { showAddBarcode = false })
                 }
             }
-            .sheet(isPresented: $showScannedResult) {
-                if let food = scannedFood {
-                    NavigationView {
-                        ServingsAdjustmentSheet(food: food) { adjusted in
-                            extraFoods.append(adjusted)
-                            selectedFoodIds.insert(adjusted.id)
-                            showScannedResult = false
+            .sheet(item: $scannedFood) { food in
+                NavigationView {
+                    ServingsAdjustmentSheet(food: food) { adjusted in
+                        extraFoods.append(adjusted)
+                        selectedFoodIds.insert(adjusted.id)
+                        scannedFood = nil
+                    }
+                }
+            }
+            .sheet(item: $foodBeingEdited) { food in
+                NavigationView {
+                    ServingsAdjustmentSheet(food: food) { updated in
+                        if let idx = extraFoods.firstIndex(where: { $0.id == food.id }) {
+                            extraFoods[idx] = updated
+                            selectedFoodIds.insert(updated.id)
                         }
+                        foodBeingEdited = nil
                     }
                 }
             }
@@ -1117,13 +1186,48 @@ struct CreateMealSheet: View {
         }
     }
 
+    private func mealFoodEditRow(_ food: FoodItem) -> some View {
+        HStack(spacing: 12) {
+            Button {
+                if selectedFoodIds.contains(food.id) {
+                    selectedFoodIds.remove(food.id)
+                } else {
+                    selectedFoodIds.insert(food.id)
+                }
+            } label: {
+                Image(systemName: selectedFoodIds.contains(food.id) ? "checkmark.circle.fill" : "circle")
+                    .foregroundColor(selectedFoodIds.contains(food.id) ? adaptiveTextColor : .secondary)
+                    .font(.title3)
+            }
+            .buttonStyle(.plain)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(food.name)
+                    .font(.subheadline)
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+                Text("\(food.servingSize) × \(food.servings, specifier: "%.1f")  ·  \(Int(food.calories)) cal")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            Spacer()
+
+            Button {
+                foodBeingEdited = food
+            } label: {
+                Image(systemName: "pencil.circle")
+                    .font(.title3)
+                    .foregroundColor(adaptiveTextColor)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
     private func lookupBarcode(_ barcode: String) {
         Task {
             if let food = try? await NutritionAPI.shared.lookupBarcode(barcode) {
-                await MainActor.run {
-                    scannedFood = food
-                    showScannedResult = true
-                }
+                await MainActor.run { scannedFood = food }
             }
         }
     }
@@ -1246,7 +1350,6 @@ struct FoodSearchSheet: View {
                         ServingsAdjustmentSheet(food: food) { adjusted in
                             onSelect(adjusted)
                             showServingsSheet = false
-                            dismiss()
                         }
                     }
                 }
@@ -1402,6 +1505,18 @@ struct ServingsAdjustmentSheet: View {
                 TextField("Servings", text: $servings)
                     .keyboardType(.decimalPad)
                     .tint(adaptiveTextColor)
+
+                HStack {
+                    macroLiveCell(Int(baseCalories * multiplier), "cal",  adaptiveTextColor)
+                    Spacer()
+                    macroLiveCell(Int(baseProtein  * multiplier), "protein", .red)
+                    Spacer()
+                    macroLiveCell(Int(baseCarbs    * multiplier), "carbs",   .orange)
+                    Spacer()
+                    macroLiveCell(Int(baseFat      * multiplier), "fat",     .yellow)
+                }
+                .padding(.vertical, 4)
+                .animation(.easeInOut(duration: 0.1), value: servings)
             }
             Section(header: Text(dataLooksIncomplete ? "Nutrition (per serving)" : "Nutrition (editable)")) {
                 HStack {
@@ -1441,15 +1556,8 @@ struct ServingsAdjustmentSheet: View {
                         .tint(adaptiveTextColor)
                 }
             }
-            if !dataLooksIncomplete {
-                Section {
-                    HStack { Text("Total Calories"); Spacer(); Text("\(Int(baseCalories * multiplier))").bold() }
-                    HStack { Text("Total Protein"); Spacer(); Text("\(Int(baseProtein * multiplier))g") }
-                    HStack { Text("Total Carbs"); Spacer(); Text("\(Int(baseCarbs * multiplier))g") }
-                    HStack { Text("Total Fat"); Spacer(); Text("\(Int(baseFat * multiplier))g") }
-                }
-            }
         }
+        .scrollDismissesKeyboard(.immediately)
         .navigationBarTitle("Adjust Servings", displayMode: .inline)
         .navigationBarItems(
             leading: Button("Cancel") { dismiss() },
@@ -1465,12 +1573,31 @@ struct ServingsAdjustmentSheet: View {
             }
             .bold()
         )
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") {
+                    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                }
+            }
+        }
         .onAppear {
             servings = "\(food.servings)"
             editCalories = food.calories > 0 ? "\(Int(food.calories))" : ""
             editProtein = food.protein > 0 ? "\(Int(food.protein))" : ""
             editCarbs = food.carbs > 0 ? "\(Int(food.carbs))" : ""
             editFat = food.fat > 0 ? "\(Int(food.fat))" : ""
+        }
+    }
+
+    private func macroLiveCell(_ value: Int, _ label: String, _ color: Color) -> some View {
+        VStack(spacing: 2) {
+            Text("\(value)")
+                .font(.subheadline.bold())
+                .foregroundColor(color)
+            Text(label)
+                .font(.caption2)
+                .foregroundColor(.secondary)
         }
     }
 }

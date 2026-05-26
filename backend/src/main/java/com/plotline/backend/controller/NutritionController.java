@@ -1,6 +1,5 @@
 package com.plotline.backend.controller;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.plotline.backend.service.NutritionService;
 import com.plotline.backend.service.OpenAIService;
@@ -32,11 +31,18 @@ public class NutritionController {
     // GET /api/nutrition/{username}/{dateKey}
     @GetMapping("/{username}/{dateKey}")
     public ResponseEntity<String> getEntry(@PathVariable String username, @PathVariable String dateKey) {
-        String entry = nutritionService.getEntry(username, dateKey);
-        if (entry == null) {
-            return ResponseEntity.notFound().build();
+        try {
+            String entry = nutritionService.getEntry(username, dateKey);
+            if (entry == null) {
+                return ResponseEntity.notFound().build();
+            }
+            return ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON).body(entry);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(jsonError(e.getMessage()));
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.internalServerError().body(jsonError("Server error reading entry"));
         }
-        return ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON).body(entry);
     }
 
     // PUT /api/nutrition/{username}/{dateKey}
@@ -48,19 +54,27 @@ public class NutritionController {
         try {
             nutritionService.saveEntry(username, dateKey, body);
             return ResponseEntity.ok("{\"success\": true}");
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(jsonError(e.getMessage()));
         } catch (Exception e) {
-            return ResponseEntity.badRequest().body("{\"error\": \"" + e.getMessage() + "\"}");
+            e.printStackTrace();
+            return ResponseEntity.internalServerError().body(jsonError("Server error saving entry"));
         }
     }
 
     // GET /api/nutrition/{username}/user-data
     @GetMapping("/{username}/user-data")
     public ResponseEntity<String> getUserData(@PathVariable String username) {
-        String data = nutritionService.getUserData(username);
-        if (data == null) {
-            return ResponseEntity.notFound().build();
+        try {
+            String data = nutritionService.getUserData(username);
+            if (data == null) {
+                return ResponseEntity.notFound().build();
+            }
+            return ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON).body(data);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.internalServerError().body(jsonError("Server error reading user data"));
         }
-        return ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON).body(data);
     }
 
     // PUT /api/nutrition/{username}/user-data
@@ -72,7 +86,8 @@ public class NutritionController {
             nutritionService.saveUserData(username, body);
             return ResponseEntity.ok("{\"success\": true}");
         } catch (Exception e) {
-            return ResponseEntity.badRequest().body("{\"error\": \"" + e.getMessage() + "\"}");
+            e.printStackTrace();
+            return ResponseEntity.internalServerError().body(jsonError("Server error saving user data"));
         }
     }
 
@@ -86,17 +101,6 @@ public class NutritionController {
             String base64Image = Base64.getEncoder().encodeToString(imageBytes);
 
             String result = openAIService.analyzeFoodFromImage(base64Image);
-
-            // Ensure we return valid JSON array
-            result = result.trim();
-            if (result.startsWith("```json")) {
-                result = result.substring(7);
-            } else if (result.startsWith("```")) {
-                result = result.substring(3);
-            }
-            if (result.endsWith("```")) {
-                result = result.substring(0, result.length() - 3);
-            }
             result = result.trim();
 
             // Increment nutrition-photo trophy
@@ -111,7 +115,15 @@ public class NutritionController {
             return ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON).body(result);
         } catch (Exception e) {
             e.printStackTrace();
-            return ResponseEntity.badRequest().body("[{\"error\": \"" + e.getMessage() + "\"}]");
+            return ResponseEntity.internalServerError().body("[]");
+        }
+    }
+
+    private String jsonError(String message) {
+        try {
+            return objectMapper.writeValueAsString(Map.of("error", message));
+        } catch (Exception e) {
+            return "{\"error\": \"Unknown error\"}";
         }
     }
 }

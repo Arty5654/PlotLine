@@ -8,6 +8,7 @@ import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.*;
 
 import java.nio.charset.StandardCharsets;
+import java.util.regex.Pattern;
 
 import static com.plotline.backend.util.UsernameUtils.normalize;
 
@@ -17,6 +18,7 @@ public class NutritionService {
     private final S3Client s3Client;
     private final ObjectMapper objectMapper;
     private final String bucketName = "plotline-database-bucket";
+    private static final Pattern DATE_KEY_PATTERN = Pattern.compile("^\\d{4}-\\d{2}-\\d{2}$");
 
     public NutritionService(S3Client s3Client) {
         this.s3Client = s3Client;
@@ -24,6 +26,9 @@ public class NutritionService {
     }
 
     private String getS3Key(String username, String dateKey) {
+        if (!DATE_KEY_PATTERN.matcher(dateKey).matches()) {
+            throw new IllegalArgumentException("Invalid dateKey format: " + dateKey);
+        }
         return "users/" + normalize(username) + "/nutrition/" + dateKey + ".json";
     }
 
@@ -31,20 +36,16 @@ public class NutritionService {
         return "users/" + normalize(username) + "/nutrition/user-data.json";
     }
 
-    public String getUserData(String username) {
+    public String getUserData(String username) throws Exception {
+        String key = getUserDataKey(username);
+        GetObjectRequest getRequest = GetObjectRequest.builder()
+                .bucket(bucketName)
+                .key(key)
+                .build();
         try {
-            String key = getUserDataKey(username);
-            GetObjectRequest getRequest = GetObjectRequest.builder()
-                    .bucket(bucketName)
-                    .key(key)
-                    .build();
-
             ResponseBytes<GetObjectResponse> objectBytes = s3Client.getObjectAsBytes(getRequest);
             return new String(objectBytes.asByteArray(), StandardCharsets.UTF_8);
         } catch (NoSuchKeyException e) {
-            return null;
-        } catch (Exception e) {
-            e.printStackTrace();
             return null;
         }
     }
@@ -61,20 +62,16 @@ public class NutritionService {
         s3Client.putObject(putRequest, RequestBody.fromString(json));
     }
 
-    public String getEntry(String username, String dateKey) {
+    public String getEntry(String username, String dateKey) throws Exception {
+        String key = getS3Key(username, dateKey);
+        GetObjectRequest getRequest = GetObjectRequest.builder()
+                .bucket(bucketName)
+                .key(key)
+                .build();
         try {
-            String key = getS3Key(username, dateKey);
-            GetObjectRequest getRequest = GetObjectRequest.builder()
-                    .bucket(bucketName)
-                    .key(key)
-                    .build();
-
             ResponseBytes<GetObjectResponse> objectBytes = s3Client.getObjectAsBytes(getRequest);
             return new String(objectBytes.asByteArray(), StandardCharsets.UTF_8);
         } catch (NoSuchKeyException e) {
-            return null;
-        } catch (Exception e) {
-            e.printStackTrace();
             return null;
         }
     }
