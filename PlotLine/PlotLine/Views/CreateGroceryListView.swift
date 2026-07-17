@@ -149,7 +149,7 @@ struct CreateGroceryListView: View {
                 isShowingAlert = true
             } catch {
                 alertTitle = "Error"
-                alertMessage = "Failed to create grocery list."
+                alertMessage = error.localizedDescription
                 isShowingAlert = true
             }
         }

@@ -9,6 +9,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.plotline.backend.dto.DietaryRestrictions;
 import com.plotline.backend.dto.GroceryCostEstimateRequest;
+import com.plotline.backend.dto.GroceryListInvite;
 
 import org.apache.http.HttpStatus;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -67,6 +68,16 @@ public class GroceryListController {
         return ResponseEntity.ok(items);
     }
 
+    // Get a single grocery list, including its current shared members (canonical copy)
+    @GetMapping("/{listId}/details")
+    public ResponseEntity<GroceryList> getGroceryListDetails(@PathVariable String listId, @RequestParam String username) {
+        GroceryList list = groceryListService.getGroceryList(username, listId);
+        if (list == null) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(list);
+    }
+
     // Add item to the grocery list
     @PostMapping("/{listId}/items")
     public ResponseEntity<String> addItem(@PathVariable String listId, @RequestParam String username, @RequestBody GroceryItem item) {
@@ -75,6 +86,17 @@ public class GroceryListController {
             return ResponseEntity.ok("Item added successfully");
         } else {
             return ResponseEntity.status(400).body("Failed to add item");
+        }
+    }
+
+    // Delete an entire grocery list
+    @DeleteMapping("/{listId}")
+    public ResponseEntity<String> deleteGroceryList(@PathVariable String listId, @RequestParam String username) {
+        boolean success = groceryListService.deleteGroceryList(username, listId);
+        if (success) {
+            return ResponseEntity.ok("Grocery list deleted successfully");
+        } else {
+            return ResponseEntity.status(500).body("Failed to delete grocery list");
         }
     }
 
@@ -97,22 +119,6 @@ public class GroceryListController {
             return ResponseEntity.ok("Item checked status toggled successfully");
         } else {
             return ResponseEntity.status(400).body("Failed to toggle item checked status");
-        }
-    }
-
-    // New endpoint to update the order of items in the grocery list
-    @PutMapping("/{listId}/items/order")
-    public ResponseEntity<String> updateItemOrder(@PathVariable String listId, @RequestBody List<GroceryItem> reorderedItems, @RequestParam String username) {
-        try {
-            boolean success = groceryListService.updateItemOrder(username, listId, reorderedItems);
-            if (success) {
-                return ResponseEntity.ok("Grocery list items reordered successfully.");
-            } else {
-                return ResponseEntity.status(400).body("Failed to reorder items.");
-            }
-        } catch (IOException e) {
-            e.printStackTrace();
-            return ResponseEntity.status(500).body("Error updating item order.");
         }
     }
 
@@ -156,6 +162,28 @@ public class GroceryListController {
         } catch (IOException e) {
             // Handle any IO exceptions, e.g., if there's a problem interacting with S3
             return ResponseEntity.status(HttpStatus.SC_INTERNAL_SERVER_ERROR).body(null);
+        }
+    }
+
+    // Permanently delete a single archived grocery list
+    @DeleteMapping("/archived/{username}/{listId}")
+    public ResponseEntity<String> deleteArchivedGroceryList(@PathVariable String username, @PathVariable String listId) {
+        try {
+            groceryListService.deleteArchivedGroceryList(username, listId);
+            return ResponseEntity.ok("Archived grocery list deleted.");
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body("Error deleting archived list: " + e.getMessage());
+        }
+    }
+
+    // Permanently delete all archived grocery lists for a user
+    @DeleteMapping("/archived/{username}")
+    public ResponseEntity<String> deleteAllArchivedGroceryLists(@PathVariable String username) {
+        try {
+            groceryListService.deleteAllArchivedGroceryLists(username);
+            return ResponseEntity.ok("All archived grocery lists deleted.");
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body("Error deleting archived lists: " + e.getMessage());
         }
     }
 
@@ -329,6 +357,76 @@ public class GroceryListController {
             return ResponseEntity
                 .status(HttpStatus.SC_INTERNAL_SERVER_ERROR)
                 .body(-1.0);
+        }
+    }
+
+    // Share a grocery list with another user
+    @PostMapping("/share")
+    public ResponseEntity<?> shareGroceryList(@RequestBody Map<String, String> body) {
+        try {
+            String fromUsername = body.get("fromUsername");
+            String toUsername   = body.get("toUsername");
+            String listId       = body.get("listId");
+            if (fromUsername == null || toUsername == null || listId == null) {
+                return ResponseEntity.badRequest().body("fromUsername, toUsername, and listId are required.");
+            }
+            GroceryListInvite invite = groceryListService.shareGroceryList(fromUsername, toUsername, listId);
+            return ResponseEntity.ok(invite);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.status(500).body("Error sharing grocery list: " + e.getMessage());
+        }
+    }
+
+    // Get pending incoming grocery list invites for a user
+    @GetMapping("/share/pending")
+    public ResponseEntity<?> getPendingGroceryInvites(@RequestParam String username) {
+        try {
+            List<GroceryListInvite> invites = groceryListService.getPendingGroceryInvites(username);
+            return ResponseEntity.ok(invites);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.status(500).body("Error fetching invites: " + e.getMessage());
+        }
+    }
+
+    // Owner removes a member from a shared list (unshare)
+    @PostMapping("/unshare")
+    public ResponseEntity<String> unshareGroceryList(@RequestBody Map<String, String> body) {
+        try {
+            String ownerUsername  = body.get("ownerUsername");
+            String listId         = body.get("listId");
+            String memberUsername = body.get("memberUsername");
+            if (ownerUsername == null || listId == null || memberUsername == null) {
+                return ResponseEntity.badRequest().body("ownerUsername, listId, and memberUsername are required.");
+            }
+            boolean ok = groceryListService.unshareGroceryList(ownerUsername, listId, memberUsername);
+            return ok
+                ? ResponseEntity.ok("Member removed from shared list.")
+                : ResponseEntity.badRequest().body("Only the list owner can remove members.");
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.status(500).body("Error removing member: " + e.getMessage());
+        }
+    }
+
+    // Accept or decline a grocery list invite
+    @PostMapping("/share/respond")
+    public ResponseEntity<String> respondToGroceryShare(@RequestBody Map<String, String> body) {
+        try {
+            String recipientUsername = body.get("recipientUsername");
+            String inviteId          = body.get("inviteId");
+            boolean accept           = Boolean.parseBoolean(body.get("accept"));
+            if (recipientUsername == null || inviteId == null) {
+                return ResponseEntity.badRequest().body("recipientUsername and inviteId are required.");
+            }
+            groceryListService.respondToGroceryShare(recipientUsername, inviteId, accept);
+            return ResponseEntity.ok(accept ? "List added to your active lists." : "Invite declined.");
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.status(500).body("Error responding to invite: " + e.getMessage());
         }
     }
 

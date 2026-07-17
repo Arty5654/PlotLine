@@ -29,9 +29,11 @@ struct ArchivedGroceryListsView: View {
     @State private var searchText: String = ""
     @State private var isLoading: Bool = false
     @State private var errorMessage: String? = nil
-    @State private var showAlert: Bool = false
-    @State private var alertMessage: String = ""
     @State private var restoringIDs: Set<UUID> = []
+    @State private var showDeleteAllConfirm = false
+    @State private var isDeletingAll = false
+    @State private var alertMessage: String = ""
+    @State private var showAlert = false
 
     private var adaptiveTextColor: Color {
         colorScheme == .dark ? .white : .blue
@@ -86,7 +88,7 @@ struct ArchivedGroceryListsView: View {
                     Text(searchText.isEmpty ? "No archived lists" : "No matches")
                         .font(.headline)
                     Text(searchText.isEmpty
-                         ? "When you archive a list, it'll show up here. You can restore it anytime."
+                         ? "Swipe left on an active list to archive it. You can restore it anytime."
                          : "Try a different search term.")
                         .font(.subheadline)
                         .foregroundColor(PLColor.textSecondary)
@@ -99,16 +101,23 @@ struct ArchivedGroceryListsView: View {
                 List {
                     Section {
                         ForEach(filteredLists) { list in
-                            row(for: list)
-                                .swipeActions(edge: .trailing) {
-                                    Button {
-                                        restoreList(list)
-                                    } label: {
-                                        Label("Restore", systemImage: "arrow.counterclockwise")
-                                    }
-                                    .tint(.blue)
-                                    .disabled(restoringIDs.contains(list.id))
+                            NavigationLink(destination: ArchivedGroceryListDetailView(groceryList: list)) {
+                                row(for: list)
+                            }
+                            .swipeActions(edge: .trailing) {
+                                Button(role: .destructive) {
+                                    permanentlyDelete(list)
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
                                 }
+                                Button {
+                                    restoreList(list)
+                                } label: {
+                                    Label("Restore", systemImage: "arrow.counterclockwise")
+                                }
+                                .tint(.blue)
+                                .disabled(restoringIDs.contains(list.id))
+                            }
                         }
                     } footer: {
                         Text("\(filteredLists.count) archived \(filteredLists.count == 1 ? "list" : "lists")")
@@ -121,22 +130,52 @@ struct ArchivedGroceryListsView: View {
         }
         .navigationTitle("Archived Lists")
         .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always))
-        .onAppear { fetchArchivedGroceryLists() }
-        .alert(isPresented: $showAlert) {
-            Alert(title: Text("Restore Status"),
-                  message: Text(alertMessage),
-                  dismissButton: .default(Text("OK")))
+        .toolbar {
+            if !archivedLists.isEmpty {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(role: .destructive) {
+                        showDeleteAllConfirm = true
+                    } label: {
+                        Label("Delete All", systemImage: "trash")
+                            .foregroundColor(.red)
+                    }
+                    .disabled(isDeletingAll)
+                }
+            }
         }
+        .confirmationDialog(
+            "Delete All Archived Lists?",
+            isPresented: $showDeleteAllConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Delete All", role: .destructive) { deleteAllArchived() }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("This permanently removes all \(archivedLists.count) archived lists. This cannot be undone.")
+        }
+        .alert("Status", isPresented: $showAlert) {
+            Button("OK") { }
+        } message: {
+            Text(alertMessage)
+        }
+        .onAppear { fetchArchivedGroceryLists() }
     }
 
-    // MARK: - Row views
+    // MARK: - Row
 
     private func row(for groceryList: GroceryList) -> some View {
         HStack(spacing: PLSpacing.md) {
-            Text(groceryList.name)
-                .font(.body)
-                .foregroundColor(PLColor.textPrimary)
-                .lineLimit(1)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(groceryList.name)
+                    .font(.body)
+                    .foregroundColor(PLColor.textPrimary)
+                    .lineLimit(1)
+                if groceryList.items.count > 0 {
+                    Text("\(groceryList.items.count) item\(groceryList.items.count == 1 ? "" : "s")")
+                        .font(.caption)
+                        .foregroundColor(PLColor.textSecondary)
+                }
+            }
 
             Spacer(minLength: PLSpacing.sm)
 
@@ -157,7 +196,6 @@ struct ArchivedGroceryListsView: View {
                 .buttonStyle(.plain)
             }
         }
-        .contentShape(Rectangle())
         .padding(.vertical, 4)
     }
 
@@ -171,7 +209,7 @@ struct ArchivedGroceryListsView: View {
         .padding(.vertical, 4)
     }
 
-    // MARK: - Data (logic unchanged)
+    // MARK: - Actions
 
     private func fetchArchivedGroceryLists() {
         isLoading = true
@@ -196,11 +234,43 @@ struct ArchivedGroceryListsView: View {
                 restoringIDs.remove(groceryList.id)
                 switch result {
                 case .success:
-                    alertMessage = "Restored \"\(groceryList.name)\""
-                    showAlert = true
                     archivedLists.removeAll { $0.id == groceryList.id }
                 case .failure(let error):
                     alertMessage = "Failed to restore: \(error.localizedDescription)"
+                    showAlert = true
+                }
+            }
+        }
+    }
+
+    private func permanentlyDelete(_ list: GroceryList) {
+        archivedLists.removeAll { $0.id == list.id }
+        Task {
+            do {
+                try await GroceryListAPI.deleteArchivedGroceryList(username: username, listId: list.id.uuidString)
+            } catch {
+                await MainActor.run {
+                    archivedLists.append(list)
+                    alertMessage = "Failed to delete: \(error.localizedDescription)"
+                    showAlert = true
+                }
+            }
+        }
+    }
+
+    private func deleteAllArchived() {
+        isDeletingAll = true
+        Task {
+            do {
+                try await GroceryListAPI.deleteAllArchivedGroceryLists(username: username)
+                await MainActor.run {
+                    archivedLists.removeAll()
+                    isDeletingAll = false
+                }
+            } catch {
+                await MainActor.run {
+                    isDeletingAll = false
+                    alertMessage = "Failed to delete all: \(error.localizedDescription)"
                     showAlert = true
                 }
             }

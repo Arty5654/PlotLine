@@ -409,10 +409,14 @@ public class OpenAIService {
         : "United States";
 
     StringBuilder userPrompt = new StringBuilder()
-        .append("Estimate the total cost in USD of buying the following groceries in ")
+        .append("Estimate the typical retail price in USD for the following grocery items at a standard supermarket (e.g., Kroger, Walmart, Target) in ")
         .append(location)
-        .append(".\n")
-        .append("Return only a single number rounded to 2 decimals, with no extra text.\n\n")
+        .append(".\n\n")
+        .append("Rules:\n")
+        .append("- Use current average retail prices for name-brand or common store-brand products\n")
+        .append("- Do NOT use bulk-store prices (Costco, Sam's Club)\n")
+        .append("- Account for the quantity specified\n")
+        .append("- Be consistent — the same item should always return a similar price\n\n")
         .append("Items:\n");
 
     for (var item : req.getItems()) {
@@ -427,8 +431,9 @@ public class OpenAIService {
     ResponseCreateParams params = ResponseCreateParams.builder()
         .model(ChatModel.GPT_4O_MINI)
         .instructions("""
-            You are a helpful assistant. Respond with ONLY a single plain-text number
-            rounded to 2 decimals (e.g., 15.75) with no extra characters or formatting.
+            You are a grocery price estimator. Your job is to return realistic, consistent retail prices.
+            Respond with ONLY a single plain-text decimal number rounded to 2 decimal places (e.g., 4.99).
+            No dollar sign, no text, no explanation. Just the number.
             """)
         .input(userPrompt.toString())
         .build();

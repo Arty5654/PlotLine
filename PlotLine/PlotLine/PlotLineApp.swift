@@ -22,10 +22,36 @@ struct PlotLineApp: App {
 
     init() {
         // Navigation bar back button and bar button items: white in dark mode, system blue in light mode
-        let adaptiveColor = UIColor { traits in
+        let adaptiveNavColor = UIColor { traits in
             traits.userInterfaceStyle == .dark ? .white : .systemBlue
         }
-        UINavigationBar.appearance().tintColor = adaptiveColor
+        UINavigationBar.appearance().tintColor = adaptiveNavColor
+
+        // Tab bar: white background in dark mode so icons are visible; system default in light mode
+        let tabAppearance = UITabBarAppearance()
+        tabAppearance.configureWithOpaqueBackground()
+        tabAppearance.backgroundColor = UIColor { traits in
+            traits.userInterfaceStyle == .dark ? .white : .systemBackground
+        }
+
+        let selectedColor = UIColor { traits in
+            traits.userInterfaceStyle == .dark ? .systemBlue : .systemBlue
+        }
+        let normalColor = UIColor { traits in
+            traits.userInterfaceStyle == .dark ? .systemGray : .systemGray
+        }
+
+        for layout in [tabAppearance.stackedLayoutAppearance,
+                       tabAppearance.inlineLayoutAppearance,
+                       tabAppearance.compactInlineLayoutAppearance] {
+            layout.selected.iconColor = selectedColor
+            layout.selected.titleTextAttributes = [.foregroundColor: selectedColor]
+            layout.normal.iconColor = normalColor
+            layout.normal.titleTextAttributes = [.foregroundColor: normalColor]
+        }
+
+        UITabBar.appearance().standardAppearance = tabAppearance
+        UITabBar.appearance().scrollEdgeAppearance = tabAppearance
     }
 
     var body: some Scene {

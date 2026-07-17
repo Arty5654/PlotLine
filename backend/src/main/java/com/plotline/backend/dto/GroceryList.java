@@ -12,6 +12,8 @@ public class GroceryList {
     private List<GroceryItem> items;        // List of grocery items in the list
     private String mealID;                 // ID of the meal associated with the grocery list
     private String mealName;               // Name of the meal associated with the grocery list
+    private String ownerUsername;          // Username that owns the canonical copy of this list
+    private List<String> members;          // Usernames this list is shared with (excludes the owner)
 
     // Default constructor
     public GroceryList() {}
@@ -87,5 +89,21 @@ public class GroceryList {
 
     public void setMealName(String mealName) {
         this.mealName = mealName;
+    }
+
+    public String getOwnerUsername() {
+        return ownerUsername;
+    }
+
+    public void setOwnerUsername(String ownerUsername) {
+        this.ownerUsername = ownerUsername;
+    }
+
+    public List<String> getMembers() {
+        return members;
+    }
+
+    public void setMembers(List<String> members) {
+        this.members = members;
     }
 }

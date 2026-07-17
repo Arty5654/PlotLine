@@ -8,6 +8,10 @@
 import Foundation
 import SwiftUI
 
+enum GroceryListError: Error {
+    case notFound   // The list no longer exists or the user was removed from it
+}
+
 struct GroceryListAPI {
     static let baseURL = "\(BackendConfig.baseURLString)/api/groceryLists" // Replace with your actual backend URL
     
@@ -39,15 +43,16 @@ struct GroceryListAPI {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = jsonData
         
-        do {
-            let (data, response) = try await URLSession.shared.data(for: request)
-            
-            // Assuming the response is a string with the created grocery list ID
-            let responseString = String(data: data, encoding: .utf8) ?? "Success"
-            return responseString
-        } catch {
-            throw error
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let responseString = String(data: data, encoding: .utf8) ?? ""
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            throw NSError(
+                domain: "GroceryListAPI",
+                code: (response as? HTTPURLResponse)?.statusCode ?? 0,
+                userInfo: [NSLocalizedDescriptionKey: responseString]
+            )
         }
+        return responseString
     }
     
     // Function to get grocery lists for a user
@@ -72,6 +77,26 @@ struct GroceryListAPI {
         }
     }
     
+    // Fetch a single grocery list including its current shared members
+    static func getGroceryList(listId: String) async throws -> GroceryList {
+        guard let loggedInUsername = UserDefaults.standard.string(forKey: "loggedInUsername") else {
+            throw URLError(.userAuthenticationRequired)
+        }
+        guard let url = URL(string: "\(baseURL)/\(listId)/details?username=\(loggedInUsername)") else {
+            throw URLError(.badURL)
+        }
+        var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
+        if http.statusCode == 404 { throw GroceryListError.notFound }
+        guard (200...299).contains(http.statusCode) else { throw URLError(.badServerResponse) }
+        return try JSONDecoder().decode(GroceryList.self, from: data)
+    }
+
     // Function to fetch items for a given grocery list
     static func getItems(listId: String) async throws -> [GroceryItem] {
         // Retrieve the logged-in username from UserDefaults
@@ -125,6 +150,23 @@ struct GroceryListAPI {
         }
     }
     
+    // Function to delete an entire grocery list
+    static func deleteGroceryList(listId: String) async throws {
+        guard let loggedInUsername = UserDefaults.standard.string(forKey: "loggedInUsername") else {
+            throw URLError(.userAuthenticationRequired)
+        }
+        guard let url = URL(string: "\(baseURL)/\(listId)?username=\(loggedInUsername)") else {
+            throw URLError(.badURL)
+        }
+        var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
+        request.httpMethod = "DELETE"
+        let (_, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+    }
+
     // Function to delete an item from the grocery list
     static func deleteItem(listId: String, itemId: String) async throws {
         // Retrieve the logged-in username from UserDefaults
@@ -174,29 +216,6 @@ struct GroceryListAPI {
             }
         } catch {
             throw error
-        }
-    }
-    
-    // Function to update the order of items in a grocery list
-    static func updateItemOrder(listId: String, reorderedItems: [GroceryItem]) async throws {
-        guard let loggedInUsername = UserDefaults.standard.string(forKey: "loggedInUsername") else {
-            throw URLError(.userAuthenticationRequired)
-        }
-        
-        guard let url = URL(string: "\(baseURL)/\(listId)/items/order?username=\(loggedInUsername)") else {
-            throw URLError(.badURL)
-        }
-        
-        var request = URLRequest(url: url)
-        BackendConfig.addApiKey(to: &request)
-        request.httpMethod = "PUT"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONEncoder().encode(reorderedItems)
-        
-        let (data, response) = try await URLSession.shared.data(for: request)
-        
-        guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
-            throw URLError(.badServerResponse)
         }
     }
     
@@ -270,6 +289,34 @@ struct GroceryListAPI {
         task.resume()
     }
     
+    // Permanently delete a single archived grocery list
+    static func deleteArchivedGroceryList(username: String, listId: String) async throws {
+        guard let url = URL(string: "\(baseURL)/archived/\(username)/\(listId)") else {
+            throw URLError(.badURL)
+        }
+        var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
+        request.httpMethod = "DELETE"
+        let (_, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+    }
+
+    // Permanently delete all archived grocery lists for a user
+    static func deleteAllArchivedGroceryLists(username: String) async throws {
+        guard let url = URL(string: "\(baseURL)/archived/\(username)") else {
+            throw URLError(.badURL)
+        }
+        var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
+        request.httpMethod = "DELETE"
+        let (_, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+    }
+
     // Function to get archived grocery lists
     static func getArchivedGroceryLists(username: String, completion: @escaping (Result<[GroceryList], Error>) -> Void) {
         let url = URL(string: "\(baseURL)/archived/\(username)")!
@@ -440,6 +487,75 @@ struct GroceryListAPI {
         }
     }
     
+    // Share a grocery list with another user
+    static func shareList(fromUsername: String, toUsername: String, listId: String) async throws {
+        guard let url = URL(string: "\(baseURL)/share") else { throw URLError(.badURL) }
+        var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let body: [String: String] = ["fromUsername": fromUsername, "toUsername": toUsername, "listId": listId]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            let msg = String(data: data, encoding: .utf8) ?? "Unknown error"
+            throw NSError(domain: "GroceryListAPI", code: (response as? HTTPURLResponse)?.statusCode ?? 0,
+                          userInfo: [NSLocalizedDescriptionKey: msg])
+        }
+    }
+
+    // Owner removes a friend from a shared grocery list
+    static func unshareList(ownerUsername: String, memberUsername: String, listId: String) async throws {
+        guard let url = URL(string: "\(baseURL)/unshare") else { throw URLError(.badURL) }
+        var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let body: [String: String] = [
+            "ownerUsername": ownerUsername,
+            "memberUsername": memberUsername,
+            "listId": listId
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            let msg = String(data: data, encoding: .utf8) ?? "Unknown error"
+            throw NSError(domain: "GroceryListAPI", code: (response as? HTTPURLResponse)?.statusCode ?? 0,
+                          userInfo: [NSLocalizedDescriptionKey: msg])
+        }
+    }
+
+    // Get pending incoming grocery list invites
+    static func getPendingInvites(username: String) async throws -> [GroceryListInvite] {
+        guard let url = URL(string: "\(baseURL)/share/pending?username=\(username)") else { throw URLError(.badURL) }
+        var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+        return try JSONDecoder().decode([GroceryListInvite].self, from: data)
+    }
+
+    // Accept or decline a grocery list invite
+    static func respondToShare(recipientUsername: String, inviteId: String, accept: Bool) async throws {
+        guard let url = URL(string: "\(baseURL)/share/respond") else { throw URLError(.badURL) }
+        var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let body: [String: String] = [
+            "recipientUsername": recipientUsername,
+            "inviteId": inviteId,
+            "accept": accept ? "true" : "false"
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let (_, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+    }
+
     static func generateGroceryListFromGoal(goalTitle: String) async throws -> String {
         guard let username = UserDefaults.standard.string(forKey: "loggedInUsername") else {
             throw URLError(.userAuthenticationRequired)

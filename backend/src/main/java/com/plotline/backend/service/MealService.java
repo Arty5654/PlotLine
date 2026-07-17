@@ -8,6 +8,7 @@ import io.jsonwebtoken.io.IOException;
 
 import org.springframework.stereotype.Service;
 
+import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
@@ -99,6 +100,15 @@ public class MealService {
         // Convert the JSON string to a Map (you can use a DTO instead if desired)
         ObjectMapper objectMapper = new ObjectMapper();
         return objectMapper.readValue(mealJson, Map.class);
+    }
+
+    public void deleteMeal(String username, String mealID) throws java.io.IOException {
+        String normUser = normalize(username);
+        String s3Path = getS3Path(normUser, mealID);
+        s3Client.deleteObject(DeleteObjectRequest.builder()
+                .bucket(BUCKET_NAME)
+                .key(s3Path)
+                .build());
     }
 
     // Method to create and save the meal recipe in S3

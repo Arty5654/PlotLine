@@ -65,6 +65,13 @@ struct MealsView: View {
                                     Text(meal.mealName)
                                         .font(.headline)
                                 }
+                                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                    Button(role: .destructive) {
+                                        deleteMeal(meal)
+                                    } label: {
+                                        Label("Delete", systemImage: "trash")
+                                    }
+                                }
                             }
                         }
                         .listStyle(PlainListStyle())
@@ -85,6 +92,20 @@ struct MealsView: View {
                         print("Error fetching meals: \(error)")
                     }
                 }
+            }
+        }
+    }
+
+    private func deleteMeal(_ meal: Meal) {
+        viewModel.meals.removeAll { $0.id == meal.id }
+        Task {
+            do {
+                try await viewModel.deleteMeal(username: username, mealID: meal.id)
+            } catch {
+                await MainActor.run {
+                    viewModel.meals.append(meal)
+                }
+                print("Failed to delete meal: \(error)")
             }
         }
     }

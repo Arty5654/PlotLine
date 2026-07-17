@@ -32,11 +32,23 @@ public class MealController {
     @GetMapping("/{username}/meals/{mealID}")
     public ResponseEntity<Map<String, Object>> getMealDetails(@PathVariable String username, @PathVariable String mealID) {
         try {
-            Map<String, Object> meal = mealService.getMealFromS3(username, mealID);  // Fetch meal data from S3
+            Map<String, Object> meal = mealService.getMealFromS3(username, mealID);
             return ResponseEntity.ok(meal);
         } catch (IOException e) {
             e.printStackTrace();
             return ResponseEntity.status(500).body(Map.of("error", "Error retrieving meal: " + e.getMessage()));
+        }
+    }
+
+    // Endpoint to delete a specific meal
+    @DeleteMapping("/{username}/{mealID}")
+    public ResponseEntity<String> deleteMeal(@PathVariable String username, @PathVariable String mealID) {
+        try {
+            mealService.deleteMeal(username, mealID);
+            return ResponseEntity.ok("Meal deleted successfully.");
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.status(500).body("Error deleting meal: " + e.getMessage());
         }
     }
 }

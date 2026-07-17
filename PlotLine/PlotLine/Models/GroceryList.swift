@@ -15,7 +15,9 @@ struct GroceryList: Identifiable, Codable {
     var isAI: Bool?
     var mealID: String?
     var mealName: String?
-    
+    var ownerUsername: String?   // Owner of the canonical shared list (nil for older lists)
+    var members: [String]?       // Usernames this list is shared with (excludes the owner)
+
     enum CodingKeys: String, CodingKey {
         case id
         case name
@@ -24,7 +26,31 @@ struct GroceryList: Identifiable, Codable {
         case isAI = "ai"
         case mealID
         case mealName
+        case ownerUsername
+        case members
     }
+
+    // True when this list has more than one participant (owner + at least one member).
+    var isShared: Bool {
+        (members?.isEmpty == false)
+    }
+
+    // Whether the given user owns the canonical copy of this list.
+    func isOwned(by user: String) -> Bool {
+        let owner = ownerUsername ?? username
+        return owner.lowercased() == user.lowercased()
+    }
+}
+
+struct GroceryListInvite: Identifiable, Codable {
+    var id: String
+    var fromUsername: String
+    var toUsername: String
+    var ownerUsername: String?
+    var listId: String
+    var listName: String
+    var sentAt: String
+    var items: [GroceryItem]
 }
 
 struct GroceryItem: Identifiable, Codable, Equatable {
@@ -36,4 +62,5 @@ struct GroceryItem: Identifiable, Codable, Equatable {
     var price: Double?
     var store: String?
     var notes: String?
+    var checkedBy: String?   // Username of who checked it off (shared lists)
 }

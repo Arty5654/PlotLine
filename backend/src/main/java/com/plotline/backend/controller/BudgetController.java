@@ -154,48 +154,39 @@ public class BudgetController {
 
     @GetMapping("/{username}/{type}/groceries")
     public ResponseEntity<Object> getGroceriesBudget(@PathVariable String username, @PathVariable String type) {
-        try {
-            String normUser = normalize(username);
-            String normType = normalizeType(type);
-            String editedKey = String.format("users/%s/%s-budget-edited.json", normUser, normType);
-            byte[] data = s3Service.downloadFile(editedKey);
-            String json = new String(data, StandardCharsets.UTF_8);
-            Map<String, Double> budgetMap = objectMapper.readValue(json, new TypeReference<>() {});
+        String normUser = normalize(username);
+        String normType = normalizeType(type);
 
-            if (budgetMap.containsKey("Groceries")) {
-                return ResponseEntity.ok(Map.of("Groceries", budgetMap.get("Groceries")));
-            } else {
-                return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Groceries not found in budget.");
-            }
-        } catch (Exception e) {
+        // Try edited file first (BudgetRequest format: {username, type, budget:{...}})
+        for (String key : new String[]{
+                String.format("users/%s/%s-budget-edited.json", normUser, normType),
+                String.format("users/%s/%s-budget-edited.json", username, normType)
+        }) {
             try {
-                // fallback to original
-                String normUser = normalize(username);
-                String normType = normalizeType(type);
-                String originalKey = String.format("users/%s/%s-budget.json", normUser, normType);
-                byte[] data = s3Service.downloadFile(originalKey);
-                Map<String, Double> budgetMap = objectMapper.readValue(data, new TypeReference<>() {});
+                byte[] data = s3Service.downloadFile(key);
+                BudgetRequest req = objectMapper.readValue(data, BudgetRequest.class);
+                Map<String, Double> budgetMap = req.getBudget();
+                if (budgetMap != null && budgetMap.containsKey("Groceries")) {
+                    return ResponseEntity.ok(Map.of("Groceries", budgetMap.get("Groceries")));
+                }
+            } catch (Exception ignored) {}
+        }
 
+        // Fallback: original file (flat map format: {"Groceries": 100.0, ...})
+        for (String key : new String[]{
+                String.format("users/%s/%s-budget.json", normUser, normType),
+                String.format("users/%s/%s-budget.json", username, normType)
+        }) {
+            try {
+                byte[] data = s3Service.downloadFile(key);
+                Map<String, Double> budgetMap = objectMapper.readValue(data, new TypeReference<>() {});
                 if (budgetMap.containsKey("Groceries")) {
                     return ResponseEntity.ok(Map.of("Groceries", budgetMap.get("Groceries")));
-                } else {
-                    return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Groceries not found in budget.");
                 }
-            } catch (Exception ex) {
-                // Legacy fallback with original casing
-                try {
-                    String normType = normalizeType(type);
-                    String legacyKey = String.format("users/%s/%s-budget.json", username, normType);
-                    byte[] data = s3Service.downloadFile(legacyKey);
-                    Map<String, Double> budgetMap = objectMapper.readValue(data, new TypeReference<>() {});
-                    if (budgetMap.containsKey("Groceries")) {
-                        return ResponseEntity.ok(Map.of("Groceries", budgetMap.get("Groceries")));
-                    }
-                } catch (Exception ignored) { }
-
-                return ResponseEntity.status(HttpStatus.NOT_FOUND).body("No budget found for user: " + username);
-            }
+            } catch (Exception ignored) {}
         }
+
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body("No budget found for user: " + username);
     }
 
 

@@ -56,13 +56,30 @@ struct GenerateFromMealView: View {
     @State private var showError: Bool = false
     @State private var dietaryMessage: String? = nil
     @State private var showDietaryInfo: Bool = false
-    
+
+    @State private var weeklyGroceryBudget: Double? = nil
+    @State private var weeklyGrocerySpent: Double = 0
+    @State private var dietaryRestrictions: DietaryRestrictions? = nil
+
     @FocusState private var fieldFocused: Bool
-    
+
     var onGroceryListCreated: () -> Void
-    
+
     private var disabled: Bool {
         mealName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isGenerating
+    }
+
+    private var activeRestrictionLabels: [String] {
+        guard let d = dietaryRestrictions else { return [] }
+        var list: [String] = []
+        if d.vegan            { list.append("Vegan") }
+        else if d.vegetarian  { list.append("Vegetarian") }
+        if d.glutenFree       { list.append("Gluten-free") }
+        if d.dairyFree        { list.append("Dairy-free") }
+        else if d.lactoseIntolerant { list.append("Lactose-intolerant") }
+        if d.nutFree          { list.append("Nut-free") }
+        if d.kosher           { list.append("Kosher") }
+        return list
     }
     
     var body: some View {
@@ -112,12 +129,56 @@ struct GenerateFromMealView: View {
                     .buttonStyle(PrimaryButton())
                     .disabled(disabled)
                     .opacity(disabled ? 0.6 : 1)
-                    
-                    // Helper / safety note
-                    Text("We’ll let you know if the meal conflicts with your dietary settings, and suggest safe tweaks when possible.")
-                        .font(.footnote)
+
+                    // Info caption: dietary preferences + budget
+                    VStack(alignment: .leading, spacing: PLSpacing.sm) {
+                        if dietaryRestrictions != nil {
+                            HStack(alignment: .top, spacing: 6) {
+                                Image(systemName: "leaf.fill")
+                                    .foregroundColor(PLColor.success)
+                                    .font(.caption)
+                                    .padding(.top, 1)
+                                Text(activeRestrictionLabels.isEmpty
+                                     ? "No dietary restrictions — all ingredients included"
+                                     : activeRestrictionLabels.joined(separator: " · "))
+                                    .font(.caption)
+                                    .foregroundColor(PLColor.textSecondary)
+                            }
+                        }
+
+                        if let budget = weeklyGroceryBudget {
+                            let remaining = budget - weeklyGrocerySpent
+                            HStack(alignment: .top, spacing: 6) {
+                                Image(systemName: "dollarsign.circle.fill")
+                                    .foregroundColor(remaining >= 0 ? PLColor.success : .red)
+                                    .font(.caption)
+                                    .padding(.top, 1)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    if remaining >= 0 {
+                                        Text("Weekly grocery budget: $\(budget, specifier: "%.2f") · $\(remaining, specifier: "%.2f") remaining")
+                                            .font(.caption)
+                                            .foregroundColor(PLColor.textSecondary)
+                                    } else {
+                                        Text("Weekly grocery budget: $\(budget, specifier: "%.2f") · $\(abs(remaining), specifier: "%.2f") over")
+                                            .font(.caption)
+                                            .foregroundColor(.red)
+                                    }
+                                    Text("Estimated costs will appear in the list after it’s created.")
+                                        .font(.caption2)
+                                        .foregroundColor(PLColor.textSecondary)
+                                }
+                            }
+                        }
+
+                        HStack(spacing: 6) {
+                            Image(systemName: "info.circle")
+                                .font(.caption)
+                            Text("We’ll flag any conflicts with your dietary settings and suggest safe substitutions.")
+                                .font(.caption)
+                        }
                         .foregroundColor(PLColor.textSecondary)
-                        .padding(.horizontal, 2)
+                    }
+                    .padding(.horizontal, 2)
                 }
                 .padding(.horizontal, PLSpacing.lg)
                 .padding(.top, PLSpacing.lg)
@@ -148,7 +209,7 @@ struct GenerateFromMealView: View {
                 )
             }
             .onAppear {
-                // focus the field shortly after appear for smoother animation
+                fetchBudgetAndPrefs()
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                     fieldFocused = true
                 }
@@ -156,7 +217,37 @@ struct GenerateFromMealView: View {
         }
     }
 
-    // MARK: - Logic (unchanged)
+    // MARK: - Logic
+
+    private func fetchBudgetAndPrefs() {
+        guard let username = UserDefaults.standard.string(forKey: "loggedInUsername") else { return }
+
+        DietaryRestrictionsAPI.shared.getDietaryRestrictions(username: username) { result in
+            if case .success(let r) = result {
+                DispatchQueue.main.async { dietaryRestrictions = r }
+            }
+        }
+
+        if let budgetURL = URL(string: "\(BackendConfig.baseURLString)/api/budget/\(username)/weekly/groceries") {
+            var req = URLRequest(url: budgetURL)
+            BackendConfig.addApiKey(to: &req)
+            URLSession.shared.dataTask(with: req) { data, _, _ in
+                guard let data = data,
+                      let result = try? JSONSerialization.jsonObject(with: data) as? [String: Double],
+                      let budget = result["Groceries"] else { return }
+                DispatchQueue.main.async { weeklyGroceryBudget = budget }
+            }.resume()
+        }
+
+        if let spentURL = URL(string: "\(BackendConfig.baseURLString)/api/costs/\(username)/weekly") {
+            URLSession.shared.dataTask(with: spentURL) { data, _, _ in
+                guard let data = data,
+                      let decoded = try? JSONDecoder().decode(WeeklyMonthlyCostResponse.self, from: data) else { return }
+                DispatchQueue.main.async { weeklyGrocerySpent = decoded.costs["Groceries"] ?? 0 }
+            }.resume()
+        }
+    }
+
     private func generateGroceryList() {
         guard !mealName.isEmpty else { return }
 

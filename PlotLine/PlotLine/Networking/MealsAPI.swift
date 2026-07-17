@@ -25,6 +25,19 @@ class MealViewModel: ObservableObject {
     
     static let baseURL = "\(BackendConfig.baseURLString)/api/meals"
     
+    func deleteMeal(username: String, mealID: String) async throws {
+        guard let url = URL(string: "\(MealViewModel.baseURL)/\(username)/\(mealID)") else {
+            throw URLError(.badURL)
+        }
+        var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
+        request.httpMethod = "DELETE"
+        let (_, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+    }
+
     func fetchMeals(username: String) async throws {
         guard let url = URL(string: "\(MealViewModel.baseURL)/\(username)/all") else {
             throw URLError(.badURL)

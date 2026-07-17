@@ -9,6 +9,7 @@ public class GroceryItem {
     private double price = 0.0;             // Price of the item
     private String store = "";              // Store where the item is available
     private String notes = "";              // Notes about the item
+    private String checkedBy = null;        // Username of who checked it off (shared lists)
 
     // Default constructor
     public GroceryItem() {}
@@ -76,5 +77,13 @@ public class GroceryItem {
 
     public void setNotes(String notes) {
         this.notes = notes;
+    }
+
+    public String getCheckedBy() {
+        return checkedBy;
+    }
+
+    public void setCheckedBy(String checkedBy) {
+        this.checkedBy = checkedBy;
     }
 }

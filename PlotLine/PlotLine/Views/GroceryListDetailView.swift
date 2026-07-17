@@ -61,6 +61,8 @@ struct GroceryListDetailView: View {
     @Environment(\.presentationMode) var presentationMode
 
     @State private var items: [GroceryItem] = []
+    @State private var members: [String] = []
+    @State private var listRemoved: Bool = false
     @State private var newItemName: String = ""
     @State private var newItemQuantity: Int = 1
 
@@ -78,6 +80,7 @@ struct GroceryListDetailView: View {
         return Double(purchasedItems) / Double(totalItems)
     }
 
+    @State private var showShareSheet = false
     @State private var showGroceryAddedAlert = false
     @State private var recentlyAddedGroceryAmount: Double? = nil
     @State private var canUndoGroceryAddition = false
@@ -91,11 +94,19 @@ struct GroceryListDetailView: View {
     @State private var mealCreatedMessage: String = ""
 
     @State private var groceryBudget: Double? = nil
+    @State private var weeklySpent: Double = 0
     @State private var showUpdateWeeklyDialog: Bool = false
+
+    @StateObject private var locationManager = LocationManager()
+    @State private var userLocation: String = "United States"
 
     @AppStorage private var savedEstimate: Double
     init(groceryList: GroceryList) {
         self.groceryList = groceryList
+        // Seed with the items already carried by the list (canonical items for shared
+        // lists) so they render immediately; getItems then keeps them fresh.
+        _items = State(initialValue: groceryList.items)
+        _members = State(initialValue: groceryList.members ?? [])
         _savedEstimate = AppStorage(wrappedValue: 0, "estimate-\(groceryList.id.uuidString)")
     }
 
@@ -103,6 +114,16 @@ struct GroceryListDetailView: View {
         colorScheme == .dark ? .white : .blue
     }
     private var itemText: String { totalItems == 1 ? "Item" : "Items" }
+
+    private var currentUsername: String {
+        UserDefaults.standard.string(forKey: "loggedInUsername") ?? ""
+    }
+    private var isOwner: Bool { groceryList.isOwned(by: currentUsername) }
+    private var isShared: Bool { !members.isEmpty }
+    private var memberCount: Int {
+        // Owner + everyone the list is shared with
+        members.count + 1
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -124,24 +145,58 @@ struct GroceryListDetailView: View {
                                     .font(.subheadline)
                                     .foregroundColor(PLColor.textSecondary)
                             }
+                            if isShared {
+                                Label(
+                                    isOwner
+                                        ? "Shared with \(memberCount - 1) friend\(memberCount - 1 == 1 ? "" : "s")"
+                                        : "Shared by \(groceryList.ownerUsername ?? groceryList.username)",
+                                    systemImage: "person.2.fill"
+                                )
+                                .font(.caption.bold())
+                                .foregroundColor(adaptiveTextColor)
+                                .padding(.vertical, 3)
+                                .padding(.horizontal, 8)
+                                .background(adaptiveTextColor.opacity(0.12))
+                                .clipShape(Capsule())
+                            }
                         }
                         Spacer()
                         if let budget = groceryBudget {
-                            let currentTotal = items.reduce(0.0) { $0 + ($1.price ?? 0.0) }
-                            HStack(spacing: 5) {
-                                Image(systemName: "dollarsign.circle")
-                                Text(String(format: "%.2f / %.2f", currentTotal, budget))
+                            let checkedTotal = items.filter { $0.checked }.reduce(0.0) { $0 + ($1.price ?? 0.0) }
+                            let remaining = budget - weeklySpent
+                            let overBudget = checkedTotal > remaining
+                            VStack(alignment: .trailing, spacing: 2) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "cart.fill")
+                                    Text(String(format: "$%.2f", checkedTotal))
+                                        .fontWeight(.semibold)
+                                }
+                                .font(.caption.bold())
+                                Text(String(format: "$%.2f left", max(0, remaining)))
+                                    .font(.caption2)
+                                    .foregroundColor(overBudget ? PLColor.danger : PLColor.textSecondary)
                             }
-                            .font(.caption.bold())
                             .padding(.vertical, 6)
                             .padding(.horizontal, 10)
-                            .background((currentTotal > budget ? PLColor.danger : PLColor.success).opacity(0.12))
-                            .foregroundColor(currentTotal > budget ? PLColor.danger : PLColor.success)
+                            .background((overBudget ? PLColor.danger : PLColor.success).opacity(0.12))
+                            .foregroundColor(overBudget ? PLColor.danger : PLColor.success)
                             .clipShape(RoundedRectangle(cornerRadius: 8))
                         }
-                        Button {
-                            shareGroceryList()
-                            shareSuccess = nil
+                        Menu {
+                            // Only the list owner can invite/manage friends (owner-only sharing)
+                            if isOwner {
+                                Button {
+                                    showShareSheet = true
+                                } label: {
+                                    Label("Share with Friend", systemImage: "person.badge.plus")
+                                }
+                            }
+                            Button {
+                                shareGroceryList()
+                                shareSuccess = nil
+                            } label: {
+                                Label("Export as Text", systemImage: "square.and.arrow.up")
+                            }
                         } label: {
                             Image(systemName: "square.and.arrow.up")
                                 .font(.headline)
@@ -164,18 +219,19 @@ struct GroceryListDetailView: View {
                                     archiveList()
                                 } label: {
                                     HStack(spacing: 6) {
-                                        Image(systemName: "archivebox.fill")
-                                        Text("Archive")
+                                        Image(systemName: isOwner ? "archivebox.fill" : "person.badge.minus")
+                                        Text(isOwner ? "Archive" : "Leave")
                                             .fontWeight(.semibold)
                                     }
                                     .font(.subheadline)
                                     .foregroundColor(.white)
                                     .padding(.vertical, 7)
                                     .padding(.horizontal, 12)
-                                    .background(canArchiveList ? PLColor.success : Color.gray)
+                                    // Members can leave a shared list anytime; owners archive once it's complete
+                                    .background((isOwner ? canArchiveList : true) ? PLColor.success : Color.gray)
                                     .clipShape(RoundedRectangle(cornerRadius: 10))
                                 }
-                                .disabled(!canArchiveList)
+                                .disabled(isOwner && !canArchiveList)
                             }
 
                             ProgressView(value: completionRatio)
@@ -226,16 +282,26 @@ struct GroceryListDetailView: View {
                                             Text("Qty: \(item.quantity)")
                                                 .foregroundColor(PLColor.textSecondary)
                                                 .font(.caption)
-                                            if let price = item.price, price > 0 {
-                                                Text("$\(price, specifier: "%.2f")")
-                                                    .font(.caption)
-                                                    .foregroundColor(PLColor.textSecondary)
-                                            }
                                             if let store = item.store, !store.isEmpty {
                                                 Text(store)
                                                     .font(.caption)
                                                     .foregroundColor(PLColor.textSecondary)
                                             }
+                                        }
+                                        if let price = item.price, price > 0 {
+                                            Text("~$\(price, specifier: "%.2f") est.")
+                                                .font(.caption.bold())
+                                                .foregroundColor(item.checked ? PLColor.success : PLColor.textSecondary)
+                                                .transition(.opacity.combined(with: .scale))
+                                        }
+                                        // On a shared list, show who checked the item off
+                                        if isShared, item.checked, let by = item.checkedBy, !by.isEmpty {
+                                            Label(
+                                                by.lowercased() == currentUsername.lowercased() ? "Got by you" : "Got by \(by)",
+                                                systemImage: "checkmark.seal.fill"
+                                            )
+                                            .font(.caption2)
+                                            .foregroundColor(PLColor.success)
                                         }
                                     }
                                     Spacer()
@@ -273,7 +339,6 @@ struct GroceryListDetailView: View {
                             .opacity(isGenerating ? 0.75 : 1)
 
                             Button {
-                                checkallItems()
                                 showUpdateWeeklyDialog = true
                             } label: {
                                 HStack(spacing: 8) {
@@ -352,6 +417,8 @@ struct GroceryListDetailView: View {
                 .padding(.horizontal, PLSpacing.lg)
                 .padding(.vertical, PLSpacing.lg)
             }
+            .scrollDismissesKeyboard(.immediately)
+            .refreshable { await syncItemsFromServer() }
 
             // Item editor overlay
             if isEditPresented {
@@ -366,6 +433,26 @@ struct GroceryListDetailView: View {
         .onAppear {
             fetchItems()
             fetchGroceryBudget()
+            locationManager.requestLocation { city, state in
+                if !city.isEmpty, !state.isEmpty {
+                    userLocation = "\(city), \(state)"
+                } else if !state.isEmpty {
+                    userLocation = state
+                }
+                // else keep "United States" default
+            }
+        }
+        .task {
+            // Light polling so a friend's changes (checks, added/removed items) and the
+            // shared-members badge stay current while the list is open. Auto-cancels on
+            // disappear.
+            await refreshListMeta()
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 5_000_000_000) // 5s
+                if Task.isCancelled { break }
+                await syncItemsFromServer()
+                await refreshListMeta()
+            }
         }
         .onChange(of: items) { _ in
             canArchiveList = isListCompleted()
@@ -395,18 +482,36 @@ struct GroceryListDetailView: View {
         } message: {
             Text(errorMessage ?? "An unknown error occurred.")
         }
-        .confirmationDialog(
-            "Update Weekly Groceries?",
-            isPresented: $showUpdateWeeklyDialog,
-            titleVisibility: .visible
-        ) {
-            Button("Yes, add to Weekly Groceries") {
-                estimateGroceryCostAndUpdateBudget()
-            }
-            Button("No, just mark list as done", role: .cancel) { }
+        .alert("List No Longer Available", isPresented: $listRemoved) {
+            Button("OK") { presentationMode.wrappedValue.dismiss() }
         } message: {
-            let total = items.reduce(0.0) { $0 + ($1.price ?? 0.0) }
-            Text("We estimated this trip at $\(total, specifier: "%.2f"). Do you want to add this to your Weekly Groceries costs?")
+            Text("This grocery list was deleted, or the owner stopped sharing it with you.")
+        }
+        .sheet(isPresented: $showShareSheet) {
+            ShareGroceryListView(groceryList: groceryList) {
+                showShareSheet = false
+            }
+        }
+        .alert("Done Shopping?", isPresented: $showUpdateWeeklyDialog) {
+            // Finishing always archives the list. Recording the spend is optional and
+            // only offered when something is actually checked off.
+            let checkedCount = items.filter { $0.checked }.count
+            if checkedCount > 0 {
+                Button("Add to Spending & Archive") { finishShopping(recordCost: true) }
+                Button("Archive Only") { finishShopping(recordCost: false) }
+                Button("Cancel", role: .cancel) { }
+            } else {
+                Button("Archive") { finishShopping(recordCost: false) }
+                Button("Cancel", role: .cancel) { }
+            }
+        } message: {
+            let checkedTotal = items.filter { $0.checked }.reduce(0.0) { $0 + ($1.price ?? 0.0) }
+            let checkedCount = items.filter { $0.checked }.count
+            if checkedCount == 0 {
+                Text("Nothing is checked off. Archive this list now?")
+            } else {
+                Text("Add ~$\(checkedTotal, specifier: "%.2f") for \(checkedCount) checked item\(checkedCount == 1 ? "" : "s") to your grocery spending? Either way, this list will be archived.")
+            }
         }
     }
 
@@ -418,9 +523,51 @@ struct GroceryListDetailView: View {
                 let listIdString = groceryList.id.uuidString
                 let fetchedItems = try await GroceryListAPI.getItems(listId: listIdString)
                 items = fetchedItems
+                // Estimate prices for items that have no price (e.g. AI-generated lists).
+                // Only the owner drives estimation so members opening a shared list don't
+                // each re-run the same OpenAI estimates; the price persists for everyone.
+                if isOwner {
+                    for item in fetchedItems where (item.price ?? 0) == 0 {
+                        estimateCostForNewItem(itemID: item.id, name: item.name, quantity: item.quantity)
+                    }
+                }
             } catch {
                 print("Failed to fetch items: \(error)")
             }
+        }
+    }
+
+    // Re-fetch the canonical items from the backend and apply them only if they
+    // changed. Used by pull-to-refresh and background polling so shared-list edits
+    // made by friends appear here. Deliberately skips price re-estimation to avoid
+    // hammering the estimate endpoint on every poll.
+    @MainActor
+    func syncItemsFromServer() async {
+        do {
+            let fetched = try await GroceryListAPI.getItems(listId: groceryList.id.uuidString)
+            if fetched != items {
+                items = fetched
+            }
+        } catch {
+            // Silent: a failed poll shouldn't disrupt the UI
+        }
+    }
+
+    // Refresh shared-list metadata (members) so the "Shared with N friends" badge stays
+    // current — e.g. when a friend accepts or the owner removes someone elsewhere.
+    @MainActor
+    func refreshListMeta() async {
+        do {
+            let fresh = try await GroceryListAPI.getGroceryList(listId: groceryList.id.uuidString)
+            let freshMembers = fresh.members ?? []
+            if freshMembers != members {
+                members = freshMembers
+            }
+        } catch GroceryListError.notFound {
+            // The list was deleted by the owner, or we were removed from it
+            listRemoved = true
+        } catch {
+            // Transient network error — leave the current state alone
         }
     }
 
@@ -447,32 +594,41 @@ struct GroceryListDetailView: View {
 
     func estimateCostForNewItem(itemID: UUID, name: String, quantity: Int) {
         let payload: [String: Any] = [
-            "location": "Indiana",
+            "location": userLocation,
             "items": [["name": name, "quantity": quantity]]
         ]
-        guard let jsonData = try? JSONSerialization.data(withJSONObject: payload) else { return }
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: payload),
+              let url = URL(string: "\(BackendConfig.baseURLString)/api/groceryLists/estimate-grocery-cost-live")
+        else { return }
 
-        var request = URLRequest(
-            url: URL(string: "\(BackendConfig.baseURLString)/api/groceryLists/estimate-grocery-cost-live")!
-        )
+        var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = jsonData
 
-        URLSession.shared.dataTask(with: request) { data, _, _ in
+        URLSession.shared.dataTask(with: request) { data, response, _ in
             guard let data = data,
-                  let estimatedCost = try? JSONDecoder().decode(Double.self, from: data)
+                  let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode),
+                  let estimatedCost = try? JSONDecoder().decode(Double.self, from: data),
+                  estimatedCost > 0
             else {
-                DispatchQueue.main.async {
-                    errorMessage = "Unable to estimate price for '\(name)'."
-                    showError = true
-                }
+                print("[GroceryEstimate] Could not estimate price for '\(name)'")
                 return
             }
             DispatchQueue.main.async {
                 if let idx = items.firstIndex(where: { $0.id == itemID }) {
                     items[idx].price = estimatedCost
-                    savedEstimate = items.reduce(0.0){ $0 + ($1.price ?? 0.0) }
+                    savedEstimate = items.reduce(0.0) { $0 + ($1.price ?? 0.0) }
+                    // Persist price to S3 so it won't be re-estimated on next open
+                    let updated = items[idx]
+                    Task {
+                        try? await GroceryListAPI.updateItem(
+                            listId: groceryList.id.uuidString,
+                            itemId: itemID.uuidString,
+                            updatedItem: updated
+                        )
+                    }
                 }
             }
         }.resume()
@@ -494,24 +650,19 @@ struct GroceryListDetailView: View {
         Task {
             do {
                 let listIdString = groceryList.id.uuidString
-                let updatedItem = GroceryItem(listId: groceryList.id, id: item.id, name: item.name, quantity: item.quantity, checked: !item.checked, price: item.price, store: item.store, notes: item.notes)
+                let nowChecked = !item.checked
+                // Optimistically record who checked it (mirrors the backend)
+                let updatedItem = GroceryItem(
+                    listId: groceryList.id, id: item.id, name: item.name, quantity: item.quantity,
+                    checked: nowChecked, price: item.price, store: item.store, notes: item.notes,
+                    checkedBy: nowChecked ? currentUsername : nil
+                )
                 try await GroceryListAPI.toggleChecked(listId: listIdString, itemId: item.id.uuidString)
                 if let index = items.firstIndex(where: { $0.id == item.id }) {
                     items[index] = updatedItem
                 }
             } catch {
                 print("Failed to toggle checked status: \(error)")
-            }
-        }
-    }
-
-    func moveItem(from indices: IndexSet, to newOffset: Int) {
-        Task {
-            do {
-                items.move(fromOffsets: indices, toOffset: newOffset)
-                try await GroceryListAPI.updateItemOrder(listId: groceryList.id.uuidString, reorderedItems: items)
-            } catch {
-                print("Failed to reorder items: \(error)")
             }
         }
     }
@@ -547,31 +698,82 @@ struct GroceryListDetailView: View {
         return result
     }
 
+    // Finish shopping: optionally record the checked-item spend, then archive the list
+    // and return to the lists screen. Works even when nothing is checked off.
+    func finishShopping(recordCost: Bool) {
+        if recordCost {
+            estimateGroceryCostAndUpdateBudget()
+        }
+        archiveList()
+    }
+
     func archiveList() {
         let username: String? = UserDefaults.standard.string(forKey: "loggedInUsername")
         GroceryListAPI.archiveGroceryList(username: username ?? "", groceryList: groceryList) { result in
-            switch result {
-            case .success:
-                archiveSuccess = true
-            case .failure(let error):
-                print("Failed to archive grocery list: \(error.localizedDescription)")
-                archiveSuccess = false
+            DispatchQueue.main.async {
+                switch result {
+                case .success:
+                    // Return to the active lists screen once archived (or left, for shared lists)
+                    presentationMode.wrappedValue.dismiss()
+                case .failure(let error):
+                    print("Failed to archive grocery list: \(error.localizedDescription)")
+                    archiveSuccess = false
+                }
             }
         }
     }
 
     func estimateGroceryCostAndUpdateBudget() {
         let username = UserDefaults.standard.string(forKey: "loggedInUsername") ?? "UnknownUser"
-        let totalToAdd = items.reduce(0.0) { $0 + ($1.price ?? 0.0) }
+        let totalToAdd = items.filter { $0.checked }.reduce(0.0) { $0 + ($1.price ?? 0.0) }
+        guard totalToAdd > 0 else { return }
         recentlyAddedGroceryAmount = totalToAdd
+        // Legacy flat weekly file — drives the grocery budget progress card
         addCostToWeeklyGroceries(username: username, amount: totalToAdd)
-        showGroceryAddedAlert = true
+        // Dated cost system — drives the daily/weekly/monthly spending screens & charts
+        recordGroceryDatedCost(username: username, amount: totalToAdd)
         canUndoGroceryAddition = true
     }
 
+    // Records grocery spend into the dated cost system (per-day breakdown) for both the
+    // weekly and monthly periods, mirroring how scanned receipts are recorded. This is
+    // what makes the spend show up in the daily grocery cost.
+    func recordGroceryDatedCost(username: String, amount: Double) {
+        guard amount > 0 else { return }
+        let today = Self.isoDateString(Date())
+        for type in ["weekly", "monthly"] {
+            guard let url = URL(string: "\(BackendConfig.baseURLString)/api/costs/add-dated") else { continue }
+            var req = URLRequest(url: url)
+            BackendConfig.addApiKey(to: &req)
+            req.httpMethod = "POST"
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            let payload: [String: Any] = [
+                "username": username,
+                "type": type,
+                "date": today,
+                "costs": ["Groceries": amount]
+            ]
+            req.httpBody = try? JSONSerialization.data(withJSONObject: payload)
+            URLSession.shared.dataTask(with: req) { _, _, _ in
+                DispatchQueue.main.async { WidgetDataWriter.refreshFinancialData() }
+            }.resume()
+        }
+    }
+
+    static func isoDateString(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.calendar = Calendar(identifier: .gregorian)
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone.current
+        f.dateFormat = "yyyy-MM-dd"
+        return f.string(from: date)
+    }
+
     func addCostToWeeklyGroceries(username: String, amount: Double) {
-        let getURL = URL(string: "\(BackendConfig.baseURLString)/api/costs/\(username)/weekly")!
-        URLSession.shared.dataTask(with: getURL) { data, _, _ in
+        guard let getURL = URL(string: "\(BackendConfig.baseURLString)/api/costs/\(username)/weekly") else { return }
+        var getRequest = URLRequest(url: getURL)
+        BackendConfig.addApiKey(to: &getRequest)
+        URLSession.shared.dataTask(with: getRequest) { data, _, _ in
             guard let data = data,
                   var decoded = try? JSONDecoder().decode(WeeklyMonthlyCostResponse.self, from: data) else { return }
             var current = decoded.costs["Groceries"] ?? 0.0
@@ -586,6 +788,7 @@ struct GroceryListDetailView: View {
             guard let newJson = try? JSONSerialization.data(withJSONObject: uploadPayload) else { return }
 
             var uploadRequest = URLRequest(url: URL(string: "\(BackendConfig.baseURLString)/api/costs")!)
+            BackendConfig.addApiKey(to: &uploadRequest)
             uploadRequest.httpMethod = "POST"
             uploadRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
             uploadRequest.httpBody = newJson
@@ -601,8 +804,13 @@ struct GroceryListDetailView: View {
     }
 
     func undoGroceryCost(username: String, amount: Double) {
-        let getURL = URL(string: "\(BackendConfig.baseURLString)/api/costs/\(username)/weekly")!
-        URLSession.shared.dataTask(with: getURL) { data, _, _ in
+        // Also reverse the dated (daily/weekly/monthly) spend that was recorded
+        undoGroceryDatedCost(username: username, amount: amount)
+
+        guard let getURL = URL(string: "\(BackendConfig.baseURLString)/api/costs/\(username)/weekly") else { return }
+        var getRequest = URLRequest(url: getURL)
+        BackendConfig.addApiKey(to: &getRequest)
+        URLSession.shared.dataTask(with: getRequest) { data, _, _ in
             guard let data = data,
                   var decoded = try? JSONDecoder().decode(WeeklyMonthlyCostResponse.self, from: data) else { return }
             var current = decoded.costs["Groceries"] ?? 0.0
@@ -617,6 +825,7 @@ struct GroceryListDetailView: View {
             guard let newJson = try? JSONSerialization.data(withJSONObject: uploadPayload) else { return }
 
             var uploadRequest = URLRequest(url: URL(string: "\(BackendConfig.baseURLString)/api/costs")!)
+            BackendConfig.addApiKey(to: &uploadRequest)
             uploadRequest.httpMethod = "POST"
             uploadRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
             uploadRequest.httpBody = newJson
@@ -631,35 +840,23 @@ struct GroceryListDetailView: View {
         }.resume()
     }
 
-    func checkallItems() {
-        Task {
-            let uncheckedItems = items.filter { !$0.checked }
-            if uncheckedItems.isEmpty { return }
-            for item in uncheckedItems {
-                do {
-                    let listIdString = groceryList.id.uuidString
-                    try await GroceryListAPI.toggleChecked(listId: listIdString, itemId: item.id.uuidString)
-                    await MainActor.run {
-                        if let index = items.firstIndex(where: { $0.id == item.id }) {
-                            let updatedItem = GroceryItem(
-                                listId: groceryList.id,
-                                id: item.id,
-                                name: item.name,
-                                quantity: item.quantity,
-                                checked: true,
-                                price: item.price,
-                                store: item.store,
-                                notes: item.notes
-                            )
-                            items[index] = updatedItem
-                        }
-                    }
-                    try await Task.sleep(nanoseconds: 200_000_000)
-                } catch {
-                    print("Failed to check off item \(item.name): \(error)")
-                }
-            }
-        }
+    // Subtract a previously recorded grocery spend from the dated cost system
+    // (weekly + monthly), matching the receipt-undo behavior.
+    func undoGroceryDatedCost(username: String, amount: Double) {
+        guard amount > 0, let url = URL(string: "\(BackendConfig.baseURLString)/api/costs/undo-receipt") else { return }
+        var req = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &req)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let payload: [String: Any] = [
+            "username": username,
+            "date": Self.isoDateString(Date()),
+            "costs": ["Groceries": amount]
+        ]
+        req.httpBody = try? JSONSerialization.data(withJSONObject: payload)
+        URLSession.shared.dataTask(with: req) { _, _, _ in
+            DispatchQueue.main.async { WidgetDataWriter.refreshFinancialData() }
+        }.resume()
     }
 
     func generateMealFromListView() -> [(name: String, quantity: Int)] {
@@ -672,13 +869,29 @@ struct GroceryListDetailView: View {
 
     func fetchGroceryBudget() {
         let username = UserDefaults.standard.string(forKey: "loggedInUsername") ?? "UnknownUser"
-        let url = URL(string: "\(BackendConfig.baseURLString)/api/budget/\(username)/monthly/groceries")!
-        URLSession.shared.dataTask(with: url) { data, _, _ in
-            guard let data = data,
-                  let result = try? JSONSerialization.jsonObject(with: data) as? [String: Double],
-                  let budget = result["Groceries"] else { return }
-            DispatchQueue.main.async { groceryBudget = budget }
-        }.resume()
+
+        // Fetch weekly grocery budget
+        if let budgetURL = URL(string: "\(BackendConfig.baseURLString)/api/budget/\(username)/weekly/groceries") {
+            var budgetReq = URLRequest(url: budgetURL)
+            BackendConfig.addApiKey(to: &budgetReq)
+            URLSession.shared.dataTask(with: budgetReq) { data, _, _ in
+                guard let data = data,
+                      let result = try? JSONSerialization.jsonObject(with: data) as? [String: Double],
+                      let budget = result["Groceries"] else { return }
+                DispatchQueue.main.async { groceryBudget = budget }
+            }.resume()
+        }
+
+        // Fetch how much has already been spent this week on groceries
+        if let spentURL = URL(string: "\(BackendConfig.baseURLString)/api/costs/\(username)/weekly") {
+            var spentReq = URLRequest(url: spentURL)
+            BackendConfig.addApiKey(to: &spentReq)
+            URLSession.shared.dataTask(with: spentReq) { data, _, _ in
+                guard let data = data,
+                      let decoded = try? JSONDecoder().decode(WeeklyMonthlyCostResponse.self, from: data) else { return }
+                DispatchQueue.main.async { weeklySpent = decoded.costs["Groceries"] ?? 0 }
+            }.resume()
+        }
     }
 
     private func generateMealFromList(groceryListItems: [(name: String, quantity: Int)]) {
@@ -717,11 +930,9 @@ struct GroceryListDetailView: View {
                             mealCreatedMessage = "A new meal has been created successfully!"
                             showMealCreatedAlert = true
                         }
-                        onMealCreated?()
                     } else {
                         mealCreatedMessage = "A new meal has been created successfully!"
                         showMealCreatedAlert = true
-                        onMealCreated?()
                     }
                 }
             } catch {
@@ -734,6 +945,4 @@ struct GroceryListDetailView: View {
             }
         }
     }
-
-    var onMealCreated: (() -> Void)?
 }
