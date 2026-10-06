@@ -154,7 +154,7 @@ def status_line(label, summary):
         return f"⚠️ **{label}:** didn't run (build or setup failed, check the job log)"
     p, f, s = totals(summary)
     icon = "❌" if f else "✅"
-    extra = f", {s} skipped (known bugs, see BUGS.md)" if s else ""
+    extra = f", {s} skipped (known bugs)" if s else ""
     return f"{icon} **{label}:** {p} passed, {f} failed{extra}"
 
 
