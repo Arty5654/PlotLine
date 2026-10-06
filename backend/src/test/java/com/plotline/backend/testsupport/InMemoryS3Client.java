@@ -98,7 +98,13 @@ public class InMemoryS3Client implements S3Client {
     @Override
     public PutObjectResponse putObject(PutObjectRequest request, RequestBody body) {
         try (InputStream in = body.contentStreamProvider().newStream()) {
-            store.put(request.key(), in.readAllBytes());
+            byte[] data = in.readAllBytes();
+            // like real S3: only the declared content length is stored
+            Long declared = request.contentLength();
+            if (declared != null && declared >= 0 && declared < data.length) {
+                data = java.util.Arrays.copyOf(data, declared.intValue());
+            }
+            store.put(request.key(), data);
             lastModified.put(request.key(), Instant.now());
             return PutObjectResponse.builder().build();
         } catch (Exception e) {

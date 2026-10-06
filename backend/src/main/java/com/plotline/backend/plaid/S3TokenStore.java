@@ -35,24 +35,8 @@ public class S3TokenStore implements TokenStore {
     private final Map<String, String> itemToUserCache = new ConcurrentHashMap<>();
     private final Map<String, Map<String, List<String>>> selectedAccountsCache = new ConcurrentHashMap<>();
 
-    public S3TokenStore() {
-        Dotenv dotenv = Dotenv.configure().ignoreIfMissing().load();
-
-        String accessKey = System.getenv("AWS_ACCESS_KEY_ID");
-        String secretKey = System.getenv("AWS_SECRET_ACCESS_KEY");
-        String region = System.getenv("AWS_REGION");
-
-        // Fall back to dotenv for local dev
-        if (accessKey == null || accessKey.isBlank()) accessKey = dotenv.get("AWS_ACCESS_KEY_ID");
-        if (secretKey == null || secretKey.isBlank()) secretKey = dotenv.get("AWS_SECRET_ACCESS_KEY");
-        if (region == null || region.isBlank()) region = dotenv.get("AWS_REGION");
-
-        this.s3Client = S3Client.builder()
-            .region(Region.of(region))
-            .credentialsProvider(StaticCredentialsProvider.create(
-                AwsBasicCredentials.create(accessKey, secretKey)))
-            .build();
-
+    public S3TokenStore(S3Client s3Client) {
+        this.s3Client = s3Client; // shared client from AWSConfig
         System.out.println("S3TokenStore initialized - tokens will persist across restarts");
     }
 

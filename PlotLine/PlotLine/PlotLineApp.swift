@@ -80,6 +80,11 @@ struct PlotLineApp: App {
             }
         }
         .onChange(of: scenePhase) { phase in
+            // the icon is visible again once the app is in the background: recount what's waiting
+            if phase == .background {
+                BadgeManager.refreshInBackground()
+                return
+            }
             guard phase == .active else { return }
             session.refreshSession()
             let username = UserDefaults.standard.string(forKey: "loggedInUsername") ?? ""

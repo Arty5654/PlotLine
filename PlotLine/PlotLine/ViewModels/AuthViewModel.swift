@@ -583,6 +583,7 @@ class AuthViewModel: ObservableObject {
         UserDefaults.standard.removeObject(forKey: "loggedInUsername")
         UserDefaults.standard.removeObject(forKey: Self.appleUserIDKey)
         WidgetDataWriter.clearCredentials()
+        BadgeManager.clear()
         
         self.isCodeSent = false
         self.isSignin = true

@@ -33,22 +33,8 @@ public class FriendsFeedService {
   private final S3Client s3Client;
   private final String bucketName = "plotline-database-bucket";
 
-  @Autowired
-  public FriendsFeedService() {
-    Dotenv dotenv = Dotenv.configure().ignoreIfMissing().load();
-    String accessKey = dotenv.get("AWS_ACCESS_KEY_ID");
-    String secretKey = dotenv.get("AWS_SECRET_ACCESS_KEY");
-    String region = dotenv.get("AWS_REGION");
-
-    this.s3Client = S3Client.builder()
-        .region(Region.of(region))
-        .credentialsProvider(StaticCredentialsProvider.create(AwsBasicCredentials.create(accessKey, secretKey)))
-        .build();
-  }
-
-  // for tests: use the given S3 client instead of building one from the environment
-  FriendsFeedService(S3Client s3Client) {
-    this.s3Client = s3Client;
+  public FriendsFeedService(S3Client s3Client) {
+    this.s3Client = s3Client; // shared client from AWSConfig
   }
 
   public boolean addPostToFeed(FriendPost post) {
