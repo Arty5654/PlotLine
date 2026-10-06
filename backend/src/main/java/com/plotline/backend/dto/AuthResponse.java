@@ -5,6 +5,8 @@ public class AuthResponse {
     private String token;
     private String error;
     private String displayUsername;
+    // true when the user still has to accept the current Terms of Service
+    private Boolean needsTerms;
 
     public AuthResponse() {
     }
@@ -44,6 +46,14 @@ public class AuthResponse {
 
     public void setError(String error) {
         this.error = error;
+    }
+
+    public Boolean getNeedsTerms() {
+        return needsTerms;
+    }
+
+    public void setNeedsTerms(Boolean needsTerms) {
+        this.needsTerms = needsTerms;
     }
 
     public String getDisplayUsername() {

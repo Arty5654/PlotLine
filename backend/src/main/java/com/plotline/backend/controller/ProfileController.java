@@ -20,7 +20,12 @@ import org.springframework.web.multipart.MultipartFile;
 
 import com.plotline.backend.dto.Trophy;
 import com.plotline.backend.dto.UserProfile;
+import com.plotline.backend.security.ActingUser;
+import com.plotline.backend.security.CurrentUser;
+import com.plotline.backend.service.FriendsService;
 import com.plotline.backend.service.UserProfileService;
+
+import static com.plotline.backend.util.UsernameUtils.normalize;
 
 
 @RestController
@@ -29,8 +34,10 @@ public class ProfileController {
   
     @Autowired
     private final UserProfileService userProfileService;
-    public ProfileController(UserProfileService userProfileService) {
+    private final FriendsService friendsService;
+    public ProfileController(UserProfileService userProfileService, FriendsService friendsService) {
         this.userProfileService = userProfileService;
+        this.friendsService = friendsService;
     }
 
     @PutMapping("/save-user")
@@ -40,7 +47,9 @@ public class ProfileController {
 
     }
 
+    // name, birthday and city are only shown to the user and their friends
     @GetMapping("/get-user")
+    @ActingUser(value = {}, others = {"username"})
     public ResponseEntity<UserProfile> getProfile(@RequestParam String username) {
         UserProfile profile = userProfileService.getProfile(username);
 
@@ -49,7 +58,22 @@ public class ProfileController {
             return ResponseEntity.badRequest().body(null);
         }
 
+        if (!CurrentUser.is(username) && !isFriend(username)) {
+            UserProfile limited = new UserProfile();
+            limited.setUsername(profile.getUsername() != null ? profile.getUsername() : username);
+            return ResponseEntity.ok(limited);
+        }
+
         return ResponseEntity.ok(profile);
+    }
+
+    private boolean isFriend(String username) {
+        try {
+            return friendsService.getFriendList(CurrentUser.require()).getFriends().stream()
+                    .anyMatch(f -> normalize(f).equals(normalize(username)));
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     @GetMapping("/get-phone")
@@ -79,6 +103,7 @@ public class ProfileController {
     }
 
     @GetMapping("/get-profile-pic")
+    @ActingUser(value = {}, others = {"username"}) // pictures are public
     public ResponseEntity<Map<String, String>> getProfilePicture(@RequestParam String username) {   
         String s3Url = "https://plotline-database-bucket.s3.amazonaws.com/users/" + username + "/profile_pictures/" + username + ".jpg";
         return ResponseEntity.ok(Collections.singletonMap("profilePicUrl", s3Url));
@@ -87,6 +112,7 @@ public class ProfileController {
     // TROPHY ENDPOINTS 
 
     @GetMapping("/get-trophies")
+    @ActingUser(value = {}, others = {"username"}) // trophies are public
     public List<Trophy> getUserTrophies(@RequestParam String username) throws Exception {
         return userProfileService.getTrophies(username);
     }

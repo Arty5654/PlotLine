@@ -47,12 +47,14 @@ struct GoalsProvider: AppIntentTimelineProvider {
         let username = defaults.string(forKey: WidgetKey.username) ?? ""
         let baseURL  = defaults.string(forKey: WidgetKey.baseURL)  ?? ""
         let apiKey   = defaults.string(forKey: WidgetKey.apiKey)   ?? ""
-        guard !username.isEmpty, !baseURL.isEmpty else { return nil }
+        let token    = defaults.string(forKey: WidgetKey.authToken) ?? ""
+        guard !username.isEmpty, !baseURL.isEmpty, !token.isEmpty else { return nil }
 
         if period == .weekly {
             guard let url = URL(string: "\(baseURL)/api/goals/\(username)") else { return nil }
             var request = URLRequest(url: url)
             if !apiKey.isEmpty { request.setValue(apiKey, forHTTPHeaderField: "X-API-Key") }
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
             guard let (data, _) = try? await URLSession.shared.data(for: request),
                   let response = try? JSONDecoder().decode(WeeklyGoalsResponse.self, from: data) else { return nil }
             return response.weeklyGoals.map { task in
@@ -69,6 +71,7 @@ struct GoalsProvider: AppIntentTimelineProvider {
             guard let url = URL(string: "\(baseURL)/api/goals/\(username)/long-term") else { return nil }
             var request = URLRequest(url: url)
             if !apiKey.isEmpty { request.setValue(apiKey, forHTTPHeaderField: "X-API-Key") }
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
             guard let (data, _) = try? await URLSession.shared.data(for: request),
                   let response = try? JSONDecoder().decode(LongTermGoalsResponse.self, from: data) else { return nil }
             return response.longTermGoals.enumerated().map { (index, goal) in

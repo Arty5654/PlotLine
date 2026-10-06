@@ -17,7 +17,11 @@ struct RootView: View {
     @EnvironmentObject var chatVM : ChatViewModel
     
     var body: some View {
-        if session.isLoggedIn && session.needVerification != true {
+        if session.isLoggedIn && session.needsTermsAcceptance {
+            // agree to the current Terms first (Apple/Google sign-ups, existing users, updated terms)
+            TermsAcceptanceView()
+                .environmentObject(session)
+        } else if session.isLoggedIn && session.needVerification != true {
             ContentView()
                 .environmentObject(session)
                 .environmentObject(calendarVM)

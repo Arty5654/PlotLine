@@ -1,5 +1,6 @@
 package com.plotline.backend.controller;
 
+import com.plotline.backend.security.ActingUser;
 import com.plotline.backend.dto.*;
 import com.plotline.backend.service.CalendarAccessService;
 import org.springframework.http.ResponseEntity;
@@ -19,6 +20,7 @@ public class CalendarAccessController {
 
     // POST /calendar-access/send-invite
     @PostMapping("/send-invite")
+    @ActingUser(value = {"fromUsername"}, others = {"toUsername", "recipientUsername", "ownerUsername", "friendUsername"})
     public ResponseEntity<?> sendInvite(@RequestBody CalendarAccessRequest req) {
         try {
             CalendarInvite invite = calendarAccessService.sendInvite(
@@ -33,6 +35,7 @@ public class CalendarAccessController {
 
     // POST /calendar-access/respond-invite
     @PostMapping("/respond-invite")
+    @ActingUser(value = {"recipientUsername"}, others = {"fromUsername", "toUsername", "ownerUsername", "friendUsername"})
     public ResponseEntity<?> respondToInvite(@RequestBody CalendarAccessRequest req) {
         try {
             boolean ok = calendarAccessService.respondToInvite(
@@ -56,7 +59,9 @@ public class CalendarAccessController {
     }
 
     // GET /calendar-access/shared-events?ownerUsername=&requesterUsername=
+    // the service only returns events if the owner granted you view access
     @GetMapping("/shared-events")
+    @ActingUser(value = {"requesterUsername"}, others = {"ownerUsername"})
     public ResponseEntity<?> getSharedEvents(
             @RequestParam String ownerUsername,
             @RequestParam String requesterUsername) {
@@ -71,6 +76,7 @@ public class CalendarAccessController {
 
     // POST /calendar-access/approve-event
     @PostMapping("/approve-event")
+    @ActingUser(value = {"ownerUsername"}, others = {"fromUsername", "toUsername", "recipientUsername", "friendUsername"})
     public ResponseEntity<?> approveEvent(@RequestBody CalendarAccessRequest req) {
         try {
             boolean ok = calendarAccessService.approveEvent(req.getOwnerUsername(), req.getEventId());
@@ -82,6 +88,7 @@ public class CalendarAccessController {
 
     // POST /calendar-access/reject-event
     @PostMapping("/reject-event")
+    @ActingUser(value = {"ownerUsername"}, others = {"fromUsername", "toUsername", "recipientUsername", "friendUsername"})
     public ResponseEntity<?> rejectEvent(@RequestBody CalendarAccessRequest req) {
         try {
             boolean ok = calendarAccessService.rejectEvent(req.getOwnerUsername(), req.getEventId());
@@ -93,6 +100,7 @@ public class CalendarAccessController {
 
     // POST /calendar-access/revoke
     @PostMapping("/revoke")
+    @ActingUser(value = {"ownerUsername"}, others = {"fromUsername", "toUsername", "recipientUsername", "friendUsername"})
     public ResponseEntity<?> revokeAccess(@RequestBody CalendarAccessRequest req) {
         try {
             boolean ok = calendarAccessService.revokeAccess(

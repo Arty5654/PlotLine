@@ -11,6 +11,8 @@ struct AuthResponse: Codable {
     let token: String?
     let error: String?
     let displayUsername: String?
+    // true when the user still has to accept the current Terms of Service
+    let needsTerms: Bool?
 }
 
 struct SmsResponse: Codable {

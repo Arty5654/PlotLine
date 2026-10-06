@@ -6,9 +6,14 @@ import com.google.api.client.http.javanet.NetHttpTransport;
 import com.google.api.client.json.JsonFactory;
 import com.google.api.client.json.jackson2.JacksonFactory;
 
+import com.plotline.backend.dto.AppleSigninRequest;
 import com.plotline.backend.dto.AuthResponse;
 import com.plotline.backend.dto.SignInRequest;
 import com.plotline.backend.dto.SignUpRequest;
+import com.plotline.backend.security.ActingUser;
+import com.plotline.backend.security.CurrentUser;
+import com.plotline.backend.service.AccountDeletionService;
+import com.plotline.backend.service.AppleSignInService;
 import com.plotline.backend.service.AuthService;
 import io.github.cdimascio.dotenv.Dotenv;
 
@@ -31,8 +36,13 @@ public class AuthController {
 
     @Autowired
     private final AuthService authService;
-    public AuthController(AuthService authService) {
+    private final AppleSignInService appleSignInService;
+    private final AccountDeletionService accountDeletionService;
+    public AuthController(AuthService authService, AppleSignInService appleSignInService,
+                          AccountDeletionService accountDeletionService) {
         this.authService = authService;
+        this.appleSignInService = appleSignInService;
+        this.accountDeletionService = accountDeletionService;
     }
  
     @PostMapping("/signup")
@@ -45,6 +55,10 @@ public class AuthController {
         }
         if (normalizedEmail.isBlank()) {
             return ResponseEntity.ok(new AuthResponse(false, null, "Invalid email"));
+        }
+        if (!Boolean.TRUE.equals(request.getAcceptedTerms())) {
+            return ResponseEntity.ok(new AuthResponse(false, null,
+                    "Please confirm you're 18 or older and agree to the Terms of Service and Privacy Policy."));
         }
         request.setUsername(normalized);
         request.setEmail(normalizedEmail);
@@ -75,12 +89,13 @@ public class AuthController {
         if (!created) {
             return ResponseEntity.ok(new AuthResponse(false, null, "Could not create user"));
         }
+        authService.acceptTerms(request.getUsername(), LegalController.TERMS_VERSION);
         
         // create jwt token
         String token = authService.generateToken(request.getUsername());
 
         // signup successful - return the original display username
-        return ResponseEntity.ok(new AuthResponse(true, token, "Needs Verification", displayUsername));
+        return ResponseEntity.ok(withTerms(new AuthResponse(true, token, "Needs Verification", displayUsername)));
     }
 
     @PostMapping("/signin")
@@ -108,11 +123,11 @@ public class AuthController {
         String displayUsername = authService.getDisplayUsername(request.getUsername());
 
         if (loginResult.equals("Needs Verification")) {
-            return ResponseEntity.ok(new AuthResponse(true, token, "Needs Verification", displayUsername));
+            return ResponseEntity.ok(withTerms(new AuthResponse(true, token, "Needs Verification", displayUsername)));
         }
 
         // signin successful
-        return ResponseEntity.ok(new AuthResponse(true, token, null, displayUsername));
+        return ResponseEntity.ok(withTerms(new AuthResponse(true, token, null, displayUsername)));
     }
 
     @PostMapping("/google-signin")
@@ -156,9 +171,9 @@ public class AuthController {
                 }
 
                 // username does not exist, create new account for google user
-                // using google token as password, encrypting for database
+                // (the Google user id is stored to recognize them later, never as a password)
     
-                boolean created = authService.createUser("", normalizedEmail, username, displayUsername, googleUserId, true);
+                boolean created = authService.createGoogleUser(normalizedEmail, username, displayUsername, googleUserId);
                 if (!created) {
                     return ResponseEntity.ok(new AuthResponse(false, null, "Could not create user"));
                 }
@@ -166,7 +181,7 @@ public class AuthController {
                 System.out.println("Google user CREATED");
 
                 String token = authService.generateToken(username);
-                return ResponseEntity.ok(new AuthResponse(true, token, "Needs Verification", displayUsername));
+                return ResponseEntity.ok(withTerms(new AuthResponse(true, token, null, displayUsername)));
     
             } else {
                 // username exists already, try signing the google user back in
@@ -183,7 +198,7 @@ public class AuthController {
                 } else {
     
                     // log google user back into their account 
-                    loginResult = authService.userLogin(username, googleUserId);
+                    loginResult = authService.googleLogin(username, googleUserId);
     
                     System.out.println("Google user LOGGED IN");
     
@@ -197,10 +212,10 @@ public class AuthController {
                 String returnDisplayUsername = authService.getDisplayUsername(username);
 
                 if (loginResult.equals("Needs Verification")) {
-                    return ResponseEntity.ok(new AuthResponse(true, token, "Needs Verification", returnDisplayUsername));
+                    return ResponseEntity.ok(withTerms(new AuthResponse(true, token, "Needs Verification", returnDisplayUsername)));
                 }
 
-                return ResponseEntity.ok(new AuthResponse(true, token, null, returnDisplayUsername));
+                return ResponseEntity.ok(withTerms(new AuthResponse(true, token, null, returnDisplayUsername)));
     
             }
     
@@ -210,6 +225,49 @@ public class AuthController {
             return ResponseEntity.ok(new AuthResponse(false, null, "Server Error"));
 
         }
+    }
+
+    @PostMapping("/apple-signin")
+    public ResponseEntity<AuthResponse> appleSignIn(@RequestBody AppleSigninRequest request) {
+        return ResponseEntity.ok(withTerms(appleSignInService.signIn(request)));
+    }
+
+    // permanently delete the signed-in user's account. The account comes from the login
+    // token (checked by JwtAuthFilter), never from the request body.
+    @PostMapping("/delete-account")
+    public ResponseEntity<AuthResponse> deleteAccount(@RequestBody(required = false) Map<String, String> request) {
+        String appleCode = request != null ? request.get("appleAuthorizationCode") : null;
+        return ResponseEntity.ok(accountDeletionService.deleteAccount(CurrentUser.require(), appleCode));
+    }
+
+    // swap a still-valid login token for a fresh one; the app calls this whenever it opens,
+    // so people stay signed in as long as they use the app at least once every 30 days
+    @PostMapping("/refresh")
+    public ResponseEntity<AuthResponse> refresh() {
+        String username = CurrentUser.require();
+        String status = authService.needsPhoneVerification(username) ? "Needs Verification" : null;
+        return ResponseEntity.ok(withTerms(new AuthResponse(true, authService.generateToken(username), status,
+                authService.getDisplayUsername(username))));
+    }
+
+    // the signed-in user agrees to the current Terms of Service and Privacy Policy
+    @PostMapping("/accept-terms")
+    public ResponseEntity<AuthResponse> acceptTerms() {
+        String username = CurrentUser.require();
+        if (!authService.acceptTerms(username, LegalController.TERMS_VERSION)) {
+            return ResponseEntity.ok(new AuthResponse(false, null, "Couldn't save your agreement. Please try again."));
+        }
+        AuthResponse response = new AuthResponse(true, null, null, authService.getDisplayUsername(username));
+        response.setNeedsTerms(false);
+        return ResponseEntity.ok(response);
+    }
+
+    // successful sign-ins say whether the user still has to accept the current terms
+    private AuthResponse withTerms(AuthResponse response) {
+        if (response.isSuccess() && response.getDisplayUsername() != null) {
+            response.setNeedsTerms(authService.needsTerms(response.getDisplayUsername(), LegalController.TERMS_VERSION));
+        }
+        return response;
     }
 
     @PostMapping("/change-password")
@@ -251,6 +309,7 @@ public class AuthController {
     }
 
     @GetMapping("/user-exists")
+    @ActingUser(value = {}, others = {"username"}) // looking up someone else, e.g. before a friend request
     public ResponseEntity<Boolean> userExists(@RequestParam String username) {
         if (authService.userExists(username)) {
             return ResponseEntity.ok(true);

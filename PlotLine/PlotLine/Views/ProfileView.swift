@@ -27,6 +27,8 @@ struct ProfileView: View {
     @State private var animateSuccess = false
     
     @State private var showingTrophyHall = false
+    @State private var showingDeleteAccount = false
+    @State private var legalPage: LegalPage?
 
     @EnvironmentObject var session: AuthViewModel
     @Environment(\.dismiss) var dismiss // to close the sheet on signout
@@ -256,6 +258,17 @@ struct ProfileView: View {
                         .foregroundColor(.red)
                         .clipShape(Capsule())
                     }
+
+                    // DELETE ACCOUNT
+                    Button("Delete Account") {
+                        showingDeleteAccount = true
+                    }
+                    .font(.footnote.weight(.semibold))
+                    .foregroundColor(.red)
+                    .padding(.top, 4)
+
+                    LegalFooterLinks()
+                        .padding(.top, 8)
                 }
                 .padding()
             }
@@ -290,6 +303,14 @@ struct ProfileView: View {
         }
         .sheet(isPresented: $showingTrophyHall) {
             TrophyHallView(username: username)
+        }
+        .legalLinkSheet($legalPage)
+        .sheet(isPresented: $showingDeleteAccount) {
+            DeleteAccountView()
+                .environmentObject(session)
+        }
+        .onChange(of: session.isLoggedIn) { loggedIn in
+            if !loggedIn { dismiss() }
         }
         .overlay(
             Group {
@@ -481,7 +502,7 @@ struct ChangePasswordModalView: View {
                                         self.errorMessage = "Failed to change password. Incorrect Old Password"
                                     }
                                 } catch {
-                                    self.errorMessage = "An error occurred. Please try again."
+                                    self.errorMessage = AuthViewModel.message(for: error)
                                 }
                             }
                         }
@@ -526,8 +547,7 @@ struct ChangePasswordModalView: View {
                                     }
 
                                 } catch {
-                                    print("An unexpected error occurred. Please try again.")
-                                    self.errorMessage = "Invalid Code. Please Try again"
+                                    self.errorMessage = AuthViewModel.message(for: error)
                                 }
                                 
                             }

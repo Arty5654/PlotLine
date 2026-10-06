@@ -35,19 +35,22 @@ enum BackendConfig {
         return nil
     }()
 
-    /// Creates a URLRequest with the API key header already set
+    /// Creates a URLRequest for the backend with the API key and login token already set
     static func authenticatedRequest(url: URL) -> URLRequest {
         var request = URLRequest(url: url)
-        if let key = apiKey {
-            request.setValue(key, forHTTPHeaderField: "X-API-Key")
-        }
+        addApiKey(to: &request)
         return request
     }
 
-    /// Adds API key header to an existing URLRequest
+    /// Adds the backend auth headers to a request: the app's API key, plus the signed-in user's
+    /// login token. The server identifies the user from the token, so every backend call needs it.
+    /// Only use this for requests to our own backend, never third-party APIs.
     static func addApiKey(to request: inout URLRequest) {
         if let key = apiKey {
             request.setValue(key, forHTTPHeaderField: "X-API-Key")
+        }
+        if let token = KeychainManager.loadToken() {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
     }
 

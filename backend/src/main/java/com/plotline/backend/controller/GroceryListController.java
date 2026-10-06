@@ -1,4 +1,5 @@
 package com.plotline.backend.controller;
+import com.plotline.backend.security.ActingUser;
 import com.plotline.backend.service.OpenAIService;
 
 import com.plotline.backend.dto.GroceryItem;
@@ -37,6 +38,7 @@ public class GroceryListController {
 
     // Create grocery list
     @PostMapping("/create-grocery-list")
+    @ActingUser(value = {"username"}, others = {"ownerUsername"})
     public ResponseEntity<String> createGroceryList(@RequestBody GroceryList groceryList) {
         try {
             String temp = groceryListService.createGroceryList(groceryList, groceryList.getUsername());
@@ -134,7 +136,9 @@ public class GroceryListController {
     }
 
     // Endpoint to archive a grocery list
+    // body is the list itself; for a shared list its username/owner can be a friend
     @PostMapping("/archive/{username}")
+    @ActingUser(value = {"username"}, others = {"ownerUsername"}, checkBody = false)
     public ResponseEntity<String> archiveGroceryList(@PathVariable String username, @RequestBody GroceryList groceryList) {
         try {
             // Ensure that the grocery list object has a valid ID
@@ -189,6 +193,7 @@ public class GroceryListController {
 
     // Endpoint to restore an archived grocery list
     @PostMapping("/restore/{username}")
+    @ActingUser(value = {"username"}, others = {"ownerUsername"}, checkBody = false)
     public ResponseEntity<String> restoreGroceryList(@PathVariable String username, @RequestBody GroceryList groceryList) {
         try {
             // Ensure that the grocery list object has a valid ID
@@ -362,6 +367,7 @@ public class GroceryListController {
 
     // Share a grocery list with another user
     @PostMapping("/share")
+    @ActingUser(value = {"fromUsername"}, others = {"toUsername"})
     public ResponseEntity<?> shareGroceryList(@RequestBody Map<String, String> body) {
         try {
             String fromUsername = body.get("fromUsername");
@@ -394,6 +400,7 @@ public class GroceryListController {
 
     // Owner removes a member from a shared list (unshare)
     @PostMapping("/unshare")
+    @ActingUser(value = {"ownerUsername"}, others = {"memberUsername"})
     public ResponseEntity<String> unshareGroceryList(@RequestBody Map<String, String> body) {
         try {
             String ownerUsername  = body.get("ownerUsername");
@@ -414,6 +421,7 @@ public class GroceryListController {
 
     // Accept or decline a grocery list invite
     @PostMapping("/share/respond")
+    @ActingUser({"recipientUsername"})
     public ResponseEntity<String> respondToGroceryShare(@RequestBody Map<String, String> body) {
         try {
             String recipientUsername = body.get("recipientUsername");

@@ -7,6 +7,10 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import com.plotline.backend.dto.*;
+import com.plotline.backend.security.ActingUser;
+import com.plotline.backend.security.CurrentUser;
+import com.plotline.backend.security.ForbiddenException;
+import com.plotline.backend.service.CalendarAccessService;
 import com.plotline.backend.service.CalendarService;
 
 @RestController
@@ -14,10 +18,12 @@ import com.plotline.backend.service.CalendarService;
 public class CalendarController {
 
     private final CalendarService calendarService;
+    private final CalendarAccessService calendarAccessService;
 
     @Autowired
-    public CalendarController(CalendarService calendarService) {
+    public CalendarController(CalendarService calendarService, CalendarAccessService calendarAccessService) {
         this.calendarService = calendarService;
+        this.calendarAccessService = calendarAccessService;
     }
 
     @GetMapping("/get-events")
@@ -31,7 +37,17 @@ public class CalendarController {
     }
 
     @PostMapping("/create-event")
+    @ActingUser(value = {}, others = {"username", "addedBy"})
     public ResponseEntity<EventResponse> createEvent(@RequestBody EventRequest request) {
+        // your own calendar, or a friend's calendar they've given you "add" access to
+        if (!CurrentUser.is(request.getUsername())) {
+            String me = CurrentUser.require();
+            if (!CurrentUser.is(request.getAddedBy()) || !calendarAccessService.hasAddAccess(request.getUsername(), me)) {
+                throw new ForbiddenException("You don't have access to add to that calendar.");
+            }
+        } else if (request.getAddedBy() != null && !CurrentUser.is(request.getAddedBy())) {
+            throw new ForbiddenException();
+        }
         try {
             EventDto newEvent = new EventDto(
                 request.getId(),
@@ -56,6 +72,7 @@ public class CalendarController {
     }
 
     @PostMapping("/update-event")
+    @ActingUser(value = {"username"}, others = {"addedBy"})
     public ResponseEntity<EventResponse> updateEvent(@RequestBody EventRequest request) {
         try {
             EventDto updatedEvent = new EventDto(

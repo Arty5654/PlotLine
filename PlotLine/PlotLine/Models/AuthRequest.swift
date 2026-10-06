@@ -11,6 +11,7 @@ struct SignUpRequest: Codable {
     let email: String
     let username: String
     let password: String
+    let acceptedTerms: Bool
 }
 
 struct SignInRequest: Codable {

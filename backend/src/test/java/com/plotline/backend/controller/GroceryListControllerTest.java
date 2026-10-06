@@ -4,9 +4,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.plotline.backend.dto.GroceryItem;
 import com.plotline.backend.dto.GroceryList;
 import com.plotline.backend.dto.GroceryListInvite;
+import com.plotline.backend.service.AuthService;
 import com.plotline.backend.service.DietaryRestrictionsService;
 import com.plotline.backend.service.GroceryListService;
 import com.plotline.backend.service.OpenAIService;
+import com.plotline.backend.security.CurrentUser;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -15,6 +18,9 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.context.WebApplicationContext;
 
 import java.io.IOException;
 import java.util.List;
@@ -35,20 +41,41 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /**
  * HTTP-layer tests for the grocery REST endpoints: routing, request/response mapping,
  * and status codes. The service is mocked, so this focuses purely on the controller.
- * The API-key filter is disabled (addFilters = false) since it isn't grocery-specific.
+ * Filters (API key, login token) are disabled; requests carry an already signed-in user, so the
+ * ownership checks still run. Full auth is covered by SecurityIntegrationTest.
  */
 @WebMvcTest(controllers = GroceryListController.class)
 @AutoConfigureMockMvc(addFilters = false)
 class GroceryListControllerTest {
 
     @Autowired
+    private WebApplicationContext context;
+
+    // requests run as signed-in "alice" unless a test says otherwise with asUser(...)
     private MockMvc mockMvc;
+
+    @BeforeEach
+    void setUpMockMvc() {
+        mockMvc = MockMvcBuilders.webAppContextSetup(context)
+                .defaultRequest(get("/").requestAttr(CurrentUser.ATTRIBUTE, "alice"))
+                .build();
+    }
+
+    private static RequestPostProcessor asUser(String username) {
+        return request -> {
+            request.setAttribute(CurrentUser.ATTRIBUTE, username);
+            return request;
+        };
+    }
 
     @Autowired
     private ObjectMapper objectMapper;
 
     @MockBean
     private GroceryListService groceryListService;
+
+    @MockBean
+    private AuthService authService; // needed by the login-token filter bean (filters are off here)
 
     @MockBean
     private OpenAIService openAIService;
@@ -306,7 +333,8 @@ class GroceryListControllerTest {
 
         mockMvc.perform(post("/api/groceryLists/share")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"fromUsername\":\"bob\",\"toUsername\":\"carol\",\"listId\":\"L1\"}"))
+                        .content("{\"fromUsername\":\"bob\",\"toUsername\":\"carol\",\"listId\":\"L1\"}")
+                        .with(asUser("bob")))
                 .andExpect(status().isBadRequest())
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("owner")));
     }
@@ -328,7 +356,7 @@ class GroceryListControllerTest {
         invite.setListName("Weekly");
         when(groceryListService.getPendingGroceryInvites("bob")).thenReturn(List.of(invite));
 
-        mockMvc.perform(get("/api/groceryLists/share/pending").param("username", "bob"))
+        mockMvc.perform(get("/api/groceryLists/share/pending").param("username", "bob").with(asUser("bob")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].id").value("INV1"));
     }
@@ -338,12 +366,14 @@ class GroceryListControllerTest {
     void respondToShare() throws Exception {
         mockMvc.perform(post("/api/groceryLists/share/respond")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"recipientUsername\":\"bob\",\"inviteId\":\"INV1\",\"accept\":\"true\"}"))
+                        .content("{\"recipientUsername\":\"bob\",\"inviteId\":\"INV1\",\"accept\":\"true\"}")
+                        .with(asUser("bob")))
                 .andExpect(status().isOk());
 
         mockMvc.perform(post("/api/groceryLists/share/respond")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"recipientUsername\":\"bob\"}"))
+                        .content("{\"recipientUsername\":\"bob\"}")
+                        .with(asUser("bob")))
                 .andExpect(status().isBadRequest());
     }
 
@@ -359,7 +389,8 @@ class GroceryListControllerTest {
         when(groceryListService.unshareGroceryList("bob", "L1", "carol")).thenReturn(false);
         mockMvc.perform(post("/api/groceryLists/unshare")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"ownerUsername\":\"bob\",\"listId\":\"L1\",\"memberUsername\":\"carol\"}"))
+                        .content("{\"ownerUsername\":\"bob\",\"listId\":\"L1\",\"memberUsername\":\"carol\"}")
+                        .with(asUser("bob")))
                 .andExpect(status().isBadRequest());
     }
 
