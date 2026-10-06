@@ -106,7 +106,7 @@ How this was checked: code review, compiler warnings from a clean build, and the
 - [ ] **20. Deprecated APIs.** 31 old-style `onChange { _ in }`, 6 `NavigationLink(isActive:)` (`ContentView`, `ActiveGroceryListView`), 33 `NavigationView` (including sheets inside `NavigationStack`, which causes odd titles and back buttons).
 - [ ] **21. Dead code.** `PlaidView`, `SpendingPeriodView`, `ReactionBubble`, `WatchlistView` (commented out of `InvestmentHomeView`), backend `OCRService` (Mac-only path; receipts use GPT-4o) and the `tess4j` dependency.
 - [ ] **22. Repo junk.** Duplicate `PlotLineWidgets/` at the repo root (Xcode uses `PlotLine/PlotLineWidgets/`), `backend/target 2/`, tracked `.DS_Store`.
-- [ ] **23. CI only runs grocery tests.** `.github/workflows/grocery-tests.yml` runs `Grocery*Test`. Add the auth, security, deletion and Apple tests (`./mvnw test` minus `BackendApplicationTests`, which needs real env vars).
+- [x] **23. CI only runs grocery tests.** Done 2026-10-05, see "Testing" below. `.github/workflows/grocery-tests.yml` runs `Grocery*Test`. Add the auth, security, deletion and Apple tests (`./mvnw test` minus `BackendApplicationTests`, which needs real env vars).
 - [ ] **24. Logging.** 223 `System.out.println`/`printStackTrace`. **Fix:** SLF4J with levels.
 - [ ] Other compiler warnings: unreachable `catch` in `DietaryRestrictionsAPI.swift:93`, non-Sendable capture in `MealsAPI.swift:58`, main-actor mutations in the Google sign-in callback (`AuthViewModel.swift` ~188-202), unused results.
 
@@ -127,3 +127,44 @@ How this was checked: code review, compiler warnings from a clean build, and the
 - **In-app support / feedback link.**
 
 Suggested order: 1–4 → 5, 11–13 → 14–16 → 9 → the rest.
+
+---
+
+## Testing
+
+**CI:** `.github/workflows/tests.yml` runs on every PR (and each new commit on it), on pushes to `main`, and manually from the Actions tab.
+- **Backend job (Ubuntu):** runs **all** Java tests (`./mvnw test`) with throwaway dummy env vars. Storage is in-memory and OpenAI/Twilio/Plaid are faked, so no real secrets are needed and nothing touches production.
+- **iOS job (macOS, free for public repos):** builds the app with placeholder settings (the real `Config.xcconfig` stays gitignored) and runs the Swift unit tests on the newest iPhone simulator.
+- **Report job:** posts one "Test results" comment per PR, with pass/fail per area for backend and iOS, failing tests listed, and known-bug skips. It updates in place on each push. The summary logic is in `.github/scripts/test_summary.py`.
+- Replaces the old `grocery-tests.yml`.
+
+| Area | Backend | iOS |
+|---|---|---|
+| Sign in / sign up / Apple / Google / terms / phone gate / deletion / security | ✅ 79 | ✅ 8 |
+| Calendar (events, invites, sharing, approvals) | ✅ 9 | ✅ 4 |
+| Budget / spending / subscriptions / receipts / recurring charges / Plaid | ✅ 11 (+1 known bug) | ✅ 6 |
+| Investing (portfolio, rating, watchlist) | ✅ 5 | ✅ 4 |
+| Nutrition / meals / dietary restrictions | ✅ 6 | ✅ 5 |
+| Friends / requests / goal feed / chat | ✅ 5 | ✅ 4 |
+| Profile / trophies / membership | ✅ 5 | ✅ 2 |
+| Goals (weekly + long-term) | ✅ 3 (+1 known bug) | ✅ 2 |
+| Grocery lists | ✅ 50 | ✅ 2 |
+| App startup | ✅ 1 | |
+
+Totals: **backend 176 tests (174 pass, 2 skipped as known bugs), iOS 37 tests.**
+
+**Where things live**
+- Backend feature tests: `backend/src/test/java/com/plotline/backend/features/`. These boot the whole backend against in-memory S3 and go through the real login and ownership checks. Shared helpers are in `FeatureTestBase`.
+- iOS unit tests: `PlotLine/PlotLineTests/`, one file per area.
+
+**Changes made to make this work**
+- `S3Service`, `WeeklyGoalsService`, `LongTermGoalsService`, `FriendsFeedService`, `S3TokenStore` and `S3PlaidCursorStore` now use the shared S3 client from `AWSConfig` instead of each building their own. Production behavior is the same.
+- **Fresh clones couldn't build the app** (found by rehearsing CI on a clean copy):
+  - The widget's `Info.plist` was gitignored by `**/Info.plist`; there's now an exception for it.
+  - `Preview Content/Preview Assets.xcassets` was an empty folder git couldn't store; it now has the standard `Contents.json`.
+- Test doubles behave like real S3: 404 with a `NoSuchKey` error code, and only the declared content length is stored.
+
+**Not covered:** iOS UI tests (screen tapping), Google sign-in against Google's real token check, Plaid flows that need a real bank link, widgets, and notifications.
+
+### Bugs found while writing tests
+Tracked separately in [BUGS.md](BUGS.md) and not fixed yet (on hold until the CI work is done).

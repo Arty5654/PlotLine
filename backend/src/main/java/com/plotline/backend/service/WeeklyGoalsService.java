@@ -31,18 +31,10 @@ public class WeeklyGoalsService {
   private final UserProfileService userProfileService;
   private final ChatMessageService chatMessageService;
 
-  public WeeklyGoalsService(UserProfileService userProfileService, ChatMessageService chatMessageService) {
+  public WeeklyGoalsService(UserProfileService userProfileService, ChatMessageService chatMessageService, S3Client s3Client) {
     this.chatMessageService = chatMessageService;
-    Dotenv dotenv = Dotenv.configure().ignoreIfMissing().load();
-    String accessKey = dotenv.get("AWS_ACCESS_KEY_ID");
-    String secretKey = dotenv.get("AWS_SECRET_ACCESS_KEY");
-    String region = dotenv.get("AWS_REGION");
-
     this.userProfileService = userProfileService;
-    this.s3Client = S3Client.builder()
-        .region(Region.of(region))
-        .credentialsProvider(StaticCredentialsProvider.create(AwsBasicCredentials.create(accessKey, secretKey)))
-        .build();
+    this.s3Client = s3Client; // shared client from AWSConfig
   }
 
   public Map<String, Object> getWeeklyGoals(String username) {

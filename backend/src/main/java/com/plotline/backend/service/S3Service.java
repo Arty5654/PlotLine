@@ -18,18 +18,10 @@ public class S3Service {
 
   private final UserProfileService userProfileService;
 
-  public S3Service(UserProfileService userProfileService) {
-    Dotenv dotenv = Dotenv.configure().ignoreIfMissing().load(); // Load .env file (ignore if absent)
-    String accessKey = dotenv.get("AWS_ACCESS_KEY_ID");
-    String secretKey = dotenv.get("AWS_SECRET_ACCESS_KEY");
-    String region = dotenv.get("AWS_REGION");
-    String jwtKey = dotenv.get("JWT_SECRET_KEY");
+  public S3Service(UserProfileService userProfileService, S3Client s3Client) {
+    // shared client from AWSConfig (tests swap in an in-memory one)
     this.userProfileService = userProfileService;
-
-    this.s3Client = S3Client.builder()
-        .region(Region.of(region))
-        .credentialsProvider(StaticCredentialsProvider.create(AwsBasicCredentials.create(accessKey, secretKey)))
-        .build();
+    this.s3Client = s3Client;
   }
 
   public void uploadFile(String fileName, InputStream inputStream, long contentLength) {

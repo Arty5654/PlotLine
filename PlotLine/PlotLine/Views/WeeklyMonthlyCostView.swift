@@ -412,6 +412,10 @@ struct WeeklyMonthlyCostView: View {
                 }
             )
         }
+        // subscriptions still waiting to be confirmed count toward the app icon badge
+        .onChange(of: recurringPrompts.count) { _, count in
+            UserDefaults.standard.set(count, forKey: BadgeManager.pendingRecurringPromptsKey)
+        }
         .onReceive(NotificationCenter.default.publisher(for: .plaidSynced)) { _ in
             loadMonthlyData()
             fetchMonthlyFeedback(for: selectedMonth)
@@ -1170,10 +1174,22 @@ struct WeeklyMonthlyCostView: View {
         content.body = message
         content.sound = .default
         content.interruptionLevel = .timeSensitive
-        content.badge = NSNumber(value: UIApplication.shared.applicationIconBadgeNumber + 1)
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 5, repeats: false)
         let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: trigger)
         UNUserNotificationCenter.current().add(request)
+    }
+
+    // Remembers which recurring charges have already triggered a notification.
+    // Returns true if any of these charges is new.
+    private static let notifiedRecurringChargesKey = "notifiedRecurringCharges"
+
+    private static func markNewRecurringCharges(_ keys: [String]) -> Bool {
+        var notified = Set(UserDefaults.standard.stringArray(forKey: notifiedRecurringChargesKey) ?? [])
+        let new = keys.filter { !notified.contains($0) }
+        guard !new.isEmpty else { return false }
+        notified.formUnion(new)
+        UserDefaults.standard.set(Array(notified), forKey: notifiedRecurringChargesKey)
+        return true
     }
 
     // MARK: - Recurring subscription prompts (Plaid)
@@ -1192,10 +1208,13 @@ struct WeeklyMonthlyCostView: View {
                     self.recurringPrompts = decoded.prompts
                     self.showRecurringPrompt = true
                 }
-                sendNotification(
-                    title: "Subscription detected",
-                    message: "We found recurring charges. Open the app to confirm."
-                )
+                // only notify about charges we haven't told the user about yet
+                if Self.markNewRecurringCharges(decoded.prompts.map(\.snoozeKey)) {
+                    sendNotification(
+                        title: "Subscription detected",
+                        message: "We found recurring charges. Open the app to confirm."
+                    )
+                }
             }
         } catch {
             print("recurring prompt fetch error:", error)

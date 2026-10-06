@@ -13,3 +13,5 @@
 **/Config.xcconfig
 
 **/Info.plist
+# the widget's Info.plist has no secrets and the build needs it
+!PlotLineWidgets/Info.plist
