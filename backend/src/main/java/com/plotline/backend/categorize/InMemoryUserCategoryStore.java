@@ -17,6 +17,11 @@ public class InMemoryUserCategoryStore implements UserCategoryStore {
   }
 
   @Override
+  public synchronized void deleteUser(String username) {
+    byUser.remove(username);
+  }
+
+  @Override
   public synchronized void saveOverride(String username, String merchantNormalized, String category) {
     byUser.computeIfAbsent(username, k -> new HashMap<>())
           .put(merchantNormalized, category);

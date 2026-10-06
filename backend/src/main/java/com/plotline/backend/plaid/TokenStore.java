@@ -12,4 +12,5 @@ public interface TokenStore {
 
   void saveSelectedAccounts(String username, String itemId, List<String> accountIds);
   List<String> getSelectedAccounts(String username, String itemId);
+  void deleteUser(String username); // removes all tokens and selected accounts (account deletion)
 }

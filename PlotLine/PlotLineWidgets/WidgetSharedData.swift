@@ -3,7 +3,7 @@
 
 import Foundation
 
-let widgetAppGroupID = "group.com.ArteomAvetissian.PlotLine"
+let widgetAppGroupID = "group.com.ArteomAvetissian.PlotLine.shared"
 
 // MARK: - App Groups UserDefaults
 
@@ -19,6 +19,7 @@ enum WidgetKey {
     static let username         = "widget_username"
     static let baseURL          = "widget_base_url"
     static let apiKey           = "widget_api_key"
+    static let authToken        = "widget_auth_token"
     static let nutritionToday   = "widget_nutrition_today"
     static let weeklyGoals      = "widget_weekly_goals"
     static let longTermGoals    = "widget_longterm_goals"

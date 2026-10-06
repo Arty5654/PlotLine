@@ -4,12 +4,9 @@ import java.nio.charset.StandardCharsets;
 
 import org.springframework.stereotype.Service;
 
-import com.twilio.http.TwilioRestClient;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.plotline.backend.dto.S3UserRecord;
 import com.twilio.Twilio;
-import com.twilio.type.PhoneNumber;
-import com.twilio.rest.api.v2010.account.Message;
 import com.twilio.rest.verify.v2.service.VerificationCheck;
 import com.twilio.rest.verify.v2.service.Verification;
 
@@ -25,8 +22,8 @@ import static com.plotline.backend.util.UsernameUtils.normalize;
 
 @Service
 public class SmsService {
-  private final TwilioRestClient twilioRestClient;
-  private final String sender;
+  // codes go out through Twilio Verify, which sends from Twilio's own numbers,
+  // so no phone number of our own is needed
   private final String verifyServiceSid;
   private final S3Client s3Client;
   private final String bucketName = "plotline-database-bucket";
@@ -46,15 +43,12 @@ public class SmsService {
     Dotenv dotenv = Dotenv.configure().ignoreIfMissing().load();
     String sid = resolveEnv(dotenv, "TWILIO_ACCOUNT_SID");
     String authToken = resolveEnv(dotenv, "TWILIO_AUTH_TOKEN");
-    this.sender = resolveEnv(dotenv, "TWILIO_PHONE_NUMBER");
     this.verifyServiceSid = resolveEnv(dotenv, "TWILIO_VERIFY_SERVICE_SID");
-    this.twilioConfigured = sid != null && authToken != null && sender != null && verifyServiceSid != null;
+    this.twilioConfigured = sid != null && authToken != null && verifyServiceSid != null;
 
     if (twilioConfigured) {
       Twilio.init(sid, authToken);
-      this.twilioRestClient = Twilio.getRestClient();
     } else {
-      this.twilioRestClient = null;
       System.err.println("Twilio credentials are not fully configured; SMS features are disabled.");
     }
     this.s3Client = s3Client;
@@ -63,17 +57,8 @@ public class SmsService {
 
   private void ensureTwilioConfigured() {
     if (!twilioConfigured) {
-      throw new IllegalStateException("Twilio is not configured. Set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER, and TWILIO_VERIFY_SERVICE_SID.");
+      throw new IllegalStateException("Twilio is not configured. Set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_VERIFY_SERVICE_SID.");
     }
-  }
-
-  public void sendSms(String toNumber) {
-    ensureTwilioConfigured();
-    Message.creator(
-        new PhoneNumber(toNumber),
-        new PhoneNumber(sender),
-        "Hello from Plotline!"
-    ).create(twilioRestClient);
   }
 
   public void sendVerificationCode(String toNumber) {

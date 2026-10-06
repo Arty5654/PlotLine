@@ -44,7 +44,8 @@ struct BudgetProvider: AppIntentTimelineProvider {
         let username = defaults.string(forKey: WidgetKey.username) ?? ""
         let baseURL  = defaults.string(forKey: WidgetKey.baseURL)  ?? ""
         let apiKey   = defaults.string(forKey: WidgetKey.apiKey)   ?? ""
-        guard !username.isEmpty, !baseURL.isEmpty else { return nil }
+        let token    = defaults.string(forKey: WidgetKey.authToken) ?? ""
+        guard !username.isEmpty, !baseURL.isEmpty, !token.isEmpty else { return nil }
 
         let now = Date()
         let monthFmt = DateFormatter()
@@ -55,6 +56,7 @@ struct BudgetProvider: AppIntentTimelineProvider {
         guard let costsURL = URL(string: "\(baseURL)/api/costs/monthly/\(username)?month=\(currentMonth)") else { return nil }
         var costsRequest = URLRequest(url: costsURL)
         if !apiKey.isEmpty { costsRequest.setValue(apiKey, forHTTPHeaderField: "X-API-Key") }
+        costsRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
 
         guard let (costsData, _) = try? await URLSession.shared.data(for: costsRequest),
               let periodData = try? JSONDecoder().decode(BudgetPeriodFile.self, from: costsData) else { return nil }
@@ -88,6 +90,7 @@ struct BudgetProvider: AppIntentTimelineProvider {
         }
         var budgetRequest = URLRequest(url: budgetURL)
         if !apiKey.isEmpty { budgetRequest.setValue(apiKey, forHTTPHeaderField: "X-API-Key") }
+        budgetRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
 
         var monthlyBudget = 0.0
         if let (budgetData, _) = try? await URLSession.shared.data(for: budgetRequest),

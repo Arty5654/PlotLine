@@ -49,6 +49,13 @@ public class InMemoryTokenStore implements TokenStore {
   }
 
   @Override
+  public synchronized void deleteUser(String username) {
+    Map<String, String> tokens = byUser.remove(username);
+    if (tokens != null) tokens.keySet().forEach(itemToUser::remove);
+    selectedByUser.remove(username);
+  }
+
+  @Override
   public synchronized List<String> getSelectedAccounts(String username, String itemId) {
     var perUser = selectedByUser.get(username);
     if (perUser == null) return List.of();

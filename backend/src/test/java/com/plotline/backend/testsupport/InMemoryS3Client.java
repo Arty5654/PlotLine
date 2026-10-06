@@ -1,5 +1,6 @@
 package com.plotline.backend.testsupport;
 
+import software.amazon.awssdk.awscore.exception.AwsErrorDetails;
 import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.core.sync.ResponseTransformer;
@@ -29,7 +30,7 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * A minimal, in-memory implementation of the AWS {@link S3Client} interface for tests.
  *
- * <p>Only the operations that {@code GroceryListService} actually uses are implemented;
+ * <p>Only the operations that {@code GroceryListService} and {@code AuthService} use are implemented;
  * every other operation keeps the interface's default (which throws). Objects live in a
  * thread-safe map so concurrency tests behave like a shared store.
  *
@@ -71,6 +72,15 @@ public class InMemoryS3Client implements S3Client {
         lastModified.remove(key);
     }
 
+    // shaped like real S3's error: 404 with a "NoSuchKey" error code
+    private static NoSuchKeyException noSuchKey(String key) {
+        return (NoSuchKeyException) NoSuchKeyException.builder()
+                .statusCode(404)
+                .message("No such key: " + key)
+                .awsErrorDetails(AwsErrorDetails.builder().errorCode("NoSuchKey").errorMessage("No such key: " + key).build())
+                .build();
+    }
+
     // ── SdkClient / AutoCloseable ──────────────────────────────────────────────
 
     @Override
@@ -101,7 +111,7 @@ public class InMemoryS3Client implements S3Client {
             ResponseTransformer<GetObjectResponse, ReturnT> transformer) {
         byte[] data = store.get(request.key());
         if (data == null) {
-            throw NoSuchKeyException.builder().message("No such key: " + request.key()).build();
+            throw noSuchKey(request.key());
         }
         try {
             GetObjectResponse response = GetObjectResponse.builder()
@@ -144,7 +154,7 @@ public class InMemoryS3Client implements S3Client {
     public HeadObjectResponse headObject(HeadObjectRequest request) {
         byte[] data = store.get(request.key());
         if (data == null) {
-            throw NoSuchKeyException.builder().message("No such key: " + request.key()).build();
+            throw noSuchKey(request.key());
         }
         return HeadObjectResponse.builder().contentLength((long) data.length).build();
     }

@@ -5,6 +5,8 @@ public class SignUpRequest {
     private String email;
     private String phone;
     private String password;
+    // the user ticked "I'm 18 or older and agree to the Terms and Privacy Policy"
+    private Boolean acceptedTerms;
     
     public SignUpRequest() {
     }
@@ -40,6 +42,14 @@ public class SignUpRequest {
         this.phone = phone;
     }
     
+    public Boolean getAcceptedTerms() {
+        return acceptedTerms;
+    }
+
+    public void setAcceptedTerms(Boolean acceptedTerms) {
+        this.acceptedTerms = acceptedTerms;
+    }
+
     public String getPassword() {
         return password;
     }

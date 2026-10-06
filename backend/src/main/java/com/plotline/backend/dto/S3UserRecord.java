@@ -10,7 +10,16 @@ public class S3UserRecord {
     private String email;
     private String password;
     private Boolean isGoogle;
+    private Boolean isApple;
     private Boolean isVerified;
+    // stable account ids from Google / Apple, used to recognize returning social sign-ins
+    private String googleSub;
+    private String appleSub;
+    // epoch millis; login tokens issued before this belong to an older account with the same name
+    private Long createdAt;
+    // which Terms of Service / Privacy Policy version the user agreed to, and when (epoch millis)
+    private String termsVersion;
+    private Long termsAcceptedAt;
 
     public S3UserRecord() {
     }
@@ -71,6 +80,54 @@ public class S3UserRecord {
 
     public void setIsGoogle(Boolean isGoogle) {
         this.isGoogle = isGoogle;
+    }
+
+    public Boolean getIsApple() {
+        return isApple;
+    }
+
+    public void setIsApple(Boolean isApple) {
+        this.isApple = isApple;
+    }
+
+    public String getGoogleSub() {
+        return googleSub;
+    }
+
+    public void setGoogleSub(String googleSub) {
+        this.googleSub = googleSub;
+    }
+
+    public String getAppleSub() {
+        return appleSub;
+    }
+
+    public void setAppleSub(String appleSub) {
+        this.appleSub = appleSub;
+    }
+
+    public String getTermsVersion() {
+        return termsVersion;
+    }
+
+    public void setTermsVersion(String termsVersion) {
+        this.termsVersion = termsVersion;
+    }
+
+    public Long getTermsAcceptedAt() {
+        return termsAcceptedAt;
+    }
+
+    public void setTermsAcceptedAt(Long termsAcceptedAt) {
+        this.termsAcceptedAt = termsAcceptedAt;
+    }
+
+    public Long getCreatedAt() {
+        return createdAt;
+    }
+
+    public void setCreatedAt(Long createdAt) {
+        this.createdAt = createdAt;
     }
 
     public Boolean getIsVerified() {

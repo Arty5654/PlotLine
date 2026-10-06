@@ -51,6 +51,17 @@ public class S3UserCategoryStore implements UserCategoryStore {
         System.out.println("Saved category override for " + username + ": " + merchantNormalized + " → " + category);
     }
 
+    @Override
+    public synchronized void deleteUser(String username) {
+        cache.remove(username);
+        loadedUsers.remove(username);
+        try {
+            s3Service.deleteFile(OVERRIDES_PREFIX + username.toLowerCase() + ".json");
+        } catch (Exception e) {
+            System.err.println("Error deleting category overrides for " + username + ": " + e.getMessage());
+        }
+    }
+
     private void loadIfNeeded(String username) {
         if (loadedUsers.contains(username)) {
             return;

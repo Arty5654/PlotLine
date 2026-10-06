@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.plotline.backend.dto.SmsRequest;
 import com.plotline.backend.dto.SmsResponse;
 import com.plotline.backend.dto.VerificationRequest;
+import com.plotline.backend.service.AuthService;
 import com.plotline.backend.service.SmsService;
 
 import com.twilio.twiml.voice.Sms;
@@ -20,16 +21,10 @@ public class SmsController {
 
   @Autowired
   private final SmsService smsService;
-  public SmsController(SmsService smsService) {
+  private final AuthService authService;
+  public SmsController(SmsService smsService, AuthService authService) {
+    this.authService = authService;
     this.smsService = smsService;
-  }
-
-  @PostMapping("/send")
-  public ResponseEntity<?> sendSms(SmsRequest smsRequest) {
-    String toNumber = smsRequest.getToNumber();
-    smsService.sendSms(toNumber);
-
-    return ResponseEntity.ok().build();
   }
 
   @PostMapping("/send-verification")
@@ -64,6 +59,8 @@ public class SmsController {
     boolean isValid = smsService.verifyCode(verificationRequest.getPhoneNumber(), verificationRequest.getCode(), verificationRequest.getUsername());
 
     if (isValid) {
+      // the account is now verified: drop the cached status so the app unlocks right away
+      authService.evictAccountCache(verificationRequest.getUsername());
       return ResponseEntity.ok(new SmsResponse("Verification successful", true));
     } else {
       return ResponseEntity.ok(new SmsResponse("Incorrect Verification Code", false));

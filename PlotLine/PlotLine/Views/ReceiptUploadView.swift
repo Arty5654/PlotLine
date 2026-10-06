@@ -330,7 +330,7 @@ extension ReceiptUploadView {
     private func fetchCategoriesFromBudget(type: String, completion: @escaping ([String]?) -> Void) {
         let urlString = "\(BackendConfig.baseURLString)/api/budget/\(username)/\(type)"
         guard let url = URL(string: urlString) else { completion(nil); return }
-        URLSession.shared.dataTask(with: url) { data, _, _ in
+        URLSession.shared.dataTask(with: BackendConfig.authenticatedRequest(url: url)) { data, _, _ in
             guard let data,
                   let resp = try? JSONDecoder().decode(BudgetResponse.self, from: data) else { completion(nil); return }
             completion(Array(resp.budget.keys))
@@ -340,7 +340,7 @@ extension ReceiptUploadView {
     private func fetchCategoriesFromCosts(type: String, completion: @escaping ([String]?) -> Void) {
         let urlString = "\(BackendConfig.baseURLString)/api/costs/\(username)/\(type)"
         guard let url = URL(string: urlString) else { completion(nil); return }
-        URLSession.shared.dataTask(with: url) { data, _, _ in
+        URLSession.shared.dataTask(with: BackendConfig.authenticatedRequest(url: url)) { data, _, _ in
             guard let data,
                   let resp = try? JSONDecoder().decode(WeeklyMonthlyCostResponse.self, from: data) else { completion(nil); return }
             completion(Array(resp.costs.keys))
@@ -353,6 +353,7 @@ extension ReceiptUploadView {
 
         let boundary = UUID().uuidString
         var request = URLRequest(url: URL(string: "\(BackendConfig.baseURLString)/api/costs/upload-receipt")!)
+        BackendConfig.addApiKey(to: &request)
         request.httpMethod = "POST"
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
 
@@ -481,6 +482,7 @@ extension ReceiptUploadView {
             completion(false); return
         }
         var request = URLRequest(url: URL(string: "\(BackendConfig.baseURLString)/api/costs/merge")!)
+        BackendConfig.addApiKey(to: &request)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = jsonData
@@ -532,6 +534,7 @@ extension ReceiptUploadView {
         }
 
         var request = URLRequest(url: URL(string: "\(BackendConfig.baseURLString)/api/costs/undo-receipt")!)
+        BackendConfig.addApiKey(to: &request)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = jsonData
@@ -587,6 +590,7 @@ extension ReceiptUploadView {
         }
 
         var undoRequest = URLRequest(url: URL(string: "\(BackendConfig.baseURLString)/api/costs/undo-receipt")!)
+        BackendConfig.addApiKey(to: &undoRequest)
         undoRequest.httpMethod = "POST"
         undoRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
         undoRequest.httpBody = undoData
@@ -617,6 +621,7 @@ extension ReceiptUploadView {
             }
 
             var addRequest = URLRequest(url: URL(string: "\(BackendConfig.baseURLString)/api/costs/add-dated")!)
+            BackendConfig.addApiKey(to: &addRequest)
             addRequest.httpMethod = "POST"
             addRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
             addRequest.httpBody = addData

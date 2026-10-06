@@ -184,7 +184,7 @@ struct WatchlistView: View {
     func fetchWatchlist() {
         guard let url = URL(string: "\(BackendConfig.baseURLString)/api/watchlist/\(username)") else { return }
 
-        URLSession.shared.dataTask(with: url) { data, _, _ in
+        URLSession.shared.dataTask(with: BackendConfig.authenticatedRequest(url: url)) { data, _, _ in
             if let data = data,
                let decoded = try? JSONDecoder().decode([String].self, from: data) {
                 DispatchQueue.main.async {
@@ -204,6 +204,7 @@ struct WatchlistView: View {
         guard let jsonData = try? JSONEncoder().encode(payload) else { return }
 
         var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = jsonData
@@ -224,6 +225,7 @@ struct WatchlistView: View {
         guard let jsonData = try? JSONEncoder().encode(payload) else { return }
 
         var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = jsonData

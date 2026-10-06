@@ -8,6 +8,7 @@ import com.plotline.backend.dto.FriendList;
 import com.plotline.backend.dto.FriendPost;
 import static com.plotline.backend.util.UsernameUtils.normalize;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import io.github.cdimascio.dotenv.Dotenv;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
@@ -32,6 +33,7 @@ public class FriendsFeedService {
   private final S3Client s3Client;
   private final String bucketName = "plotline-database-bucket";
 
+  @Autowired
   public FriendsFeedService() {
     Dotenv dotenv = Dotenv.configure().ignoreIfMissing().load();
     String accessKey = dotenv.get("AWS_ACCESS_KEY_ID");
@@ -42,6 +44,11 @@ public class FriendsFeedService {
         .region(Region.of(region))
         .credentialsProvider(StaticCredentialsProvider.create(AwsBasicCredentials.create(accessKey, secretKey)))
         .build();
+  }
+
+  // for tests: use the given S3 client instead of building one from the environment
+  FriendsFeedService(S3Client s3Client) {
+    this.s3Client = s3Client;
   }
 
   public boolean addPostToFeed(FriendPost post) {
@@ -218,6 +225,27 @@ public class FriendsFeedService {
       e.printStackTrace();
       return false;
     }
+  }
+
+  // account deletion: drop the user's posts, likes and comments from the shared feed
+  public void removeUser(String username) throws IOException {
+    List<FriendPost> posts;
+    try {
+      posts = new ArrayList<>(loadPosts());
+    } catch (NoSuchKeyException e) {
+      return; // no feed yet
+    }
+    String commentPrefix = username.toLowerCase() + ": ";
+    posts.removeIf(post -> post.getUsername() != null && post.getUsername().equalsIgnoreCase(username));
+    for (FriendPost post : posts) {
+      if (post.getLikedBy() != null) {
+        post.getLikedBy().removeIf(liker -> liker.equalsIgnoreCase(username));
+      }
+      if (post.getComments() != null) {
+        post.getComments().removeIf(comment -> comment.toLowerCase().startsWith(commentPrefix));
+      }
+    }
+    savePosts(posts);
   }
 
   private List<FriendPost> loadPosts() throws IOException {

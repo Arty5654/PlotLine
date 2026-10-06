@@ -5,7 +5,7 @@
 import Foundation
 import WidgetKit
 
-private let appGroupID = "group.com.ArteomAvetissian.PlotLine"
+private let appGroupID = "group.com.ArteomAvetissian.PlotLine.shared"
 
 private var sharedDefaults: UserDefaults {
     UserDefaults(suiteName: appGroupID) ?? .standard
@@ -17,6 +17,7 @@ private enum WKey {
     static let username         = "widget_username"
     static let baseURL          = "widget_base_url"
     static let apiKey           = "widget_api_key"
+    static let authToken        = "widget_auth_token"
     static let nutritionToday   = "widget_nutrition_today"
     static let weeklyGoals      = "widget_weekly_goals"
     static let longTermGoals    = "widget_longterm_goals"
@@ -56,6 +57,15 @@ enum WidgetDataWriter {
         if let key = BackendConfig.apiKey {
             sharedDefaults.set(key, forKey: WKey.apiKey)
         }
+        // widgets call the backend too, so they need the login token
+        sharedDefaults.set(KeychainManager.loadToken(), forKey: WKey.authToken)
+    }
+
+    // on sign-out: widgets stop fetching for the old account
+    static func clearCredentials() {
+        sharedDefaults.removeObject(forKey: WKey.username)
+        sharedDefaults.removeObject(forKey: WKey.authToken)
+        reloadWidgets()
     }
 
     static func writeNutrition(

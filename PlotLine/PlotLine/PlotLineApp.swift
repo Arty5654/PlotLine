@@ -62,6 +62,10 @@ struct PlotLineApp: App {
                     .environmentObject(calendarVM)
                     .environmentObject(friendsVM)
                     .environmentObject(chatVM)
+                    // keep the widgets' copy of the login token current (sign-in, refresh)
+                    .onChange(of: session.authToken) { token in
+                        if token != nil { WidgetDataWriter.writeCredentials() }
+                    }
                     .onOpenURL { url in
                         if url.scheme == "plotline" {
                             var userInfo: [String: Any] = ["destination": url.host ?? ""]
@@ -77,6 +81,7 @@ struct PlotLineApp: App {
         }
         .onChange(of: scenePhase) { phase in
             guard phase == .active else { return }
+            session.refreshSession()
             let username = UserDefaults.standard.string(forKey: "loggedInUsername") ?? ""
             guard !username.isEmpty else { return }
             WidgetDataWriter.writeCredentials()

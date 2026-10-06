@@ -171,7 +171,39 @@ public class S3TokenStore implements TokenStore {
         return List.of();
     }
 
+    @Override
+    public synchronized void deleteUser(String username) {
+        Map<String, String> tokens = listAccessTokens(username);
+
+        // load the full item mapping first so persisting doesn't drop other users' entries
+        try {
+            String json = readS3Object(TOKENS_PREFIX + "item-to-user.json");
+            if (json != null) {
+                Map<String, String> mapping = objectMapper.readValue(json, new TypeReference<Map<String, String>>() {});
+                mapping.forEach(itemToUserCache::putIfAbsent);
+            }
+        } catch (Exception e) {
+            System.err.println("Error loading item-to-user mapping: " + e.getMessage());
+        }
+        tokens.keySet().forEach(itemToUserCache::remove);
+        itemToUserCache.values().removeIf(owner -> owner.equals(username));
+        persistItemToUser();
+
+        tokenCache.remove(username);
+        selectedAccountsCache.remove(username);
+        deleteS3Object(TOKENS_PREFIX + username + ".json");
+        deleteS3Object(ACCOUNTS_PREFIX + username + ".json");
+    }
+
     // --- S3 persistence helpers ---
+
+    private void deleteS3Object(String key) {
+        try {
+            s3Client.deleteObject(DeleteObjectRequest.builder().bucket(BUCKET_NAME).key(key).build());
+        } catch (Exception e) {
+            System.err.println("Error deleting S3 object " + key + ": " + e.getMessage());
+        }
+    }
 
     private void persistTokens(String username) {
         try {
