@@ -53,7 +53,7 @@ struct AuthView: View {
             .background(Color(.systemBackground))
             // empty inline bar: invisible at the top, blurs content that scrolls under the status bar
             .navigationBarTitleDisplayMode(.inline)
-            .onChange(of: session.isSignin) { _ in
+            .onChange(of: session.isSignin) { _, _ in
                 session.loginErrorMessage = nil
                 session.signupErrorMessage = nil
             }

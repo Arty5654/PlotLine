@@ -14,50 +14,44 @@ struct StockNewsView: View {
     private var username: String {
         return UserDefaults.standard.string(forKey: "loggedInUsername") ?? "UnknownUser"
     }
-    
-    private var apiKey: String {
-        return Bundle.main.object(forInfoDictionaryKey: "NewsAPIKey") as? String ?? "NO KEY FOUND"
-    }
 
 
     var body: some View {
-        NavigationStack {
-            List(articles, id: \.title) { article in
-                Link(destination: URL(string: article.url)!) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(article.title)
-                            .font(.headline)
-                            .foregroundColor(.primary)
-                            .multilineTextAlignment(.leading)
-                        
-                        if let desc = article.description {
-                            Text(desc)
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                                .lineLimit(3)
-                        }
-
-                        HStack {
-                            Spacer()
-                            Text("Read more →")
-                                .font(.caption)
-                                .foregroundColor(.blue)
-                        }
+        List(articles, id: \.title) { article in
+            Link(destination: URL(string: article.url)!) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(article.title)
+                        .font(.headline)
+                        .foregroundColor(.primary)
+                        .multilineTextAlignment(.leading)
+                    
+                    if let desc = article.description {
+                        Text(desc)
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .lineLimit(3)
                     }
-                    .padding(.vertical, 8)
+
+                    HStack {
+                        Spacer()
+                        Text("Read more →")
+                            .font(.caption)
+                            .foregroundColor(.blue)
+                    }
                 }
+                .padding(.vertical, 8)
             }
-            .listStyle(PlainListStyle())
-            .navigationTitle("Market News")
-            .overlay {
-                if articles.isEmpty {
-                    ProgressView("Loading news...")
-                        .padding()
-                }
+        }
+        .listStyle(PlainListStyle())
+        .navigationTitle("Market News")
+        .overlay {
+            if articles.isEmpty {
+                ProgressView("Loading news...")
+                    .padding()
             }
-            .onAppear {
-                fetchRiskAndNews()
-            }
+        }
+        .onAppear {
+            fetchRiskAndNews()
         }
     }
 
@@ -76,20 +70,15 @@ struct StockNewsView: View {
         }.resume()
     }
 
+    // the server fetches the news (its NewsAPI key never ships in the app) and picks the topic from the risk level
     func fetchNews(for risk: String) {
-        let topic: String
-        switch risk.lowercased() {
-        case "low": topic = "long term investing"
-        case "high": topic = "growth stocks OR speculative tech"
-        default: topic = "stock market investing"
-        }
-        print("TOPIC IN NEWS: " + topic)
-        let encoded = topic.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)!
-        let urlStr = "https://newsapi.org/v2/everything?q=\(encoded)&sortBy=publishedAt&language=en&apiKey=\(apiKey)"
-        guard let url = URL(string: urlStr) else { return }
+        var components = URLComponents(string: "\(BackendConfig.baseURLString)/api/news")
+        components?.queryItems = [URLQueryItem(name: "risk", value: risk.lowercased())]
+        guard let url = components?.url else { return }
 
-        URLSession.shared.dataTask(with: url) { data, _, _ in
-            guard let data = data,
+        URLSession.shared.dataTask(with: BackendConfig.authenticatedRequest(url: url)) { data, response, error in
+            guard !AppBanner.reportIfFailed("load market news", data, response, error),
+                  let data = data,
                   let decoded = try? JSONDecoder().decode(NewsResponse.self, from: data) else { return }
 
             DispatchQueue.main.async {

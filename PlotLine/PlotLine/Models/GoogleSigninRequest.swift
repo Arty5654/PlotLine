@@ -6,7 +6,8 @@
 //
 struct GoogleSignInRequest: Codable {
     let idToken: String
-    let username: String
+    // only sent once the server asks new users to pick one ("Username Required")
+    let username: String?
     let email: String
 }
 

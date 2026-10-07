@@ -1,5 +1,8 @@
 package com.plotline.backend.service;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.nio.charset.StandardCharsets;
 
 import org.springframework.stereotype.Service;
@@ -22,6 +25,8 @@ import static com.plotline.backend.util.UsernameUtils.normalize;
 
 @Service
 public class SmsService {
+    private static final Logger log = LoggerFactory.getLogger(SmsService.class);
+
   // codes go out through Twilio Verify, which sends from Twilio's own numbers,
   // so no phone number of our own is needed
   private final String verifyServiceSid;
@@ -49,7 +54,7 @@ public class SmsService {
     if (twilioConfigured) {
       Twilio.init(sid, authToken);
     } else {
-      System.err.println("Twilio credentials are not fully configured; SMS features are disabled.");
+      log.warn("Twilio credentials are not fully configured; SMS features are disabled.");
     }
     this.s3Client = s3Client;
     this.objectMapper = new ObjectMapper();
@@ -71,14 +76,15 @@ public class SmsService {
         "sms"
       ).create();
 
-    System.out.println("Verification send status: " + verification.getStatus());
+    log.debug("Verification send status: {}", verification.getStatus());
   }
 
   public boolean verifyCode(String toNumber, String code, String username) {
     ensureTwilioConfigured();
 
     if (toNumber == null || code == null || username == null) {
-      System.out.println("To " + toNumber + ", Code " + code + ", Username " + username);
+      log.warn("Code check missing a field (phone set: {}, code set: {}, username: {})",
+          toNumber != null, code != null, username);
     }
 
     // verify code with twilio
@@ -118,12 +124,12 @@ public class SmsService {
 
 
       } catch (Exception e) {
-        System.out.println("Error updating user record");
+        log.warn("Error updating user record");
       }
 
     }
 
-    System.out.println("Code check status: " + verificationCheck.getStatus());
+    log.debug("Code check status: {}", verificationCheck.getStatus());
     return "approved".equals(verificationCheck.getStatus());
   }
 

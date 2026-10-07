@@ -1,13 +1,17 @@
 import SwiftUI
 
 struct FriendsFeedView: View {
-    @State private var posts: [FriendPost] = []
-    @State private var isLoading = true
+    @State private var posts: [FriendPost]
+    @State private var isLoading: Bool
+
+    /// posts to show before the first load (Xcode previews)
+    init(previewPosts: [FriendPost] = []) {
+        _posts = State(initialValue: previewPosts)
+        _isLoading = State(initialValue: previewPosts.isEmpty)
+    }
     @State private var showOnlyMyPosts = false
     @State private var newComments: [UUID: String] = [:]
 
-    @Environment(\.colorScheme) var colorScheme
-    private var adaptiveTextColor: Color { colorScheme == .dark ? .white : .blue }
     
     /* Fetch the logged-in username from UserDefaults */
     private var username: String {
@@ -24,145 +28,167 @@ struct FriendsFeedView: View {
 
 
     var body: some View {
-            VStack {
+        VStack(spacing: 0) {
+            Picker("Show", selection: $showOnlyMyPosts) {
+                Text("Friends").tag(false)
+                Text("My posts").tag(true)
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal, PLSpacing.lg)
+            .padding(.vertical, PLSpacing.sm)
+
+            ScrollView {
+                VStack(spacing: PLSpacing.md) {
                     if isLoading {
-                        ProgressView("Loading feed...")
-                            .progressViewStyle(CircularProgressViewStyle())
-                            .padding()
+                        ProgressView("Loading feed…")
+                            .padding(.top, PLSpacing.lg)
                     } else if filteredPosts.isEmpty {
-                        Text(showOnlyMyPosts ? "You haven't shared any goals yet." : "No posts from friends yet.")
-                            .font(.title3)
-                            .foregroundColor(.gray)
-                            .padding()
-                    } else {
-                        List(filteredPosts, id: \.id) { post in
-                            VStack(alignment: .leading, spacing: 8) {
-                                HStack {
-                                    Text(post.username)
-                                        .font(.headline)
-                                        .foregroundColor(adaptiveTextColor)
-                                    Spacer()
-                                }
-                                
-                                Text(post.goal.title)
-                                    .font(.title3)
-                                    .bold()
-                                
-                                ForEach(post.goal.steps) { step in
-                                    Text("- \(step.name)")
-                                        .font(.subheadline)
-                                        .foregroundColor(.secondary)
-                                }
-                                
-                                if let comment = post.comment {
-                                    Text(comment)
-                                        .font(.caption)
-                                        .foregroundColor(.gray)
-                                }
-                                
-                                if post.username == username {
-                                    Button(role: .destructive) {
-                                        deletePost(post)
-                                    } label: {
-                                        Text("Unshare")
-                                            .font(.caption)
-                                            .foregroundColor(.red)
-                                    }
-                                }
-                                
-                                Divider()
-
-                                // Likes row
-                                HStack(spacing: 6) {
-                                    if post.username == username {
-                                        Image(systemName: (post.likedBy?.isEmpty ?? true) ? "heart" : "heart.fill")
-                                            .foregroundColor(.red)
-                                    } else {
-                                        Button(action: { likePost(post) }) {
-                                            Image(systemName: post.likedBy?.contains(username) == true ? "heart.fill" : "heart")
-                                                .foregroundColor(.red)
-                                        }
-                                        .buttonStyle(.plain)
-                                    }
-                                    Text("\(post.likedBy?.count ?? 0) \(post.likedBy?.count == 1 ? "like" : "likes")")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                    Spacer()
-                                }
-
-                                // Who liked (own posts only)
-                                if post.username == username,
-                                   let likers = post.likedBy, !likers.isEmpty {
-                                    Text("Liked by \(likers.joined(separator: ", "))")
-                                        .font(.caption2)
-                                        .foregroundColor(.secondary)
-                                        .italic()
-                                }
-
-                                // Comments
-                                if let comments = post.comments, !comments.isEmpty {
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        ForEach(comments, id: \.self) { comment in
-                                            Text(comment)
-                                                .font(.caption)
-                                                .foregroundColor(.secondary)
-                                        }
-                                    }
-                                }
-
-                                // Comment input (friends' posts only)
-                                if post.username != username {
-                                    HStack {
-                                        TextField("Add a comment…", text: Binding(
-                                            get: { newComments[post.id] ?? "" },
-                                            set: { newComments[post.id] = $0 }
-                                        ))
-                                        .textFieldStyle(RoundedBorderTextFieldStyle())
-
-                                        Button("Send") {
-                                            let text = newComments[post.id, default: ""].trimmingCharacters(in: .whitespaces)
-                                            if !text.isEmpty {
-                                                commentOnPost(post, text)
-                                            }
-                                        }
-                                        .disabled((newComments[post.id] ?? "").trimmingCharacters(in: .whitespaces).isEmpty)
-                                    }
-                                }
-
-                                
-                            }
-                            .padding(.vertical, 6)
+                        VStack(spacing: 8) {
+                            Image(systemName: "newspaper")
+                                .font(.title2)
+                                .foregroundColor(PLColor.textSecondary)
+                            Text(showOnlyMyPosts ? "You haven't shared any goals yet." : "No posts from friends yet.")
+                                .font(.headline)
+                            Text(showOnlyMyPosts ? "Share a long-term goal from Goals." : "When friends share goals, they show up here.")
+                                .font(.subheadline)
+                                .foregroundColor(PLColor.textSecondary)
+                                .multilineTextAlignment(.center)
                         }
-                        .refreshable { fetchFriendsFeed() }
-                        .padding(.vertical, 12)
-                    }
-
-                    // Button to view my posts
-                    Button(action: {
-                        showOnlyMyPosts.toggle()
-                    }) {
-                        Text(showOnlyMyPosts ? "View Friends' Posts" : "View My Posts")
-                            .font(.headline)
-                            .foregroundColor(.white)
-                            .padding()
-                            .frame(maxWidth: .infinity)
-                            .background(Color.blue)
-                            .cornerRadius(10)
-                            .padding()
-                    }
-
-
-                }
-                .navigationTitle("Friends Feed")
-                .navigationBarTitleDisplayMode(.inline)
-                .task {
-                    fetchFriendsFeed()
-                    while !Task.isCancelled {
-                        try? await Task.sleep(nanoseconds: 15_000_000_000)
-                        fetchFriendsFeed()
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, PLSpacing.sm)
+                        .plCard()
+                    } else {
+                        ForEach(filteredPosts, id: \.id) { post in
+                            postCard(post)
+                        }
                     }
                 }
+                .padding(.horizontal, PLSpacing.lg)
+                .padding(.bottom, PLSpacing.lg)
+            }
+            .refreshable { fetchFriendsFeed() }
         }
+        .navigationTitle("Friends Feed")
+        .navigationBarTitleDisplayMode(.inline)
+        .task {
+            fetchFriendsFeed()
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 15_000_000_000)
+                fetchFriendsFeed()
+            }
+        }
+    }
+
+    private func postCard(_ post: FriendPost) -> some View {
+        let isMine = post.username == username
+        let likes = post.likedBy ?? []
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                FriendProfilePicture(username: post.username)
+                    .frame(width: 32, height: 32)
+                Text(post.username)
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                if isMine {
+                    Menu {
+                        Button("Unshare", role: .destructive) { deletePost(post) }
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .foregroundColor(PLColor.textSecondary)
+                            .frame(width: 32, height: 32)
+                    }
+                    .accessibilityLabel("Post options")
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text(post.goal.title)
+                    .font(.headline)
+                ForEach(post.goal.steps) { step in
+                    HStack(spacing: 8) {
+                        Image(systemName: step.isCompleted ? "checkmark.circle.fill" : "circle")
+                            .foregroundColor(step.isCompleted ? PLColor.success : Color(.tertiaryLabel))
+                        Text(step.name)
+                            .foregroundColor(step.isCompleted ? PLColor.textPrimary : PLColor.textSecondary)
+                    }
+                    .font(.subheadline)
+                }
+                if let comment = post.comment, !comment.isEmpty {
+                    Text(comment)
+                        .font(.subheadline)
+                        .foregroundColor(PLColor.textSecondary)
+                }
+            }
+
+            Divider()
+
+            HStack(spacing: 6) {
+                if isMine {
+                    Image(systemName: likes.isEmpty ? "heart" : "heart.fill")
+                        .foregroundColor(.red)
+                } else {
+                    Button { likePost(post) } label: {
+                        Image(systemName: likes.contains(username) ? "heart.fill" : "heart")
+                            .foregroundColor(.red)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(likes.contains(username) ? "Unlike" : "Like")
+                }
+                Text("\(likes.count) \(likes.count == 1 ? "like" : "likes")")
+                    .font(.footnote)
+                    .foregroundColor(PLColor.textSecondary)
+                if isMine, !likes.isEmpty {
+                    Text("· \(likes.joined(separator: ", "))")
+                        .font(.footnote)
+                        .foregroundColor(PLColor.textSecondary)
+                        .lineLimit(1)
+                }
+                Spacer()
+            }
+
+            if let comments = post.comments, !comments.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(comments, id: \.self) { comment in
+                        commentText(comment)
+                    }
+                }
+            }
+
+            // comment box (friends' posts only)
+            if !isMine {
+                let draft = newComments[post.id] ?? ""
+                HStack(spacing: 8) {
+                    TextField("Add a comment…", text: Binding(
+                        get: { newComments[post.id] ?? "" },
+                        set: { newComments[post.id] = $0 }
+                    ))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(Color(.systemBackground))
+                    .clipShape(Capsule())
+
+                    Button {
+                        let text = draft.trimmingCharacters(in: .whitespaces)
+                        if !text.isEmpty { commentOnPost(post, text) }
+                    } label: {
+                        Image(systemName: "paperplane.fill")
+                    }
+                    .disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .accessibilityLabel("Send comment")
+                }
+            }
+        }
+        .plCard()
+    }
+
+    // "name: text" with the name in bold
+    private func commentText(_ comment: String) -> some View {
+        let parts = comment.split(separator: ":", maxSplits: 1).map(String.init)
+        if parts.count == 2 {
+            return Text(parts[0]).font(.footnote.weight(.semibold)) + Text(":" + parts[1]).font(.footnote)
+        }
+        return Text(comment).font(.footnote)
+    }
 
     private func fetchFriendsFeed() {
         if posts.isEmpty { isLoading = true }
@@ -176,7 +202,7 @@ struct FriendsFeedView: View {
 
         URLSession.shared.dataTask(with: request) { data, response, error in
             if let error = error {
-                print("❌ Network error fetching friends feed: \(error.localizedDescription)")
+                AppBanner.report("load the goal feed", error, retry: { self.fetchFriendsFeed() })
                 DispatchQueue.main.async { self.isLoading = false }
                 return
             }
@@ -195,7 +221,7 @@ struct FriendsFeedView: View {
                     self.isLoading = false
                 }
             } catch {
-                print("❌ Error decoding friends feed: \(error)")
+                AppBanner.report("load the goal feed", error, retry: { self.fetchFriendsFeed() })
                 DispatchQueue.main.async { self.isLoading = false }
             }
         }.resume()
@@ -207,8 +233,11 @@ struct FriendsFeedView: View {
         var request = URLRequest(url: url)
         request.httpMethod = "DELETE"
         BackendConfig.addApiKey(to: &request)
-        URLSession.shared.dataTask(with: request) { _, response, _ in
-            guard (response as? HTTPURLResponse)?.statusCode == 200 else { return }
+        URLSession.shared.dataTask(with: request) { _, response, error in
+            guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+                AppBanner.report("delete your post", error, retry: { self.deletePost(post) })
+                return
+            }
             DispatchQueue.main.async { self.fetchFriendsFeed() }
         }.resume()
     }
@@ -218,8 +247,11 @@ struct FriendsFeedView: View {
         var request = URLRequest(url: url)
         request.httpMethod = "PUT"
         BackendConfig.addApiKey(to: &request)
-        URLSession.shared.dataTask(with: request) { _, response, _ in
-            guard (response as? HTTPURLResponse)?.statusCode == 200 else { return }
+        URLSession.shared.dataTask(with: request) { _, response, error in
+            guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+                AppBanner.report("update your like", error)
+                return
+            }
             DispatchQueue.main.async { self.fetchFriendsFeed() }
         }.resume()
     }
@@ -232,8 +264,11 @@ struct FriendsFeedView: View {
         BackendConfig.addApiKey(to: &request)
         guard let body = try? JSONEncoder().encode(["comment": comment]) else { return }
         request.httpBody = body
-        URLSession.shared.dataTask(with: request) { _, response, _ in
-            guard (response as? HTTPURLResponse)?.statusCode == 200 else { return }
+        URLSession.shared.dataTask(with: request) { _, response, error in
+            guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+                AppBanner.report("post your comment", error) // the comment stays in the box
+                return
+            }
             DispatchQueue.main.async {
                 self.newComments[post.id] = ""
                 self.fetchFriendsFeed()

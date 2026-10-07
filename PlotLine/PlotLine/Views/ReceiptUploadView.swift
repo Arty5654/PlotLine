@@ -8,66 +8,6 @@
 import SwiftUI
 import PhotosUI
 
-// MARK: - Design tokens
-private enum PLColor {
-    static let surface        = Color(.secondarySystemBackground)
-    static let cardBorder     = Color.black.opacity(0.06)
-    static let textPrimary    = Color.primary
-    static let textSecondary  = Color.secondary
-    static let accent         = Color.blue
-    static let danger         = Color.red
-    static let success        = Color.green
-}
-private enum PLSpacing {
-    static let xs: CGFloat = 6
-    static let sm: CGFloat = 10
-    static let md: CGFloat = 16
-    static let lg: CGFloat = 20
-}
-private enum PLRadius {
-    static let md: CGFloat = 12
-}
-private struct CardModifier: ViewModifier {
-    func body(content: Content) -> some View {
-        content
-            .padding(PLSpacing.md)
-            .background(PLColor.surface)
-            .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
-            .overlay(
-                RoundedRectangle(cornerRadius: PLRadius.md)
-                    .stroke(PLColor.cardBorder)
-            )
-    }
-}
-private extension View { func plCard() -> some View { modifier(CardModifier()) } }
-
-private struct PrimaryButton: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.headline)
-            .foregroundColor(.white)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .background(PLColor.accent.opacity(configuration.isPressed ? 0.85 : 1))
-            .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
-    }
-}
-private struct OutlineButton: ButtonStyle {
-    let tint: Color
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.headline)
-            .foregroundColor(tint)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .overlay(
-                RoundedRectangle(cornerRadius: PLRadius.md)
-                    .stroke(tint.opacity(configuration.isPressed ? 0.6 : 1))
-            )
-            .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
-    }
-}
-
 // MARK: - View
 struct ReceiptUploadView: View {
     @State private var selectedImage: UIImage? = nil
@@ -137,7 +77,7 @@ struct ReceiptUploadView: View {
                                 Label("Retake", systemImage: "arrow.counterclockwise")
                                     .frame(maxWidth: .infinity)
                             }
-                            .buttonStyle(OutlineButton(tint: PLColor.accent))
+                            .buttonStyle(OutlineButton(tint: PLColor.tint))
                             
                              Button {
                                  showCameraPicker = true
@@ -145,7 +85,7 @@ struct ReceiptUploadView: View {
                                  Label("Take Photo", systemImage: "camera")
                                      .frame(maxWidth: .infinity)
                              }
-                             .buttonStyle(OutlineButton(tint: PLColor.accent))
+                             .buttonStyle(OutlineButton(tint: PLColor.tint))
                             
                             Button {
                                 uploadReceipt()
@@ -184,7 +124,7 @@ struct ReceiptUploadView: View {
                                 Label("Take Photo", systemImage: "camera")
                                     .frame(maxWidth: .infinity)
                             }
-                            .buttonStyle(OutlineButton(tint: PLColor.accent))
+                            .buttonStyle(OutlineButton(tint: PLColor.tint))
                         }
                     }
                 }
@@ -221,7 +161,7 @@ struct ReceiptUploadView: View {
                                     Label("Edit", systemImage: "pencil")
                                         .frame(maxWidth: .infinity)
                                 }
-                                .buttonStyle(OutlineButton(tint: PLColor.accent))
+                                .buttonStyle(OutlineButton(tint: PLColor.tint))
                             }
                         }
                     }
@@ -283,7 +223,7 @@ struct ReceiptUploadView: View {
         .sheet(isPresented: $showCameraPicker) {
             CameraPicker(image: $selectedImage)
         }
-        .onChange(of: imagePickerItem) { newItem in
+        .onChange(of: imagePickerItem) { _, newItem in
             Task {
                 guard let newItem else { return }
                 if let data = try? await newItem.loadTransferable(type: Data.self),
@@ -291,10 +231,12 @@ struct ReceiptUploadView: View {
                     self.selectedImage = uiImage
                     self.resultMessage = nil
                     self.errorText = nil
+                } else {
+                    AppBanner.report("open that photo")
                 }
             }
         }
-        .onChange(of: selectedImage) { _ in
+        .onChange(of: selectedImage) { _, _ in
             resultMessage = nil
             errorText = nil
         }
@@ -393,6 +335,10 @@ extension ReceiptUploadView {
                 return
             }
             // Optional: check status code
+            if let limit = AILimitError.from(data, response) {
+                DispatchQueue.main.async { self.errorText = limit.message }
+                return
+            }
             if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
                 DispatchQueue.main.async { self.errorText = "Server error (\(http.statusCode))." }
                 return
@@ -814,7 +760,7 @@ private struct ManualCategoryAssignmentSheet: View {
                     Divider()
                     HStack(spacing: PLSpacing.sm) {
                         Button("Cancel") { dismiss() }
-                            .buttonStyle(OutlineButton(tint: PLColor.accent))
+                            .buttonStyle(OutlineButton(tint: PLColor.tint))
                         Button("Confirm") { onConfirm() }
                             .buttonStyle(PrimaryButton())
                             .disabled(!allChosen)
@@ -908,7 +854,7 @@ private struct EditReceiptCostsSheet: View {
                             Text("Add new category")
                                 .font(.caption)
                         }
-                        .foregroundColor(PLColor.accent)
+                        .foregroundColor(PLColor.tint)
                     }
                     .alert("Custom Category", isPresented: $showAddCategoryMenu) {
                         TextField("Category name", text: $customCategoryName)
@@ -959,7 +905,7 @@ private struct EditReceiptCostsSheet: View {
                     Divider()
                     HStack(spacing: PLSpacing.sm) {
                         Button("Cancel") { dismiss() }
-                            .buttonStyle(OutlineButton(tint: PLColor.accent))
+                            .buttonStyle(OutlineButton(tint: PLColor.tint))
                         Button("Save Changes") {
                             var result: [String: Double] = [:]
                             for cost in editedCosts where cost.amount > 0 {

@@ -1,5 +1,8 @@
 package com.plotline.backend.plaid;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.cdimascio.dotenv.Dotenv;
@@ -23,6 +26,8 @@ import java.util.concurrent.ConcurrentHashMap;
 @Component
 @Primary
 public class S3TokenStore implements TokenStore {
+    private static final Logger log = LoggerFactory.getLogger(S3TokenStore.class);
+
     private static final String BUCKET_NAME = "plotline-database-bucket";
     private static final String TOKENS_PREFIX = "plaid/tokens/";
     private static final String ACCOUNTS_PREFIX = "plaid/selected-accounts/";
@@ -37,7 +42,7 @@ public class S3TokenStore implements TokenStore {
 
     public S3TokenStore(S3Client s3Client) {
         this.s3Client = s3Client; // shared client from AWSConfig
-        System.out.println("S3TokenStore initialized - tokens will persist across restarts");
+        log.debug("S3TokenStore initialized - tokens will persist across restarts");
     }
 
     @Override
@@ -50,7 +55,7 @@ public class S3TokenStore implements TokenStore {
         persistTokens(username);
         persistItemToUser();
 
-        System.out.println("Saved access token for user: " + username + ", itemId: " + itemId);
+        log.debug("Saved access token for user: {}, itemId: {}", username, itemId);
     }
 
     @Override
@@ -88,7 +93,7 @@ public class S3TokenStore implements TokenStore {
                 return new HashMap<>(tokens);
             }
         } catch (Exception e) {
-            System.err.println("Error loading tokens from S3 for user " + username + ": " + e.getMessage());
+            log.error("Error loading tokens from S3 for user {}: {}", username, e.getMessage());
         }
 
         return Map.of();
@@ -111,7 +116,7 @@ public class S3TokenStore implements TokenStore {
                 return itemToUserCache.get(itemId);
             }
         } catch (Exception e) {
-            System.err.println("Error loading item-to-user mapping: " + e.getMessage());
+            log.error("Error loading item-to-user mapping: {}", e.getMessage());
         }
 
         return null;
@@ -124,7 +129,7 @@ public class S3TokenStore implements TokenStore {
             .put(itemId, new ArrayList<>(accountIds));
 
         persistSelectedAccounts(username);
-        System.out.println("Saved selected accounts for user: " + username + ", itemId: " + itemId);
+        log.debug("Saved selected accounts for user: {}, itemId: {}", username, itemId);
     }
 
     @Override
@@ -149,7 +154,7 @@ public class S3TokenStore implements TokenStore {
                 return result != null ? new ArrayList<>(result) : List.of();
             }
         } catch (Exception e) {
-            System.err.println("Error loading selected accounts from S3: " + e.getMessage());
+            log.error("Error loading selected accounts from S3: {}", e.getMessage());
         }
 
         return List.of();
@@ -167,7 +172,7 @@ public class S3TokenStore implements TokenStore {
                 mapping.forEach(itemToUserCache::putIfAbsent);
             }
         } catch (Exception e) {
-            System.err.println("Error loading item-to-user mapping: " + e.getMessage());
+            log.error("Error loading item-to-user mapping: {}", e.getMessage());
         }
         tokens.keySet().forEach(itemToUserCache::remove);
         itemToUserCache.values().removeIf(owner -> owner.equals(username));
@@ -185,7 +190,7 @@ public class S3TokenStore implements TokenStore {
         try {
             s3Client.deleteObject(DeleteObjectRequest.builder().bucket(BUCKET_NAME).key(key).build());
         } catch (Exception e) {
-            System.err.println("Error deleting S3 object " + key + ": " + e.getMessage());
+            log.error("Error deleting S3 object {}: {}", key, e.getMessage());
         }
     }
 
@@ -198,8 +203,8 @@ public class S3TokenStore implements TokenStore {
             String json = objectMapper.writeValueAsString(tokens);
             writeS3Object(key, json);
         } catch (Exception e) {
-            System.err.println("Error persisting tokens to S3: " + e.getMessage());
-            e.printStackTrace();
+            log.error("Error persisting tokens to S3: {}", e.getMessage());
+            log.error("persistTokens failed", e);
         }
     }
 
@@ -209,7 +214,7 @@ public class S3TokenStore implements TokenStore {
             String json = objectMapper.writeValueAsString(itemToUserCache);
             writeS3Object(key, json);
         } catch (Exception e) {
-            System.err.println("Error persisting item-to-user mapping: " + e.getMessage());
+            log.error("Error persisting item-to-user mapping: {}", e.getMessage());
         }
     }
 
@@ -222,7 +227,7 @@ public class S3TokenStore implements TokenStore {
             String json = objectMapper.writeValueAsString(accounts);
             writeS3Object(key, json);
         } catch (Exception e) {
-            System.err.println("Error persisting selected accounts to S3: " + e.getMessage());
+            log.error("Error persisting selected accounts to S3: {}", e.getMessage());
         }
     }
 
@@ -239,7 +244,7 @@ public class S3TokenStore implements TokenStore {
             // File doesn't exist yet, that's OK
             return null;
         } catch (Exception e) {
-            System.err.println("Error reading S3 object " + key + ": " + e.getMessage());
+            log.error("Error reading S3 object {}: {}", key, e.getMessage());
             return null;
         }
     }
@@ -254,7 +259,7 @@ public class S3TokenStore implements TokenStore {
 
             s3Client.putObject(request, RequestBody.fromString(content, StandardCharsets.UTF_8));
         } catch (Exception e) {
-            System.err.println("Error writing S3 object " + key + ": " + e.getMessage());
+            log.error("Error writing S3 object {}: {}", key, e.getMessage());
             throw new RuntimeException("Failed to persist to S3", e);
         }
     }

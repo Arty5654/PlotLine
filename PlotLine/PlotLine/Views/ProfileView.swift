@@ -6,13 +6,10 @@ struct ProfileView: View {
 
     // profile fields
     @State private var displayName: String = ""
-    @State private var isEditingDisplayName = false
     
     @State private var birthday: Date = Date()
-    @State private var isEditingBirthday = false
     
     @State private var homeCity: String = ""
-    @State private var isEditingHomeCity = false
 
     // image fields and overlay
     @State private var profileImageURL: URL?
@@ -36,258 +33,90 @@ struct ProfileView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 20) {
+                VStack(spacing: PLSpacing.lg) {
+                    header
 
-                    Button(action: {
-                        showingImagePicker = true
-                    }) {
-                        ZStack {
-                            if let selectedImage {
-                                // user selects new image from camera roll
-                                Image(uiImage: selectedImage)
-                                    .resizable()
-                                    .scaledToFill()
-                                    .frame(width: 120, height: 120)
-                                    .clipShape(Circle())
-                                    .overlay(Circle().stroke(Color.blue, lineWidth: 2))
-                            } else if let profileImageURL {
-                                
-                                // pre-existing image loaded from DB
-                                AsyncImage(url: profileImageURL) { phase in
-                                    if let image = phase.image {
-                                        image
-                                            .resizable()
-                                            .scaledToFill()
-                                            .frame(width: 120, height: 120)
-                                            .clipShape(Circle())
-                                            .overlay(Circle().stroke(Color.blue, lineWidth: 2))
-                                    } else {
-                                        Circle()
-                                            .frame(width: 120, height: 120)
-                                            .foregroundColor(.gray.opacity(0.3))
-                                    }
-                                }
-                            } else {
-                                // default / no image
-                                Circle()
-                                    .frame(width: 120, height: 120)
-                                    .foregroundColor(.gray.opacity(0.3))
-                            }
-                            
-                            
-                            Image(systemName: "camera.fill")
-                                .foregroundColor(.white)
-                                .padding(6)
-                                .background(Color.black.opacity(0.6))
-                                .clipShape(Circle())
-                                .offset(x: 55, y: 45)
+                    VStack(spacing: PLSpacing.sm) {
+                        PLSectionHeader(title: "Profile")
+                        VStack(spacing: 0) {
+                            PLFieldRow(label: "Name", placeholder: "Your name", text: $displayName)
+                            Divider()
+                            PLFieldRow(label: "Home city", placeholder: "City", text: $homeCity)
+                            Divider()
+                            DatePicker("Birthday", selection: $birthday, displayedComponents: .date)
+                                .foregroundColor(PLColor.textPrimary)
+                                .padding(.vertical, 2)
                         }
-                    }
-                    
-                    
-                    // name field
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text("Display Name")
-                            .font(.custom("AvenirNext-Bold", size: 15))
-                            .foregroundColor(.gray)
-                        
-                        HStack {
-                            if isEditingDisplayName {
-                                TextField("Enter new name", text: $displayName)
-                                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                                    .padding(.vertical, 8)
-                            } else {
-                                Text(displayName.isEmpty ? "Tap to enter" : displayName)
-                                    .font(.body)
-                                    .foregroundColor(.primary)
-                                    .padding(.vertical, 8)
-                            }
-                            Button(action: {
-                                isEditingDisplayName.toggle()
-                            }) {
-                                Image(systemName: isEditingDisplayName ? "checkmark" : "pencil")
-                                    .foregroundColor(.blue)
-                                    .padding(6)
-                                    .background(Circle().fill(Color(.systemGray4)))
-                                    .frame(width: 30, height: 30)
-                            }
-                        }
-                        .padding()
-                        .background(Color(.systemGray6))
-                        .cornerRadius(10)
-                    }
-                    .padding(.horizontal, 30)
-                    .frame(maxWidth: 300)
-                    
-                    
-                    // city field
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text("Home City")
-                            .font(.custom("AvenirNext-Bold", size: 15))
-                            .foregroundColor(.gray)
-                        
-                        HStack {
-                            if isEditingHomeCity {
-                                TextField("Enter new city", text: $homeCity)
-                                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                                    .padding(.vertical, 8)
-                            } else {
-                                Text(homeCity.isEmpty ? "Tap to enter" : homeCity)
-                                    .font(.body)
-                                    .foregroundColor(.primary)
-                                    .padding(.vertical, 8)
-                            }
-                            Button(action: {
-                                isEditingHomeCity.toggle()
-                            }) {
-                                Image(systemName: isEditingHomeCity ? "checkmark" : "pencil")
-                                    .foregroundColor(.blue)
-                                    .padding(6)
-                                    .background(Circle().fill(Color(.systemGray4)))
-                                    .frame(width: 30, height: 30)
-                            }
-                        }
-                        .padding()
-                        .background(Color(.systemGray6))
-                        .cornerRadius(10)
-                    }
-                    .padding(.horizontal, 30)
-                    .frame(maxWidth: 300)
-                    
-                    
-                    // birthday field
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text("Birthday")
-                            .font(.custom("AvenirNext-Bold", size: 15))
-                            .foregroundColor(.gray)
-                        
-                        HStack {
-                            if isEditingBirthday {
-                                DatePicker("", selection: $birthday, displayedComponents: .date)
-                                    .datePickerStyle(CompactDatePickerStyle())
-                                    .labelsHidden()
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(.vertical, 8)
-                            } else {
-                                Text(birthdayFormatted())
-                                    .font(.body)
-                                    .foregroundColor(.primary)
-                                    .padding(.vertical, 8)
-                            }
-                            Button(action: { isEditingBirthday.toggle() }) {
-                                Image(systemName: isEditingBirthday ? "checkmark" : "pencil")
-                                    .foregroundColor(.blue)
-                                    .padding(6)
-                                    .background(Circle().fill(Color(.systemGray4)))
-                                    .frame(width: 30, height: 30)
-                            }
-                        }
-                        .padding()
-                        .background(Color(.systemGray6))
-                        .cornerRadius(10)
-                    }
-                    .padding(.horizontal, 30)
-                    .frame(maxWidth: 300)
-                    
-                    Spacer()
+                        .plCard()
 
-                    // SAVE CHANGES
-                    Button(action: {
-                        saveProfileChanges()
-                    }) {
-                        HStack {
-                            if isUploading {
-                                ProgressView()
-                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                            } else {
-                                Text("Save Changes")
-                                    .fontWeight(.semibold)
+                        Button(action: saveProfileChanges) {
+                            ZStack {
+                                Text("Save Changes").opacity(isUploading ? 0 : 1)
+                                if isUploading { ProgressView().tint(.white) }
                             }
                         }
-                        .padding(.vertical, 12)
-                        .frame(maxWidth: 300)
-                        .background(Color.green)
-                        .foregroundColor(.white)
-                        .clipShape(Capsule())
-                        .scaleEffect(showSuccessModal ? 1.1 : 1.0)
-                        .animation(.spring(response: 0.3, dampingFraction: 0.6), value: showSuccessModal)
+                        .buttonStyle(PrimaryButton(color: PLColor.success))
+                        .disabled(isUploading)
+                        .padding(.top, 4)
                     }
 
-                    // CHANGE PASSWORD
-                    Button(action: {
-                        showingChangePasswordSheet = true
-                    }) {
-                        HStack {
-                            Image(systemName: "lock.fill")
-                            Text("Change Password")
+                    VStack(spacing: PLSpacing.sm) {
+                        PLSectionHeader(title: "Account")
+                        VStack(spacing: 6) {
+                            Button { showingTrophyHall = true } label: {
+                                PLRow(icon: "trophy.fill", tint: .yellow, title: "Trophies")
+                            }
+                            Divider().padding(.leading, 42)
+                            NavigationLink(destination: PaymentView()) {
+                                PLRow(icon: "creditcard.fill", tint: PLColor.accent, title: "Membership & Billing")
+                            }
+                            Divider().padding(.leading, 42)
+                            Button { showingChangePasswordSheet = true } label: {
+                                PLRow(icon: "lock.fill", tint: .gray, title: "Change Password")
+                            }
                         }
-                        .padding(.vertical, 12)
-                        .frame(maxWidth: 300)
-                        .background(Color.gray.opacity(0.2))
-                        .foregroundColor(.primary)
-                        .clipShape(Capsule())
-                    }
-                    
-                    // PAYMENTS
-                    NavigationLink(destination: PaymentView()) {
-                        HStack {
-                            Image(systemName: "creditcard.fill")
-                            Text("Membership & Billing")
-                                .fontWeight(.semibold)
-                        }
-                        .padding(.vertical, 12)
-                        .frame(maxWidth: 300)
-                        .background(Color.blue.opacity(0.15))
-                        .foregroundColor(.blue)
-                        .clipShape(Capsule())
+                        .buttonStyle(.plain)
+                        .plCard()
                     }
 
-
-                    // SIGN OUT
-                    Button(action: {
-                        session.signOut()
-                        dismiss()
-                    }) {
-                        HStack {
-                            Image(systemName: "arrow.backward.circle.fill")
-                            Text("Sign Out")
+                    VStack(spacing: PLSpacing.sm) {
+                        PLSectionHeader(title: "Legal")
+                        VStack(spacing: 6) {
+                            Button { legalPage = .terms } label: {
+                                PLRow(icon: "doc.text.fill", tint: .indigo, title: "Terms of Service")
+                            }
+                            Divider().padding(.leading, 42)
+                            Button { legalPage = .privacy } label: {
+                                PLRow(icon: "hand.raised.fill", tint: .teal, title: "Privacy Policy")
+                            }
                         }
-                        .padding(.vertical, 12)
-                        .frame(maxWidth: 300)
-                        .overlay(Capsule().stroke(Color.red, lineWidth: 2))
-                        .foregroundColor(.red)
-                        .clipShape(Capsule())
+                        .buttonStyle(.plain)
+                        .plCard()
                     }
 
-                    // DELETE ACCOUNT
-                    Button("Delete Account") {
-                        showingDeleteAccount = true
+                    VStack(spacing: PLSpacing.md) {
+                        Button {
+                            session.signOut()
+                            dismiss()
+                        } label: {
+                            Label("Sign Out", systemImage: "rectangle.portrait.and.arrow.right")
+                        }
+                        .buttonStyle(OutlineButton(tint: PLColor.danger))
+
+                        Button("Delete Account") {
+                            showingDeleteAccount = true
+                        }
+                        .font(.footnote.weight(.semibold))
+                        .foregroundColor(PLColor.danger)
                     }
-                    .font(.footnote.weight(.semibold))
-                    .foregroundColor(.red)
                     .padding(.top, 4)
-
-                    LegalFooterLinks()
-                        .padding(.top, 8)
                 }
-                .padding()
+                .padding(.horizontal, PLSpacing.lg)
+                .padding(.vertical, PLSpacing.md)
             }
+            .background(Color(.systemBackground))
+            .navigationTitle("Profile")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Text(self.username)
-                        .font(.custom("AvenirNext-Bold", size: 20))
-                        .foregroundColor(Color.blue)
-                }
-            }
-            .navigationBarItems(
-                trailing: Button(action: {
-                    showingTrophyHall = true
-                }) {
-                    Image(systemName: "trophy.fill")
-                        .foregroundColor(.yellow)
-                }
-            )
         }
         .onAppear {
             fetchProfileData()
@@ -309,36 +138,84 @@ struct ProfileView: View {
             DeleteAccountView()
                 .environmentObject(session)
         }
-        .onChange(of: session.isLoggedIn) { loggedIn in
+        .onChange(of: session.isLoggedIn) { _, loggedIn in
             if !loggedIn { dismiss() }
         }
         .overlay(
             Group {
                 if showSuccessModal {
-                    VStack {
+                    VStack(spacing: 8) {
                         Image(systemName: "checkmark.circle.fill")
-                            .resizable()
-                            .frame(width: 80, height: 80)
-                            .foregroundColor(.green)
-
+                            .font(.system(size: 56))
+                            .foregroundColor(PLColor.success)
                         Text("Saved!")
                             .font(.headline)
-                            .foregroundColor(.green)
                     }
-                    .padding()
-                    .background(Color.white)
-                    .cornerRadius(10)
-                    .shadow(radius: 10)
-                    .frame(width: 150, height: 150)
-                    .scaleEffect(animateSuccess ? 1.1 : 0.8)
-                    .opacity(showSuccessModal ? 1.0 : 0.0)
+                    .padding(24)
+                    .background(.regularMaterial)
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                    .shadow(color: .black.opacity(0.15), radius: 12)
+                    .scaleEffect(animateSuccess ? 1.0 : 0.8)
                     .animation(.spring(response: 0.3, dampingFraction: 0.6), value: animateSuccess)
-                    .onAppear {
-                        animateSuccess = true
-                    }
+                    .onAppear { animateSuccess = true }
                 }
             }
         )
+    }
+
+    // photo (tap to change), name and @username
+    private var header: some View {
+        VStack(spacing: PLSpacing.sm) {
+            Button { showingImagePicker = true } label: {
+                ZStack(alignment: .bottomTrailing) {
+                    Group {
+                        if let selectedImage {
+                            Image(uiImage: selectedImage).resizable().scaledToFill()
+                        } else if let profileImageURL {
+                            AsyncImage(url: profileImageURL) { phase in
+                                if let image = phase.image {
+                                    image.resizable().scaledToFill()
+                                } else {
+                                    avatarPlaceholder
+                                }
+                            }
+                        } else {
+                            avatarPlaceholder
+                        }
+                    }
+                    .frame(width: 96, height: 96)
+                    .clipShape(Circle())
+                    .overlay(Circle().stroke(PLColor.cardBorder))
+
+                    Image(systemName: "camera.fill")
+                        .font(.caption.weight(.bold))
+                        .foregroundColor(.white)
+                        .frame(width: 30, height: 30)
+                        .background(PLColor.accent)
+                        .clipShape(Circle())
+                        .overlay(Circle().stroke(Color(.systemBackground), lineWidth: 2))
+                }
+            }
+            .accessibilityLabel("Change profile photo")
+
+            VStack(spacing: 2) {
+                Text(displayName.isEmpty ? username : displayName)
+                    .font(.title2.weight(.bold))
+                Text("@\(username)")
+                    .font(.subheadline)
+                    .foregroundColor(PLColor.textSecondary)
+            }
+        }
+        .padding(.top, PLSpacing.sm)
+    }
+
+    private var avatarPlaceholder: some View {
+        ZStack {
+            PLColor.surface
+            Image(systemName: "person.fill")
+                .font(.system(size: 40))
+                .foregroundColor(Color(.tertiaryLabel))
+        }
     }
 
     private func saveProfileChanges() {
@@ -373,15 +250,9 @@ struct ProfileView: View {
                 print("Changes saved")
             } catch {
                 isUploading = false
-                print("error saving changes")
+                AppBanner.report("save your profile", error, retry: { saveProfileChanges() })
             }
         }
-    }
-
-    private func birthdayFormatted(date: Date = Date()) -> String {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        return formatter.string(from: date)
     }
 
     private func formatDate(_ date: Date) -> String {
@@ -404,7 +275,7 @@ struct ProfileView: View {
                     }
                 }
             } catch {
-                print("Error fetching profile: \(error)")
+                AppBanner.report("load your profile", error, retry: { fetchProfileData() })
             }
         }
     }
@@ -476,7 +347,7 @@ struct ChangePasswordModalView: View {
 
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             Form {
                 if !useOTPFlow {
                     
@@ -514,11 +385,11 @@ struct ChangePasswordModalView: View {
                         Button("Send One-Time-Passcode") {
                             Task {
                                 do {
-                                    try await AuthAPI.sendCode(
+                                    _ = try await AuthAPI.sendCode(
                                         phone: self.phoneNumber
                                     )
                                 } catch {
-                                    print("error")
+                                    AppBanner.report("send the passcode", error)
                                 }
                             }
                         }

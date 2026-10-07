@@ -1,5 +1,8 @@
 package com.plotline.backend.controller;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 
 import java.util.Collections;
 import java.util.List;
@@ -31,6 +34,8 @@ import static com.plotline.backend.util.UsernameUtils.normalize;
 @RestController
 @RequestMapping("/profile")
 public class ProfileController {
+    private static final Logger log = LoggerFactory.getLogger(ProfileController.class);
+
   
     @Autowired
     private final UserProfileService userProfileService;
@@ -54,7 +59,7 @@ public class ProfileController {
         UserProfile profile = userProfileService.getProfile(username);
 
         if (profile == null) {
-            System.out.println("Profile not found");
+            log.debug("Profile not found");
             return ResponseEntity.badRequest().body(null);
         }
 
@@ -81,7 +86,7 @@ public class ProfileController {
         String phone = userProfileService.getPhoneNum(username);
 
         if (phone == null) {
-            System.out.println("acc not found");
+            log.debug("acc not found");
             return ResponseEntity.badRequest().body(null);
         }
 
@@ -92,7 +97,7 @@ public class ProfileController {
     public ResponseEntity<String> uploadProfilePicture(@RequestParam("file") MultipartFile file,
                                                        @RequestParam("username") String username) {
 
-        System.out.println("Upload request triggered");
+        log.debug("Upload request triggered");
 
         try {
             String imageUrl = userProfileService.uploadProfilePicture(file, username);

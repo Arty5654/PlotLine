@@ -1,10 +1,5 @@
 package com.plotline.backend.controller;
 
-import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken;
-import com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier;
-import com.google.api.client.http.javanet.NetHttpTransport;
-import com.google.api.client.json.JsonFactory;
-import com.google.api.client.json.jackson2.JacksonFactory;
 
 import com.plotline.backend.dto.AppleSigninRequest;
 import com.plotline.backend.dto.AuthResponse;
@@ -15,6 +10,7 @@ import com.plotline.backend.security.CurrentUser;
 import com.plotline.backend.service.AccountDeletionService;
 import com.plotline.backend.service.AppleSignInService;
 import com.plotline.backend.service.AuthService;
+import com.plotline.backend.service.GoogleSignInService;
 import io.github.cdimascio.dotenv.Dotenv;
 
 import java.util.Arrays;
@@ -30,19 +26,18 @@ import com.plotline.backend.dto.GoogleSigninRequest;
 @RestController
 @RequestMapping("/auth")
 public class AuthController {
-    Dotenv dotenv = Dotenv.configure().ignoreIfMissing().load();
-    String googleClientId = dotenv.get("GOOGLE_CLIENT_ID");
-    String googleIosClient = dotenv.get("GOOGLE_IOS_CLIENT_ID");
 
     @Autowired
     private final AuthService authService;
     private final AppleSignInService appleSignInService;
     private final AccountDeletionService accountDeletionService;
+    private final GoogleSignInService googleSignInService;
     public AuthController(AuthService authService, AppleSignInService appleSignInService,
-                          AccountDeletionService accountDeletionService) {
+                          AccountDeletionService accountDeletionService, GoogleSignInService googleSignInService) {
         this.authService = authService;
         this.appleSignInService = appleSignInService;
         this.accountDeletionService = accountDeletionService;
+        this.googleSignInService = googleSignInService;
     }
  
     @PostMapping("/signup")
@@ -50,11 +45,14 @@ public class AuthController {
         String displayUsername = request.getUsername().trim();
         String normalized = authService.normalizeUsername(request.getUsername());
         String normalizedEmail = authService.normalizeEmail(request.getEmail());
-        if (normalized.isBlank()) {
-            return ResponseEntity.ok(new AuthResponse(false, null, "Invalid username"));
+        if (!AuthService.isValidUsername(displayUsername)) {
+            return ResponseEntity.ok(new AuthResponse(false, null, AuthService.USERNAME_RULES));
         }
-        if (normalizedEmail.isBlank()) {
-            return ResponseEntity.ok(new AuthResponse(false, null, "Invalid email"));
+        if (!AuthService.isValidEmail(normalizedEmail)) {
+            return ResponseEntity.ok(new AuthResponse(false, null, AuthService.EMAIL_RULES));
+        }
+        if (!AuthService.isValidPassword(request.getPassword())) {
+            return ResponseEntity.ok(new AuthResponse(false, null, AuthService.PASSWORD_RULES));
         }
         if (!Boolean.TRUE.equals(request.getAcceptedTerms())) {
             return ResponseEntity.ok(new AuthResponse(false, null,
@@ -132,99 +130,7 @@ public class AuthController {
 
     @PostMapping("/google-signin")
     public ResponseEntity<AuthResponse> googleSignIn(@RequestBody GoogleSigninRequest request) {
-
-        String displayUsername = request.getUsername().trim();
-        String username = authService.normalizeUsername(request.getUsername());
-        String tokenID = request.getIdToken();
-
-        try {
-
-            // verify google id and extract the payload to store securely in db for re-signin
-
-            JsonFactory jsonFactory = JacksonFactory.getDefaultInstance();
-            GoogleIdTokenVerifier verifier = new GoogleIdTokenVerifier.Builder(new NetHttpTransport(), jsonFactory)
-                    .setAudience(Arrays.asList(googleClientId, googleIosClient))
-                    .setIssuer("https://accounts.google.com")
-                    .build();
-            GoogleIdToken idToken = verifier.verify(tokenID);
-
-
-            if (idToken == null) {
-                return ResponseEntity.ok(new AuthResponse(false, null, "Invalid Google ID Token"));
-            }
-
-            GoogleIdToken.Payload payload = idToken.getPayload();
-            String googleUserId = payload.getSubject(); // Unique Google User ID
-            String emailFromToken = payload.getEmail();
-            String normalizedEmail = authService.normalizeEmail(emailFromToken);
-            if (normalizedEmail == null || normalizedEmail.isBlank()) {
-                return ResponseEntity.ok(new AuthResponse(false, null, "Email not available from Google"));
-            }
-
-            String loginResult = "";
-
-            if (!authService.userExists(username)) {
-
-                String owner = authService.usernameForEmail(normalizedEmail);
-                if (owner != null && !owner.equals(username)) {
-                    return ResponseEntity.ok(new AuthResponse(false, null, "Email already exists"));
-                }
-
-                // username does not exist, create new account for google user
-                // (the Google user id is stored to recognize them later, never as a password)
-    
-                boolean created = authService.createGoogleUser(normalizedEmail, username, displayUsername, googleUserId);
-                if (!created) {
-                    return ResponseEntity.ok(new AuthResponse(false, null, "Could not create user"));
-                }
-
-                System.out.println("Google user CREATED");
-
-                String token = authService.generateToken(username);
-                return ResponseEntity.ok(withTerms(new AuthResponse(true, token, null, displayUsername)));
-    
-            } else {
-                // username exists already, try signing the google user back in
-                String owner = authService.usernameForEmail(normalizedEmail);
-                if (owner != null && !owner.equals(username)) {
-                    return ResponseEntity.ok(new AuthResponse(false, null, "Email already exists"));
-                }
-    
-                // check if the existing user for this username is google
-                // if not, append a few numbers to username to make it unique
-                if (!authService.googleUser(username)) {
-                    return ResponseEntity.ok(new AuthResponse(false, null, "Non-Google account for this username exists"));
-    
-                } else {
-    
-                    // log google user back into their account 
-                    loginResult = authService.googleLogin(username, googleUserId);
-    
-                    System.out.println("Google user LOGGED IN");
-    
-                    if (!loginResult.equals("true") && !loginResult.equals("Needs Verification")) {
-                        return ResponseEntity.ok(new AuthResponse(false, null, loginResult));
-                    }
-    
-                }
-    
-                String token = authService.generateToken(username);
-                String returnDisplayUsername = authService.getDisplayUsername(username);
-
-                if (loginResult.equals("Needs Verification")) {
-                    return ResponseEntity.ok(withTerms(new AuthResponse(true, token, "Needs Verification", returnDisplayUsername)));
-                }
-
-                return ResponseEntity.ok(withTerms(new AuthResponse(true, token, null, returnDisplayUsername)));
-    
-            }
-    
-    
-        } catch (Exception e) {
-            e.printStackTrace();
-            return ResponseEntity.ok(new AuthResponse(false, null, "Server Error"));
-
-        }
+        return ResponseEntity.ok(withTerms(googleSignInService.signIn(request)));
     }
 
     @PostMapping("/apple-signin")
@@ -318,17 +224,10 @@ public class AuthController {
         }
     }
 
-    @GetMapping("/get-users")
-    public ResponseEntity<List<String>> fetchAllUsers() {
-        try {
-            List<String> users = authService.getAllUsernames();
-            return ResponseEntity.ok(users);
-        } catch (Exception e) {
-            // log if desired
-            return ResponseEntity
-                .status(500)
-                .body(List.of());
-        }
+    // friend search: up to 20 usernames containing the text (replaces sending every username to the app)
+    @GetMapping("/search-users")
+    public ResponseEntity<List<String>> searchUsers(@RequestParam(name = "q", defaultValue = "") String query) {
+        return ResponseEntity.ok(authService.searchUsernames(query, CurrentUser.require()));
     }
 
         

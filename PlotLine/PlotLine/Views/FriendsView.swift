@@ -8,13 +8,8 @@ struct FriendsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 24) {
-                FriendsListSection(friends: viewModel.friends) { friend in
-                    selectedUsername = friend
-                }
-
-                Spacer()
-
+            VStack(spacing: PLSpacing.lg) {
+                // requests first: they're waiting on you
                 PendingRequestsSection(
                     pendingRequests: viewModel.pendingRequests,
                     currentUsername: currentUsername,
@@ -33,9 +28,12 @@ struct FriendsView: View {
                     }
                 )
 
-                Spacer().frame(height: 30)
+                FriendsListSection(friends: viewModel.friends) { friend in
+                    selectedUsername = friend
+                }
             }
-            .padding(.top, 20)
+            .padding(.horizontal, PLSpacing.lg)
+            .padding(.vertical, PLSpacing.md)
         }
         .navigationTitle("My Friends")
         .navigationBarTitleDisplayMode(.inline)
@@ -47,16 +45,15 @@ struct FriendsView: View {
                         message: Text("Add me as a friend on PlotLine!")
                     ) {
                         Image(systemName: "link.badge.plus")
-                            .font(.title2)
                     }
+                    .accessibilityLabel("Share invite link")
                 }
             }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button { showSearchSheet.toggle() } label: {
-                    Image(systemName: "plus.circle.fill")
-                        .font(.title2)
-                        .foregroundColor(.green)
+                    Image(systemName: "person.badge.plus")
                 }
+                .accessibilityLabel("Add friends")
             }
         }
         .sheet(isPresented: $showSearchSheet) {
@@ -69,7 +66,10 @@ struct FriendsView: View {
             }
         }
         .sheet(item: $selectedUsername) { friend in
-            FriendProfileView(username: friend)
+            NavigationStack {
+                FriendProfileView(username: friend)
+            }
+            .environmentObject(viewModel)
         }
         .task { await reloadData() }
         .alert(isPresented: Binding<Bool>(

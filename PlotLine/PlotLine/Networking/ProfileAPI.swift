@@ -33,7 +33,7 @@ struct ProfileAPI {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (_, response) = try await URLSession.shared.data(for: request)
 
             guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
                 throw AuthError.serverError

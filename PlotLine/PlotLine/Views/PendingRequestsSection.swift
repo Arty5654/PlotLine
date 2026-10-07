@@ -8,59 +8,52 @@ struct PendingRequestsSection: View {
     let onDecline: (String) async -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            
-            Text("Pending Friend Requests")
-                .font(.custom("AvenirNext-Bold", size: 16))
-                .frame(maxWidth: .infinity)
-                .multilineTextAlignment(.center)
-            
+        VStack(spacing: PLSpacing.sm) {
+            PLSectionHeader(title: "Friend Requests")
+
             if pendingRequests.isEmpty {
                 Text("No pending requests.")
-                    .font(.custom("AvenirNext-Bold", size: 13))
-                    .foregroundColor(.gray)
-                    .italic()
-                    .padding(.top, 6)
-                    .frame(maxWidth: .infinity)
-                    .multilineTextAlignment(.center)
+                    .font(.subheadline)
+                    .foregroundColor(PLColor.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .plCard()
             } else {
-                
-                ForEach(pendingRequests, id: \.self) { senderUsername in
-                    HStack(spacing: 12) {
-                        Button {
-                            onSelect(senderUsername)
-                        } label: {
-                            Text(senderUsername)
-                                .font(.custom("AvenirNext-Bold", size: 16))
-                                .foregroundColor(.primary)
-                        }
-                        
-                        Spacer()
-                        
-                        Button("Accept") {
-                            Task {
-                                await onAccept(senderUsername)
+                VStack(spacing: 0) {
+                    ForEach(Array(pendingRequests.enumerated()), id: \.element) { index, senderUsername in
+                        if index > 0 { Divider().padding(.leading, 48) }
+                        HStack(spacing: 12) {
+                            Button { onSelect(senderUsername) } label: {
+                                HStack(spacing: 12) {
+                                    FriendProfilePicture(username: senderUsername)
+                                        .frame(width: 36, height: 36)
+                                    Text(senderUsername)
+                                        .foregroundColor(PLColor.textPrimary)
+                                        .lineLimit(1)
+                                }
                             }
-                        }
-                        .buttonStyle(.borderedProminent)
-                        
-                        Button("Decline") {
-                            Task {
-                                await onDecline(senderUsername)
+                            .buttonStyle(.plain)
+                            .layoutPriority(1)
+
+                            Spacer(minLength: 8)
+
+                            Button("Accept") {
+                                Task { await onAccept(senderUsername) }
                             }
+                            .buttonStyle(.borderedProminent)
+                            .tint(PLColor.success)
+                            .controlSize(.small)
+
+                            Button("Decline") {
+                                Task { await onDecline(senderUsername) }
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
                         }
-                        .buttonStyle(.bordered)
+                        .padding(.vertical, 8)
                     }
-                    .padding()
-                    .background(
-                        RoundedRectangle(cornerRadius: 12)
-                            .fill(Color(UIColor.systemBackground))
-                            .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
-                    )
                 }
+                .plCard()
             }
         }
-        .padding(.horizontal)
-        .padding(.top, 10)
     }
 }

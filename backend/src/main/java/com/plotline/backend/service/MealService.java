@@ -1,5 +1,8 @@
 package com.plotline.backend.service;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import software.amazon.awssdk.services.s3.S3Client;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.plotline.backend.dto.GroceryList;
@@ -25,6 +28,8 @@ import java.util.UUID;
 
 @Service
 public class MealService {
+    private static final Logger log = LoggerFactory.getLogger(MealService.class);
+
 
     private final S3Client s3Client;
     private final String BUCKET_NAME = "plotline-database-bucket";  // Replace with your actual bucket name
@@ -160,7 +165,7 @@ public class MealService {
 
         } catch (Exception e) {
             // Log the error and handle it properly
-            e.printStackTrace();
+            log.error("createMeal failed", e);
             throw new RuntimeException("Error creating meal: " + e.getMessage());
         }
     }

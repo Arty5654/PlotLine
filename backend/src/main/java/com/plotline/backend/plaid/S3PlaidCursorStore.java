@@ -1,5 +1,8 @@
 package com.plotline.backend.plaid;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.cdimascio.dotenv.Dotenv;
@@ -23,6 +26,8 @@ import java.util.concurrent.ConcurrentHashMap;
 @Component
 @Primary
 public class S3PlaidCursorStore implements PlaidCursorStore {
+    private static final Logger log = LoggerFactory.getLogger(S3PlaidCursorStore.class);
+
     private static final String BUCKET_NAME = "plotline-database-bucket";
     private static final String CURSORS_PREFIX = "plaid/cursors/";
     private static final String SEEN_TXN_PREFIX = "plaid/seen-txns/";
@@ -37,7 +42,7 @@ public class S3PlaidCursorStore implements PlaidCursorStore {
 
     public S3PlaidCursorStore(S3Client s3Client) {
         this.s3Client = s3Client; // shared client from AWSConfig
-        System.out.println("S3PlaidCursorStore initialized - cursors will persist across restarts");
+        log.debug("S3PlaidCursorStore initialized - cursors will persist across restarts");
     }
 
     private static String cursorKey(String username, String itemId) {
@@ -71,7 +76,7 @@ public class S3PlaidCursorStore implements PlaidCursorStore {
                 return cursorCache.get(key);
             }
         } catch (Exception e) {
-            System.err.println("Error loading cursor from S3: " + e.getMessage());
+            log.error("Error loading cursor from S3: {}", e.getMessage());
         }
 
         return null;
@@ -116,7 +121,7 @@ public class S3PlaidCursorStore implements PlaidCursorStore {
             }
             loadedSeenTxnUsers.add(username);
         } catch (Exception e) {
-            System.err.println("Error loading seen txns from S3: " + e.getMessage());
+            log.error("Error loading seen txns from S3: {}", e.getMessage());
             loadedSeenTxnUsers.add(username); // Mark as loaded to avoid repeated failures
         }
     }
@@ -137,7 +142,7 @@ public class S3PlaidCursorStore implements PlaidCursorStore {
             String json = objectMapper.writeValueAsString(userCursors);
             writeS3Object(s3Key, json);
         } catch (Exception e) {
-            System.err.println("Error persisting cursors to S3: " + e.getMessage());
+            log.error("Error persisting cursors to S3: {}", e.getMessage());
         }
     }
 
@@ -156,13 +161,13 @@ public class S3PlaidCursorStore implements PlaidCursorStore {
             String json = objectMapper.writeValueAsString(userTxns);
             writeS3Object(s3Key, json);
         } catch (Exception e) {
-            System.err.println("Error persisting seen txns to S3: " + e.getMessage());
+            log.error("Error persisting seen txns to S3: {}", e.getMessage());
         }
     }
 
     @Override
     public synchronized void clearSyncState(String username) {
-        System.out.println("Clearing all sync state for user: " + username);
+        log.debug("Clearing all sync state for user: {}", username);
 
         // Clear cursor cache entries for this user
         String prefix = username + "|";
@@ -177,19 +182,19 @@ public class S3PlaidCursorStore implements PlaidCursorStore {
         // Delete S3 objects for this user
         try {
             deleteS3Object(CURSORS_PREFIX + username + ".json");
-            System.out.println("Deleted cursor file from S3 for user: " + username);
+            log.debug("Deleted cursor file from S3 for user: {}", username);
         } catch (Exception e) {
-            System.err.println("Error deleting cursor file from S3: " + e.getMessage());
+            log.error("Error deleting cursor file from S3: {}", e.getMessage());
         }
 
         try {
             deleteS3Object(SEEN_TXN_PREFIX + username + ".json");
-            System.out.println("Deleted seen transactions file from S3 for user: " + username);
+            log.debug("Deleted seen transactions file from S3 for user: {}", username);
         } catch (Exception e) {
-            System.err.println("Error deleting seen txns file from S3: " + e.getMessage());
+            log.error("Error deleting seen txns file from S3: {}", e.getMessage());
         }
 
-        System.out.println("Sync state cleared for user: " + username + " - next sync will fetch all transactions");
+        log.debug("Sync state cleared for user: {} - next sync will fetch all transactions", username);
     }
 
     private void deleteS3Object(String key) {
@@ -202,7 +207,7 @@ public class S3PlaidCursorStore implements PlaidCursorStore {
         } catch (Exception e) {
             // Ignore if object doesn't exist
             if (!e.getMessage().contains("NoSuchKey")) {
-                System.err.println("Error deleting S3 object " + key + ": " + e.getMessage());
+                log.error("Error deleting S3 object {}: {}", key, e.getMessage());
             }
         }
     }
@@ -219,7 +224,7 @@ public class S3PlaidCursorStore implements PlaidCursorStore {
         } catch (NoSuchKeyException e) {
             return null;
         } catch (Exception e) {
-            System.err.println("Error reading S3 object " + key + ": " + e.getMessage());
+            log.error("Error reading S3 object {}: {}", key, e.getMessage());
             return null;
         }
     }
@@ -234,7 +239,7 @@ public class S3PlaidCursorStore implements PlaidCursorStore {
 
             s3Client.putObject(request, RequestBody.fromString(content, StandardCharsets.UTF_8));
         } catch (Exception e) {
-            System.err.println("Error writing S3 object " + key + ": " + e.getMessage());
+            log.error("Error writing S3 object {}: {}", key, e.getMessage());
         }
     }
 }

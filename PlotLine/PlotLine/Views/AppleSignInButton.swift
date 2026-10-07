@@ -5,8 +5,7 @@
 import SwiftUI
 import AuthenticationServices
 
-// Sign in with Apple button, plus the sheet for the one-time follow-up
-// (picking a username, or linking to an existing account with its password)
+// Sign in with Apple button. The follow-up sheet (AccountSetupView) is shown by SocialSignInButtons.
 struct AppleSignInButton: View {
     @EnvironmentObject var session: AuthViewModel
     @Environment(\.colorScheme) private var colorScheme
@@ -22,16 +21,14 @@ struct AppleSignInButton: View {
             .clipShape(RoundedRectangle(cornerRadius: AuthStyle.radius))
             // the button doesn't restyle on its own when the color scheme changes
             .id(colorScheme)
-            .sheet(item: $session.appleAccountStep, onDismiss: { session.cancelAppleSignIn() }) { step in
-                AppleAccountSetupView(step: step)
-                    .environmentObject(session)
-            }
     }
 }
 
-private struct AppleAccountSetupView: View {
+// One-time follow-up after Apple or Google sign-in: pick a username (new accounts),
+// or confirm an existing account's password to link it (Apple)
+struct AccountSetupView: View {
     @EnvironmentObject var session: AuthViewModel
-    let step: AuthViewModel.AppleAccountStep
+    let step: AuthViewModel.AccountSetupStep
 
     @State private var username: String = ""
     @State private var password: String = ""
@@ -66,7 +63,7 @@ private struct AppleAccountSetupView: View {
                         AuthField(icon: "person", placeholder: "Username", text: $username,
                                   focus: $focusedField, field: .username,
                                   contentType: .username, submitLabel: .done, onSubmit: submit)
-                        Text("Letters and numbers only.")
+                        Text("3 to 30 letters or numbers.")
                             .font(.caption)
                             .foregroundColor(.secondary)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -92,28 +89,28 @@ private struct AppleAccountSetupView: View {
                         }
                     }
 
-                    if let error = session.appleStepErrorMessage, !error.isEmpty {
+                    if let error = session.accountSetupErrorMessage, !error.isEmpty {
                         AuthMessage(text: error)
                     }
 
                     AuthPrimaryButton(title: isUsernameStep ? "Continue" : "Connect Account",
-                                      isLoading: session.appleStepInFlight,
+                                      isLoading: session.accountSetupInFlight,
                                       isEnabled: canSubmit,
                                       action: submit)
                 }
                 .padding(AuthStyle.spacing)
-                .animation(.easeOut(duration: 0.2), value: session.appleStepErrorMessage)
+                .animation(.easeOut(duration: 0.2), value: session.accountSetupErrorMessage)
             }
             .navigationTitle(isUsernameStep ? "Choose a Username" : "Connect Your Account")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { session.cancelAppleSignIn() }
+                    Button("Cancel") { session.cancelAccountSetup() }
                 }
             }
         }
         .presentationDetents([.medium, .large])
-        .interactiveDismissDisabled(session.appleStepInFlight)
+        .interactiveDismissDisabled(session.accountSetupInFlight)
         .onAppear {
             if case .chooseUsername(let suggested) = step {
                 username = suggested
@@ -123,9 +120,9 @@ private struct AppleAccountSetupView: View {
     }
 
     private func submit() {
-        guard canSubmit, !session.appleStepInFlight else { return }
+        guard canSubmit, !session.accountSetupInFlight else { return }
         switch step {
-        case .chooseUsername: session.submitAppleUsername(username)
+        case .chooseUsername: session.submitChosenUsername(username)
         case .linkAccount: session.submitAppleLinkPassword(password)
         }
     }

@@ -6,35 +6,6 @@
 import SwiftUI
 import UserNotifications
 
-// MARK: - Design tokens
-
-private enum PLColor {
-    static let surface       = Color(.secondarySystemBackground)
-    static let cardBorder    = Color.black.opacity(0.06)
-    static let textPrimary   = Color.primary
-    static let textSecondary = Color.secondary
-    static let success       = Color.green
-    static let danger        = Color.red
-}
-private enum PLSpacing {
-    static let xs: CGFloat = 6
-    static let sm: CGFloat = 10
-    static let md: CGFloat = 16
-    static let lg: CGFloat = 20
-}
-private enum PLRadius { static let md: CGFloat = 12 }
-
-private struct CardModifier: ViewModifier {
-    func body(content: Content) -> some View {
-        content
-            .padding(PLSpacing.md)
-            .background(PLColor.surface)
-            .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
-            .overlay(RoundedRectangle(cornerRadius: PLRadius.md).stroke(PLColor.cardBorder))
-    }
-}
-private extension View { func plCard() -> some View { modifier(CardModifier()) } }
-
 // MARK: - Helpers
 
 private func priorityColor(_ priority: Priority) -> Color {
@@ -72,9 +43,6 @@ struct WeeklyGoalsView: View {
     @State private var taskNameForGrocList = ""
     @State private var isGeneratingGroceryList = false
 
-    private var adaptiveTextColor: Color {
-        colorScheme == .dark ? .white : .blue
-    }
 
     private let groceryKeywords = [
         "eat", "healthy", "vegetarian", "vegan", "protein", "meal", "diet",
@@ -116,7 +84,7 @@ struct WeeklyGoalsView: View {
 
                         if notificationType == "custom" {
                             DatePicker("Select Time", selection: $notificationTime, displayedComponents: .hourAndMinute)
-                                .tint(adaptiveTextColor)
+                                .tint(PLColor.accent)
                         }
                     }
                 }
@@ -141,11 +109,11 @@ struct WeeklyGoalsView: View {
                 VStack(alignment: .leading, spacing: PLSpacing.sm) {
                     Label("New Task", systemImage: "plus.circle")
                         .font(.headline)
-                        .foregroundColor(adaptiveTextColor)
+                        .foregroundColor(PLColor.textPrimary)
 
                     TextField("Enter task name", text: $newTask)
                         .textFieldStyle(.roundedBorder)
-                        .tint(adaptiveTextColor)
+                        .tint(PLColor.accent)
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Priority")
@@ -160,7 +128,7 @@ struct WeeklyGoalsView: View {
                     }
 
                     DatePicker("Due Date", selection: $newTaskDueDate, displayedComponents: .date)
-                        .tint(adaptiveTextColor)
+                        .tint(PLColor.accent)
 
                     HStack(spacing: PLSpacing.sm) {
                         Button(action: addFinancialGoal) {
@@ -189,7 +157,6 @@ struct WeeklyGoalsView: View {
             .padding(.top, PLSpacing.sm)
             .padding(.bottom, PLSpacing.xs)
 
-            Divider().padding(.top, PLSpacing.xs)
 
             // ── Task list ──
             List {
@@ -206,7 +173,7 @@ struct WeeklyGoalsView: View {
                                 }
                             ))
                             .textFieldStyle(.roundedBorder)
-                            .tint(adaptiveTextColor)
+                            .tint(PLColor.accent)
                             .onSubmit { updateTask(task: task) }
 
                             Picker("Priority", selection: Binding(
@@ -225,7 +192,7 @@ struct WeeklyGoalsView: View {
 
                             Button("Save") { updateTask(task: task) }
                                 .font(.subheadline.weight(.semibold))
-                                .foregroundColor(adaptiveTextColor)
+                                .foregroundColor(PLColor.tint)
                         }
                         .padding(.vertical, 6)
                     } else {
@@ -311,20 +278,15 @@ struct WeeklyGoalsView: View {
                     }
                 }
                 .onDelete(perform: deleteTask)
+                .listRowBackground(PLColor.surface)
             }
-            .listStyle(.plain)
+            .listStyle(.insetGrouped)
+            .scrollContentBackground(.hidden)
 
             // ── Reset button ──
-            Button(action: resetGoals) {
-                Text("Reset Weekly Goals")
-                    .font(.headline)
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-                    .background(PLColor.danger)
-                    .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
-            }
-            .padding(.horizontal, PLSpacing.lg)
+            Button("Reset Weekly Goals", action: resetGoals)
+                .buttonStyle(OutlineButton(tint: PLColor.danger))
+                .padding(.horizontal, PLSpacing.lg)
             .padding(.vertical, PLSpacing.sm)
         }
         .onAppear {
@@ -405,8 +367,9 @@ struct WeeklyGoalsView: View {
             var request = URLRequest(url: url)
             request.httpMethod = "DELETE"
             BackendConfig.addApiKey(to: &request)
-            URLSession.shared.dataTask(with: request) { _, _, _ in
-                DispatchQueue.main.async { tasks.remove(at: index) }
+            URLSession.shared.dataTask(with: request) { data, response, error in
+                if AppBanner.reportIfFailed("delete the goal", data, response, error, retry: { deleteTaskById(id) }) { return }
+                DispatchQueue.main.async { tasks.removeAll { $0.id == id } }
             }.resume()
         }
     }
@@ -443,8 +406,9 @@ struct WeeklyGoalsView: View {
         guard let jsonData = try? encoder.encode(newTaskItem) else { return }
         request.httpBody = jsonData
 
-        URLSession.shared.dataTask(with: request) { _, _, error in
-            if let error = error { print("❌ Network error: \(error.localizedDescription)"); return }
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            // on failure the goal stays typed in, ready to add again
+            if AppBanner.reportIfFailed("add your goal", data, response, error) { return }
             DispatchQueue.main.async {
                 calendarVM.createEvent(
                     title: "\(newTask)",
@@ -480,7 +444,17 @@ struct WeeklyGoalsView: View {
         let body = ["isCompleted": tasks[index].isCompleted]
         guard let jsonData = try? JSONEncoder().encode(body) else { return }
         request.httpBody = jsonData
-        URLSession.shared.dataTask(with: request) { _, _, _ in }.resume()
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            if AppBanner.reportIfFailed("update the goal", data, response, error) {
+                DispatchQueue.main.async { // put the checkmark back the way it was
+                    if let i = tasks.firstIndex(where: { $0.id == task.id }) {
+                        tasks[i].isCompleted.toggle()
+                        WidgetDataWriter.writeGoals(tasks)
+                        WidgetDataWriter.reloadWidgets()
+                    }
+                }
+            }
+        }.resume()
     }
 
     private func updateTask(task: TaskItem) {
@@ -491,7 +465,9 @@ struct WeeklyGoalsView: View {
         BackendConfig.addApiKey(to: &request)
         guard let jsonData = try? JSONEncoder().encode(task) else { return }
         request.httpBody = jsonData
-        URLSession.shared.dataTask(with: request) { _, _, _ in
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            // on failure the goal stays in edit mode with the changes, ready to save again
+            if AppBanner.reportIfFailed("save your changes to the goal", data, response, error) { return }
             DispatchQueue.main.async {
                 if let index = self.tasks.firstIndex(where: { $0.id == task.id }) {
                     self.tasks[index].isEditing = false
@@ -507,7 +483,8 @@ struct WeeklyGoalsView: View {
             var request = URLRequest(url: url)
             request.httpMethod = "DELETE"
             BackendConfig.addApiKey(to: &request)
-            URLSession.shared.dataTask(with: request) { _, _, _ in
+            URLSession.shared.dataTask(with: request) { data, response, error in
+                if AppBanner.reportIfFailed("delete the goal", data, response, error) { return }
                 DispatchQueue.main.async {
                     calendarVM.deleteEventByType("weekly-goal-\(task.name.lowercased())")
                     self.tasks.removeAll { $0.id == task.id }
@@ -521,7 +498,8 @@ struct WeeklyGoalsView: View {
         var request = URLRequest(url: url)
         request.httpMethod = "DELETE"
         BackendConfig.addApiKey(to: &request)
-        URLSession.shared.dataTask(with: request) { _, _, _ in
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            if AppBanner.reportIfFailed("reset your goals", data, response, error, retry: { resetGoals() }) { return }
             DispatchQueue.main.async { self.tasks.removeAll() }
         }.resume()
     }
@@ -609,7 +587,8 @@ struct WeeklyGoalsView: View {
             guard let jsonData = try? encoder.encode(newTaskItem) else { return }
             request.httpBody = jsonData
 
-            URLSession.shared.dataTask(with: request) { _, _, _ in
+            URLSession.shared.dataTask(with: request) { data, response, error in
+                if AppBanner.reportIfFailed("add your savings goal", data, response, error) { return }
                 DispatchQueue.main.async { self.tasks.append(newTaskItem) }
             }.resume()
         }
@@ -672,7 +651,11 @@ struct WeeklyGoalsView: View {
             } catch {
                 DispatchQueue.main.async {
                     isGeneratingGroceryList = false
-                    showError("Creation Failed", "Could not create grocery list: \(error.localizedDescription)")
+                    if let limit = error as? AILimitError {
+                        showError("Daily AI limit reached", limit.message)
+                    } else {
+                        showError("Creation Failed", "Could not create grocery list: \(error.localizedDescription)")
+                    }
                 }
             }
         }

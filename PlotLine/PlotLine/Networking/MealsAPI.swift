@@ -20,6 +20,7 @@ struct Meal: Identifiable, Decodable {
     }
 }
 
+@MainActor
 class MealViewModel: ObservableObject {
     @Published var meals: [Meal] = []  // Array of meals instead of single meal
     
@@ -54,9 +55,7 @@ class MealViewModel: ObservableObject {
             // Decode the response into an array of Meal objects
             let fetchedMeals = try JSONDecoder().decode([Meal].self, from: data)
             
-            DispatchQueue.main.async {
-                self.meals = fetchedMeals
-            }
+            self.meals = fetchedMeals
         } catch {
             print("Decoding error: \(error)")
             throw error

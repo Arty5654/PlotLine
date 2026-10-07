@@ -1,5 +1,8 @@
 package com.plotline.backend.service;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
@@ -21,6 +24,7 @@ import com.auth0.jwt.exceptions.JWTVerificationException;
 import com.auth0.jwt.interfaces.DecodedJWT;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.plotline.backend.accounts.AccountDirectory;
 import com.plotline.backend.dto.S3UserRecord;
 import com.plotline.backend.util.LegalTerms;
 import com.twilio.twiml.voice.Sms;
@@ -36,12 +40,14 @@ import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 @Service
 public class AuthService {
+    private static final Logger log = LoggerFactory.getLogger(AuthService.class);
+
 
     private final S3Client s3Client;
     private final String bucketName = "plotline-database-bucket";
     private final ObjectMapper objectMapper;
     private final String jwt_secret;
-    private static final String EMAIL_INDEX_KEY = "email-index.json";
+    private final AccountDirectory accounts;
 
  
     
@@ -49,13 +55,14 @@ public class AuthService {
 
     private final SmsService smsService;
     @Autowired
-    public AuthService(S3Client s3Client, SmsService smsService) {
-        this(s3Client, smsService, resolveEnv(Dotenv.configure().ignoreIfMissing().load(), "JWT_SECRET_KEY"));
+    public AuthService(S3Client s3Client, SmsService smsService, AccountDirectory accounts) {
+        this(s3Client, smsService, resolveEnv(Dotenv.configure().ignoreIfMissing().load(), "JWT_SECRET_KEY"), accounts);
     }
 
     // for tests: pass the jwt secret directly instead of reading it from the environment
-    AuthService(S3Client s3Client, SmsService smsService, String jwtSecret) {
+    AuthService(S3Client s3Client, SmsService smsService, String jwtSecret, AccountDirectory accounts) {
         this.s3Client = s3Client;
+        this.accounts = accounts;
         this.objectMapper = new ObjectMapper();
         this.smsService = smsService;
         this.jwt_secret = jwtSecret;
@@ -70,6 +77,50 @@ public class AuthService {
             return env;
         }
         return dotenv.get(key);
+    }
+
+    // Usernames are public, searchable, and part of every storage path (users/<username>/...),
+    // so they're limited to letters and numbers.
+    public static final String USERNAME_RULES = "Usernames must be 3 to 30 letters or numbers.";
+    private static final java.util.regex.Pattern USERNAME_PATTERN = java.util.regex.Pattern.compile("^[A-Za-z0-9]{3,30}$");
+
+    public static boolean isValidUsername(String username) {
+        return username != null && USERNAME_PATTERN.matcher(username).matches();
+    }
+
+    // Same password and email rules the app shows on sign-up (AuthViewModel.passwordRules / isValidEmail)
+    public static final String PASSWORD_RULES =
+            "Password needs 8+ characters with an uppercase letter, a lowercase letter, and a number.";
+    public static final String EMAIL_RULES = "Enter a valid email address.";
+    private static final java.util.regex.Pattern EMAIL_PATTERN =
+            java.util.regex.Pattern.compile("^[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}$", java.util.regex.Pattern.CASE_INSENSITIVE);
+
+    public static boolean isValidPassword(String password) {
+        return password != null
+                && password.length() >= 8
+                && password.chars().anyMatch(Character::isUpperCase)
+                && password.chars().anyMatch(Character::isLowerCase)
+                && password.chars().anyMatch(Character::isDigit);
+    }
+
+    public static boolean isValidEmail(String email) {
+        return email != null && EMAIL_PATTERN.matcher(email.trim()).matches();
+    }
+
+    // a valid, untaken username suggestion from an email: john.smith@gmail.com -> johnsmith (or johnsmith2...)
+    public String suggestUsername(String email) {
+        String local = email == null ? "" : email.split("@", 2)[0];
+        String base = local.replaceAll("[^A-Za-z0-9]", "");
+        if (base.isEmpty()) base = "user";
+        if (base.length() > 30) base = base.substring(0, 30);
+        while (base.length() < 3) base = base + "1";
+
+        String candidate = base;
+        for (int n = 2; userExists(candidate); n++) {
+            String suffix = String.valueOf(n);
+            candidate = base.substring(0, Math.min(base.length(), 30 - suffix.length())) + suffix;
+        }
+        return candidate;
     }
 
     // check if user exists for username uniqueness and login functions
@@ -193,7 +244,7 @@ public class AuthService {
             writeUserRecord(normalizeUsername(username), userRecord);
             return true;
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("updateUserRecord failed", e);
             return false;
         }
     }
@@ -237,26 +288,29 @@ public class AuthService {
         String norm = normalizeUsername(username);
         String normEmail = normalizeEmail(email);
         if (norm.isBlank() || normEmail.isBlank()) return false;
+        if (!isValidUsername(norm) || (displayUsername != null && !isValidUsername(displayUsername.trim()))) return false;
+        if (!isValidEmail(normEmail)) return false;
 
         if (userExistsAnyCase(norm)) return false;
-        if (emailExistsAnyCase(normEmail)) return false;
+
+        // the database reserves the username and email first, so two sign-ups at once can't both get them
+        long createdAt = System.currentTimeMillis();
+        if (!accounts.claim(norm, displayUsername, normEmail, createdAt)) return false;
 
         try {
             String hashedPassword = BCrypt.hashpw(rawPassword, BCrypt.gensalt());
 
             S3UserRecord userRecord = new S3UserRecord(norm, displayUsername, phone, normEmail, hashedPassword, isGoogle, false);
-            userRecord.setCreatedAt(System.currentTimeMillis());
+            userRecord.setCreatedAt(createdAt);
             extraFields.accept(userRecord);
             writeUserRecord(norm, userRecord);
             evictAccountCache(norm);
 
-            updateAllUsersList(displayUsername);
-            updateEmailIndex(normEmail, norm);
-
             return true;
 
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("createUser failed", e);
+            accounts.delete(norm); // free the name and email again
             return false;
         }
     }
@@ -302,7 +356,7 @@ public class AuthService {
             return "Incorrect Password";
 
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("userLogin failed", e);
             return "Server Error";
         }
         
@@ -339,7 +393,7 @@ public class AuthService {
         try {
             writeUserRecord(normalizeUsername(username), userRecord);
         } catch (Exception e) {
-            e.printStackTrace(); // still signed in; migration retries on the next Google sign-in
+            log.error("googleLogin failed", e); // still signed in; migration retries on the next Google sign-in
         }
         return verificationStatus(userRecord);
     }
@@ -420,6 +474,9 @@ public class AuthService {
     }
 
     public String changeUserPassword(String username, String oldPassword, String newPassword, String code) {
+        if (!isValidPassword(newPassword)) {
+            return PASSWORD_RULES;
+        }
         String norm = normalizeUsername(username);
         String keyToUse;
         if (userExistsStrict(norm)) {
@@ -451,7 +508,7 @@ public class AuthService {
     
             // if there is a otp code, verify it
             if (code != null && !code.isEmpty()) {
-                System.out.println("Entered code verification");
+                log.debug("Entered code verification");
                 boolean isCodeValid = smsService.verifyCode(userRecord.getPhone(), code, username);
                 if (!isCodeValid) {
                     return "Invalid OTP Code";
@@ -481,7 +538,7 @@ public class AuthService {
             return "success";
     
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("changeUserPassword failed", e);
             return "Failed to update password";
         }
     }
@@ -506,76 +563,15 @@ public class AuthService {
         return "users/" + username + "/account.json";
     }
 
-    private void updateAllUsersList(String username) throws Exception {
-        final String allUsersKey = "all-users.json";
-        List<String> allUsers;
 
-        // try to read the existing list
-        try {
-            GetObjectRequest getListReq = GetObjectRequest.builder()
-                .bucket(bucketName)
-                .key(allUsersKey)
-                .build();
-
-            ResponseInputStream<GetObjectResponse> resp =
-                s3Client.getObject(getListReq);
-
-            allUsers = objectMapper.readValue(
-                resp,
-                new TypeReference<List<String>>() {}
-            );
-
-        } catch (S3Exception e) {
-            // if it doesn't exist yet (404), start fresh
-            if (e.statusCode() == 404) {
-                allUsers = new ArrayList<>(Arrays.asList());
-            } else {
-                throw e;
-            }
-        }
-
-        // append (with dedupe)
-        boolean exists = allUsers.stream().anyMatch(u -> u.equalsIgnoreCase(username));
-        if (!exists) {
-            allUsers.add(username);
-        }
-
-        // write it back
-        String allUsersJson = objectMapper.writeValueAsString(allUsers);
-        PutObjectRequest putListReq = PutObjectRequest.builder()
-            .bucket(bucketName)
-            .key(allUsersKey)
-            .contentType("application/json")
-            .build();
-
-        s3Client.putObject(
-            putListReq,
-            RequestBody.fromString(allUsersJson)
-        );
+    /** usernames containing the text, for friend search */
+    public List<String> searchUsernames(String text, String excludeUsername) {
+        return accounts.search(text, excludeUsername, 20);
     }
 
-    public List<String> getAllUsernames() throws Exception {
-        try {
-            GetObjectRequest getReq = GetObjectRequest.builder()
-                .bucket(bucketName)
-                .key("all-users.json")
-                .build();
-
-            ResponseInputStream<GetObjectResponse> resp =
-                s3Client.getObject(getReq);
-
-            return objectMapper.readValue(
-                resp,
-                new TypeReference<List<String>>() {}
-            );
-
-        } catch (S3Exception e) {
-            if (e.statusCode() == 404) {
-                // no list yet => return empty
-                return List.of();
-            }
-            throw e;
-        }
+    /** 1 for the earliest account still around, 2 for the next, ... (null if unknown) */
+    public Long signupRank(String username) {
+        return accounts.signupRank(username);
     }
 
     public String normalizeUsername(String username) {
@@ -609,68 +605,12 @@ public class AuthService {
         return email == null ? "" : email.trim().toLowerCase();
     }
 
-    private Map<String, String> loadEmailIndex() throws Exception {
-        try {
-            GetObjectRequest getReq = GetObjectRequest.builder()
-                .bucket(bucketName)
-                .key(EMAIL_INDEX_KEY)
-                .build();
-
-            ResponseInputStream<GetObjectResponse> resp =
-                s3Client.getObject(getReq);
-
-            return objectMapper.readValue(
-                resp,
-                new TypeReference<Map<String, String>>() {}
-            );
-        } catch (S3Exception e) {
-            if (e.statusCode() == 404) {
-                return new java.util.HashMap<>();
-            }
-            throw e;
-        }
-    }
-
-    private void saveEmailIndex(Map<String, String> map) throws Exception {
-        String json = objectMapper.writeValueAsString(map);
-        PutObjectRequest putReq = PutObjectRequest.builder()
-            .bucket(bucketName)
-            .key(EMAIL_INDEX_KEY)
-            .contentType("application/json")
-            .build();
-        s3Client.putObject(putReq, RequestBody.fromString(json));
-    }
-
     private boolean emailExistsAnyCase(String email) {
-        String norm = normalizeEmail(email);
-        if (norm.isBlank()) return false;
-        try {
-            Map<String, String> index = loadEmailIndex();
-            return index.keySet().stream().anyMatch(e -> e.equalsIgnoreCase(norm));
-        } catch (Exception e) {
-            return false;
-        }
-    }
-
-    private void updateEmailIndex(String email, String username) throws Exception {
-        String normEmail = normalizeEmail(email);
-        Map<String, String> index = loadEmailIndex();
-        index.put(normEmail, username);
-        saveEmailIndex(index);
+        return accounts.emailTaken(email);
     }
 
     public String usernameForEmail(String email) {
-        String norm = normalizeEmail(email);
-        if (norm.isBlank()) return null;
-        try {
-            Map<String, String> index = loadEmailIndex();
-            for (var e : index.entrySet()) {
-                if (e.getKey().equalsIgnoreCase(norm)) {
-                    return e.getValue();
-                }
-            }
-        } catch (Exception ignored) { }
-        return null;
+        return accounts.usernameForEmail(email);
     }
   
 }

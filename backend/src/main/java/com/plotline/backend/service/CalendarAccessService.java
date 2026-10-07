@@ -1,5 +1,8 @@
 package com.plotline.backend.service;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.plotline.backend.dto.*;
@@ -22,6 +25,8 @@ import static com.plotline.backend.util.UsernameUtils.normalize;
 
 @Service
 public class CalendarAccessService {
+    private static final Logger log = LoggerFactory.getLogger(CalendarAccessService.class);
+
 
     private final S3Client s3Client;
     private final ObjectMapper objectMapper;
@@ -50,7 +55,7 @@ public class CalendarAccessService {
         } catch (NoSuchKeyException e) {
             return new CalendarAccessData();
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("loadAccess failed", e);
             return new CalendarAccessData();
         }
     }
@@ -274,7 +279,7 @@ public class CalendarAccessService {
         } catch (NoSuchKeyException e) {
             return new ArrayList<>();
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("loadCalendar failed", e);
             return new ArrayList<>();
         }
     }

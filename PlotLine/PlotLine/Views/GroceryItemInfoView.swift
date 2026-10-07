@@ -1,44 +1,5 @@
 import SwiftUI
 
-private enum PLColor {
-    static let surface       = Color(.secondarySystemBackground)
-    static let cardBorder    = Color.black.opacity(0.06)
-    static let textPrimary   = Color.primary
-    static let textSecondary = Color.secondary
-    static let danger        = Color.red
-}
-private enum PLSpacing {
-    static let xs: CGFloat = 6
-    static let sm: CGFloat = 10
-    static let md: CGFloat = 16
-    static let lg: CGFloat = 20
-}
-private enum PLRadius { static let md: CGFloat = 12 }
-
-private struct CardModifier: ViewModifier {
-    func body(content: Content) -> some View {
-        content
-            .padding(PLSpacing.md)
-            .background(PLColor.surface)
-            .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
-            .overlay(RoundedRectangle(cornerRadius: PLRadius.md).stroke(PLColor.cardBorder))
-    }
-}
-private extension View { func plCard() -> some View { modifier(CardModifier()) } }
-
-private struct PrimaryButton: ButtonStyle {
-    let adaptiveColor: Color
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.headline)
-            .foregroundColor(.white)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .background(Color.blue.opacity(configuration.isPressed ? 0.85 : 1))
-            .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
-    }
-}
-
 // MARK: - View
 
 struct GroceryItemInfoView: View {
@@ -56,9 +17,6 @@ struct GroceryItemInfoView: View {
     @State private var priceWarning = ""
     @State private var quantityWarning = ""
 
-    private var adaptiveTextColor: Color {
-        colorScheme == .dark ? .white : .blue
-    }
 
     private var isSaveDisabled: Bool { !priceWarning.isEmpty || !quantityWarning.isEmpty || !hasChanges }
 
@@ -84,6 +42,23 @@ struct GroceryItemInfoView: View {
     }
 
     var body: some View {
+        // fits its content; scrolls only when that's taller than the screen (large text, small iPhones)
+        ViewThatFits(in: .vertical) {
+            content
+            ScrollView { content }
+                .scrollDismissesKeyboard(.interactively)
+        }
+        .frame(maxWidth: 420)
+        .background(Color(.systemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 20))
+        .shadow(radius: 10)
+        .padding(.horizontal, PLSpacing.md)
+        .padding(.vertical, PLSpacing.lg)
+        .onAppear(perform: loadFromItem)
+        .onChange(of: item) { _, _ in loadFromItem() }
+    }
+
+    private var content: some View {
         VStack(spacing: PLSpacing.lg) {
             // Header
             HStack(spacing: PLSpacing.sm) {
@@ -110,7 +85,7 @@ struct GroceryItemInfoView: View {
                         if isEditing {
                             TextField("Item name", text: $nameText)
                                 .textFieldStyle(.roundedBorder)
-                                .tint(adaptiveTextColor)
+                                .tint(PLColor.tint)
                         } else {
                             Text(it.name.isEmpty ? "—" : it.name)
                         }
@@ -127,7 +102,7 @@ struct GroceryItemInfoView: View {
                             ))
                             .keyboardType(.numberPad)
                             .textFieldStyle(.roundedBorder)
-                            .tint(adaptiveTextColor)
+                            .tint(PLColor.tint)
                         } else {
                             Text("\(it.quantity)")
                         }
@@ -144,7 +119,7 @@ struct GroceryItemInfoView: View {
                             ))
                             .keyboardType(.decimalPad)
                             .textFieldStyle(.roundedBorder)
-                            .tint(adaptiveTextColor)
+                            .tint(PLColor.tint)
                         } else {
                             let priceValue = it.price ?? 0
                             let s = priceValue == 0 ? "—" : (priceFormatter.string(from: NSNumber(value: priceValue)) ?? "—")
@@ -156,26 +131,27 @@ struct GroceryItemInfoView: View {
                         if isEditing {
                             TextField("Optional", text: $storeText)
                                 .textFieldStyle(.roundedBorder)
-                                .tint(adaptiveTextColor)
+                                .tint(PLColor.tint)
                         } else {
                             Text((it.store?.isEmpty ?? true) ? "—" : (it.store ?? "—"))
                         }
                     }
 
-                    VStack(alignment: .leading, spacing: 6) {
+                    VStack(alignment: .leading, spacing: 4) {
                         Text("Notes")
                             .font(.subheadline)
                             .foregroundColor(PLColor.textSecondary)
                         if isEditing {
                             TextField("Optional notes", text: $notesText, axis: .vertical)
                                 .textFieldStyle(.roundedBorder)
-                                .tint(adaptiveTextColor)
+                                .tint(PLColor.tint)
                                 .lineLimit(3, reservesSpace: true)
                         } else {
                             Text((it.notes?.isEmpty ?? true) ? "—" : (it.notes ?? "—"))
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .plCard()
 
@@ -199,7 +175,7 @@ struct GroceryItemInfoView: View {
                         Button("Save") {
                             Task { await saveEdits() }
                         }
-                        .buttonStyle(PrimaryButton(adaptiveColor: adaptiveTextColor))
+                        .buttonStyle(PrimaryButton())
                         .disabled(isSaveDisabled)
                     } else {
                         Button {
@@ -208,7 +184,7 @@ struct GroceryItemInfoView: View {
                             Label("Edit", systemImage: "pencil")
                                 .frame(maxWidth: .infinity)
                         }
-                        .buttonStyle(PrimaryButton(adaptiveColor: adaptiveTextColor))
+                        .buttonStyle(PrimaryButton())
                     }
                 }
 
@@ -227,16 +203,8 @@ struct GroceryItemInfoView: View {
                 .plCard()
                 .frame(maxWidth: .infinity, minHeight: 220)
             }
-
-            Spacer(minLength: 0)
         }
         .padding(PLSpacing.lg)
-        .frame(width: 360, height: 520)
-        .background(Color(.systemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 20))
-        .shadow(radius: 10)
-        .onAppear(perform: loadFromItem)
-        .onChange(of: item) { _ in loadFromItem() }
     }
 
     // MARK: - Load / Save (logic unchanged)
@@ -270,7 +238,7 @@ struct GroceryItemInfoView: View {
             self.item = it
             isEditing = false
         } catch {
-            print("Failed to update item: \(error)")
+            AppBanner.report("save your changes", error) // still editing, with the changes kept
         }
     }
 
@@ -305,15 +273,30 @@ struct GroceryItemInfoView: View {
 private struct Row<Content: View>: View {
     let label: String
     @ViewBuilder var content: () -> Content
+    @Environment(\.dynamicTypeSize) private var typeSize
+
     var body: some View {
-        HStack(spacing: PLSpacing.md) {
-            Text(label)
-                .font(.subheadline)
-                .foregroundColor(PLColor.textSecondary)
-                .frame(width: 90, alignment: .leading)
-            content()
-            Spacer(minLength: PLSpacing.sm)
+        // label beside the value; above it at the largest text sizes, where there's no room
+        if typeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 4) {
+                labelText
+                content()
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            HStack(alignment: .firstTextBaseline, spacing: PLSpacing.md) {
+                labelText
+                    .frame(width: 80, alignment: .leading)
+                content()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
+    }
+
+    private var labelText: some View {
+        Text(label)
+            .font(.subheadline)
+            .foregroundColor(PLColor.textSecondary)
     }
 }
 

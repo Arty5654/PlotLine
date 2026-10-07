@@ -1,7 +1,6 @@
 package com.plotline.backend.features;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -48,7 +47,6 @@ class GoalsFeatureTest extends FeatureTestBase {
     }
 
     @Test
-    @Disabled("Known bug: BUGS.md #4 (editing a weekly goal with a due date fails)")
     @DisplayName("Editing a weekly goal saves the change")
     void editWeeklyGoal() throws Exception {
         User me = newUser();

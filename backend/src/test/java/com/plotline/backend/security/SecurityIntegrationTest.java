@@ -67,7 +67,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         controllers = {AuthController.class, FriendsController.class, CalendarController.class,
                 CalendarAccessController.class, ChatController.class, ProfileController.class,
                 PlaidController.class, WeeklyGoalsController.class, SmsController.class},
-        excludeFilters = @ComponentScan.Filter(type = FilterType.ASSIGNABLE_TYPE, classes = ApiKeyFilter.class))
+        excludeFilters = @ComponentScan.Filter(type = FilterType.ASSIGNABLE_TYPE, classes = {ApiKeyFilter.class,
+                com.plotline.backend.ratelimit.AuthRateLimitFilter.class, com.plotline.backend.ratelimit.AiRateLimitFilter.class,
+                com.plotline.backend.membership.MembershipFilter.class}))
 class SecurityIntegrationTest {
 
     @Autowired private MockMvc mockMvc;
@@ -75,6 +77,7 @@ class SecurityIntegrationTest {
     @MockBean private AuthService authService;
     @MockBean private AppleSignInService appleSignInService;
     @MockBean private AccountDeletionService accountDeletionService;
+    @MockBean private com.plotline.backend.service.GoogleSignInService googleSignInService;
     @MockBean private FriendsService friendsService;
     @MockBean private CalendarService calendarService;
     @MockBean private CalendarAccessService calendarAccessService;

@@ -28,9 +28,6 @@ struct FriendProfileView: View {
     @State private var inviteRequireApproval: Bool = false
     @State private var showRevokeAlert = false
 
-    @Environment(\.colorScheme) var colorScheme
-    private var adaptiveTextColor: Color { colorScheme == .dark ? .white : .blue }
-
     // Derived calendar access status for this friend
     private var calendarInviteStatus: CalendarInviteStatus {
         if calendarVM.accessData.pendingOutgoing.contains(where: { $0.toUsername.lowercased() == username.lowercased() }) {
@@ -53,268 +50,43 @@ struct FriendProfileView: View {
 
     var body: some View {
         ZStack {
-            NavigationStack {
-                ScrollView {
-                    VStack(spacing: 30) {
+            ScrollView {
+                VStack(spacing: PLSpacing.lg) {
+                    header
 
-                        // Profile Image
-                        if let profileImageURL = profileImageURL {
-                            AsyncImage(url: profileImageURL) { phase in
-                                if let image = phase.image {
-                                    image
-                                        .resizable()
-                                        .scaledToFill()
-                                        .frame(width: 120, height: 120)
-                                        .clipShape(Circle())
-                                        .overlay(Circle().stroke(adaptiveTextColor, lineWidth: 2))
-                                } else {
-                                    Circle()
-                                        .frame(width: 120, height: 120)
-                                        .foregroundColor(.gray.opacity(0.3))
-                                }
-                            }
-                        } else {
-                            Circle()
-                                .frame(width: 120, height: 120)
-                                .foregroundColor(.gray.opacity(0.3))
-                        }
-
-                        // Name and City
-                        VStack(spacing: 8) {
-                            Text(displayName)
-                                .font(.custom("AvenirNext-Bold", size: 20))
-                                .foregroundColor(adaptiveTextColor)
-
-                            Text(city == "Unknown"
-                                 ? "No Hometown given"
-                                 : "Based out of \(city)")
-                                .font(.custom("AvenirNext-Bold", size: 16))
-                                .foregroundColor(adaptiveTextColor)
-                        }
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: .infinity)
-                        .padding(.horizontal)
-                        
-                        // Friend request button
-                        
-                        if username == currentUsername {
-                            Text("This is you")
-                                .foregroundColor(.gray)
-                                .italic()
-                            
-                        } else if let status = friendStatus {
-                            switch status {
-                            case .notFriends:
-                                Button("Add Friend") {
-                                    Task {
-                                        _ = await viewModel.sendFriendRequest(sender: currentUsername, receiver: username)
-                                        friendStatus = .pendingRequest
-                                    }
-                                }
-                                .buttonStyle(.borderedProminent)
-                                .tint(.blue)
-
-                            case .incomingRequest:
-                                Button("Accept Request") {
-                                    Task {
-                                        _ = await viewModel.acceptFriendRequest(sender: username, receiver: currentUsername)
-                                        
-                                        await viewModel.loadFriends(for: currentUsername)
-                                        await viewModel.loadPendingRequests(for: currentUsername)
-                                        
-                                        await fetchFriendStatus()
-                                    }
-                                }
-                                .buttonStyle(.borderedProminent)
-                                .tint(.green)
-
-                            case .pendingRequest:
-                                Text("Request Pending")
-                                    .foregroundColor(.gray)
-                                    .italic()
-
-                            case .friends:
-                                VStack(spacing: 8) {
-                                    Text("You are friends")
-                                        .foregroundColor(.green)
-                                        .fontWeight(.bold)
-
-                                    // Calendar invite section
-                                    switch calendarInviteStatus {
-                                    case .none:
-                                        Button("Invite to My Calendar") {
-                                            showInviteSheet = true
-                                        }
-                                        .buttonStyle(.borderedProminent)
-                                        .tint(.purple)
-
-                                    case .pendingOutgoing:
-                                        Text("Calendar invite sent")
-                                            .foregroundColor(.secondary)
-                                            .italic()
-                                            .font(.subheadline)
-
-                                    case .pendingIncoming:
-                                        if let invite = calendarVM.accessData.pendingIncoming.first(where: { $0.fromUsername.lowercased() == username.lowercased() }) {
-                                            VStack(spacing: 4) {
-                                                Text("\(username) invited you to their calendar")
-                                                    .font(.subheadline)
-                                                HStack(spacing: 12) {
-                                                    Button("Accept") {
-                                                        calendarVM.respondToCalendarInvite(inviteId: invite.id, accept: true)
-                                                    }
-                                                    .buttonStyle(.borderedProminent)
-                                                    .tint(.green)
-                                                    Button("Decline") {
-                                                        calendarVM.respondToCalendarInvite(inviteId: invite.id, accept: false)
-                                                    }
-                                                    .buttonStyle(.bordered)
-                                                    .tint(.red)
-                                                }
-                                            }
-                                        }
-
-                                    case .granted:
-                                        VStack(spacing: 8) {
-                                            HStack(spacing: 6) {
-                                                Image(systemName: "calendar.badge.checkmark")
-                                                    .foregroundColor(.purple)
-                                                Text("Calendar access active")
-                                                    .font(.subheadline)
-                                                    .foregroundColor(.purple)
-                                            }
-                                            Button("Revoke Calendar Access") {
-                                                showRevokeAlert = true
-                                            }
-                                            .buttonStyle(.bordered)
-                                            .tint(.red)
-                                            .font(.subheadline)
-                                        }
-                                        .alert("Revoke Calendar Access", isPresented: $showRevokeAlert) {
-                                            Button("Remove Their Events", role: .destructive) {
-                                                calendarVM.revokeCalendarAccess(from: username, keepEvents: false)
-                                            }
-                                            Button("Keep Their Events", role: .none) {
-                                                calendarVM.revokeCalendarAccess(from: username, keepEvents: true)
-                                            }
-                                            Button("Cancel", role: .cancel) {}
-                                        } message: {
-                                            Text("This will remove \(username)'s access to your calendar. Do you want to keep the events they added, or remove them?")
-                                        }
-                                    }
-
-                                    // Show when friend has granted us access to their calendar
-                                    if calendarVM.accessData.receivedAccess.contains(where: { $0.friendUsername.lowercased() == username.lowercased() }) {
-                                        HStack(spacing: 6) {
-                                            Image(systemName: "calendar.badge.checkmark")
-                                                .foregroundColor(.green)
-                                            Text("You can view their calendar")
-                                                .font(.subheadline)
-                                                .foregroundColor(.green)
-                                        }
-                                    }
-
-                                    Button(role: .destructive) {
-                                        Task {
-                                            await viewModel.removeFriend(user: currentUsername, friend: username)
-                                            await fetchFriendStatus()
-                                        }
-                                    } label: {
-                                        Text("Remove Friend")
-                                            .frame(maxWidth: .infinity)
-                                    }
-                                    .buttonStyle(.bordered)
-                                }
-                                .sheet(isPresented: $showInviteSheet) {
-                                    NavigationView {
-                                        Form {
-                                            Section(header: Text("Access Level")) {
-                                                Picker("Level", selection: $inviteLevel) {
-                                                    Text("View only").tag("view")
-                                                    Text("View & add events").tag("add")
-                                                }
-                                                .pickerStyle(.segmented)
-                                            }
-                                            if inviteLevel == "add" {
-                                                Section(header: Text("Approval")) {
-                                                    Toggle("Require my approval for added events", isOn: $inviteRequireApproval)
-                                                        .tint(.blue)
-                                                }
-                                            }
-                                        }
-                                        .navigationBarTitle("Invite to Calendar", displayMode: .inline)
-                                        .navigationBarItems(
-                                            leading: Button("Cancel") { showInviteSheet = false },
-                                            trailing: Button("Send") {
-                                                calendarVM.sendCalendarInvite(to: username, level: inviteLevel, requireApproval: inviteRequireApproval)
-                                                showInviteSheet = false
-                                            }.bold()
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-
-                        // Trophy Section
-                        RoundedRectangle(cornerRadius: 12)
-                            .fill(Color.gray.opacity(0.2))
-                            .frame(height: 300)
-                            .overlay(
-                                Group {
-                                    if friendTrophies.isEmpty {
-                                        VStack {
-                                            Spacer()
-                                            Text("No Trophies Yet!")
-                                                .font(.custom("AvenirNext-Bold", size: 20))
-                                                .foregroundColor(.black)
-                                                .multilineTextAlignment(.center)
-                                                .padding()
-                                            Spacer()
-                                        }
-                                    } else {
-                                        ScrollView {
-                                            LazyVGrid(columns: columns, spacing: 20) {
-                                                ForEach(friendTrophies) { trophy in
-                                                    VStack {
-                                                        Image(trophyImageName(for: trophy))
-                                                            .resizable()
-                                                            .scaledToFit()
-                                                            .frame(width: 60, height: 60)
-
-                                                        Text(trophy.name)
-                                                            .font(.caption)
-                                                            .fontWeight(.bold)
-                                                            .foregroundColor(trophyColor(for: trophy.level))
-                                                            .multilineTextAlignment(.center)
-                                                    }
-                                                    .onTapGesture {
-                                                        withAnimation {
-                                                            selectedTrophy = trophy
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                            .padding()
-                                        }
-                                    }
-                                }
-                            )
-                            .padding(.horizontal)
-
-                        Spacer(minLength: 40)
+                    if username.lowercased() == currentUsername.lowercased() {
+                        Text("This is you")
+                            .font(.subheadline)
+                            .foregroundColor(PLColor.textSecondary)
+                    } else if let status = friendStatus {
+                        friendshipSection(status)
                     }
-                    .padding()
-                    .navigationBarTitle("\(username)'s Profile", displayMode: .inline)
-                    .onAppear {
-                        Task {
-                            fetchFriendProfile()
-                            fetchFriendTrophies()
-                            await fetchFriendStatus()
-                            calendarVM.fetchAccessData()
-                        }
+
+                    trophiesSection
+                }
+                .padding(.horizontal, PLSpacing.lg)
+                .padding(.vertical, PLSpacing.md)
+                .navigationBarTitle(username, displayMode: .inline)
+                .onAppear {
+                    Task {
+                        fetchFriendProfile()
+                        fetchFriendTrophies()
+                        await fetchFriendStatus()
+                        calendarVM.fetchAccessData()
                     }
                 }
+            }
+            .sheet(isPresented: $showInviteSheet) { inviteSheet }
+            .alert("Revoke Calendar Access", isPresented: $showRevokeAlert) {
+                Button("Remove Their Events", role: .destructive) {
+                    calendarVM.revokeCalendarAccess(from: username, keepEvents: false)
+                }
+                Button("Keep Their Events", role: .none) {
+                    calendarVM.revokeCalendarAccess(from: username, keepEvents: true)
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This will remove \(username)'s access to your calendar. Do you want to keep the events they added, or remove them?")
             }
 
             // Popup Trophy Detail
@@ -338,6 +110,236 @@ struct FriendProfileView: View {
         }
     }
 
+    // photo, name and hometown
+    private var header: some View {
+        VStack(spacing: PLSpacing.sm) {
+            Group {
+                if let profileImageURL {
+                    AsyncImage(url: profileImageURL) { phase in
+                        if let image = phase.image {
+                            image.resizable().scaledToFill()
+                        } else {
+                            avatarPlaceholder
+                        }
+                    }
+                } else {
+                    avatarPlaceholder
+                }
+            }
+            .frame(width: 96, height: 96)
+            .clipShape(Circle())
+            .overlay(Circle().stroke(PLColor.cardBorder))
+
+            VStack(spacing: 4) {
+                Text(displayName.isEmpty ? username : displayName)
+                    .font(.title2.weight(.bold))
+                    .multilineTextAlignment(.center)
+                if city.isEmpty || city == "Unknown" {
+                    Text("@\(username)")
+                        .font(.subheadline)
+                        .foregroundColor(PLColor.textSecondary)
+                } else {
+                    Label(city, systemImage: "mappin.and.ellipse")
+                        .font(.subheadline)
+                        .foregroundColor(PLColor.textSecondary)
+                }
+                if friendStatus == .friends {
+                    Label("Friends", systemImage: "checkmark.circle.fill")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundColor(PLColor.success)
+                        .padding(.top, 2)
+                }
+            }
+        }
+        .padding(.top, PLSpacing.sm)
+    }
+
+    private var avatarPlaceholder: some View {
+        ZStack {
+            PLColor.surface
+            Image(systemName: "person.fill")
+                .font(.system(size: 40))
+                .foregroundColor(Color(.tertiaryLabel))
+        }
+    }
+
+    @ViewBuilder
+    private func friendshipSection(_ status: FriendStatus) -> some View {
+        switch status {
+        case .notFriends:
+            Button {
+                Task {
+                    _ = await viewModel.sendFriendRequest(sender: currentUsername, receiver: username)
+                    friendStatus = .pendingRequest
+                }
+            } label: {
+                Label("Add Friend", systemImage: "person.badge.plus")
+            }
+            .buttonStyle(PrimaryButton())
+
+        case .incomingRequest:
+            Button {
+                Task {
+                    _ = await viewModel.acceptFriendRequest(sender: username, receiver: currentUsername)
+                    await viewModel.loadFriends(for: currentUsername)
+                    await viewModel.loadPendingRequests(for: currentUsername)
+                    await fetchFriendStatus()
+                }
+            } label: {
+                Label("Accept Friend Request", systemImage: "checkmark")
+            }
+            .buttonStyle(PrimaryButton(color: PLColor.success))
+
+        case .pendingRequest:
+            Label("Friend request sent", systemImage: "clock")
+                .font(.subheadline)
+                .foregroundColor(PLColor.textSecondary)
+                .frame(maxWidth: .infinity)
+                .plCard()
+
+        case .friends:
+            VStack(spacing: PLSpacing.sm) {
+                PLSectionHeader(title: "Calendar sharing")
+                VStack(alignment: .leading, spacing: 12) {
+                    calendarStatus
+                    // when the friend has shared their calendar with us
+                    if calendarVM.accessData.receivedAccess.contains(where: { $0.friendUsername.lowercased() == username.lowercased() }) {
+                        Divider()
+                        Label("You can see their calendar", systemImage: "calendar.badge.checkmark")
+                            .font(.subheadline)
+                            .foregroundColor(PLColor.success)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .plCard()
+
+                Button(role: .destructive) {
+                    Task {
+                        await viewModel.removeFriend(user: currentUsername, friend: username)
+                        await fetchFriendStatus()
+                    }
+                } label: {
+                    Text("Remove Friend")
+                }
+                .buttonStyle(OutlineButton(tint: PLColor.danger))
+                .padding(.top, 4)
+            }
+        }
+    }
+
+    // sharing my calendar with this friend
+    @ViewBuilder
+    private var calendarStatus: some View {
+        switch calendarInviteStatus {
+        case .none:
+            Button {
+                showInviteSheet = true
+            } label: {
+                PLRow(icon: "calendar.badge.plus", tint: .purple, title: "Share my calendar")
+            }
+            .buttonStyle(.plain)
+
+        case .pendingOutgoing:
+            PLRow(icon: "clock", tint: .gray, title: "Calendar invite sent", showsChevron: false)
+
+        case .pendingIncoming:
+            if let invite = calendarVM.accessData.pendingIncoming.first(where: { $0.fromUsername.lowercased() == username.lowercased() }) {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("\(username) invited you to their calendar")
+                        .font(.subheadline)
+                    HStack(spacing: 12) {
+                        Button("Accept") {
+                            calendarVM.respondToCalendarInvite(inviteId: invite.id, accept: true)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(PLColor.success)
+                        Button("Decline") {
+                            calendarVM.respondToCalendarInvite(inviteId: invite.id, accept: false)
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                    .controlSize(.small)
+                }
+            }
+
+        case .granted:
+            VStack(alignment: .leading, spacing: 10) {
+                PLRow(icon: "calendar.badge.checkmark", tint: .purple, title: "They can see your calendar", showsChevron: false)
+                Button("Stop sharing my calendar") {
+                    showRevokeAlert = true
+                }
+                .font(.subheadline.weight(.semibold))
+                .foregroundColor(PLColor.danger)
+            }
+        }
+    }
+
+    private var trophiesSection: some View {
+        VStack(spacing: PLSpacing.sm) {
+            PLSectionHeader(title: "Trophies")
+            Group {
+                if friendTrophies.isEmpty {
+                    VStack(spacing: 6) {
+                        Image(systemName: "trophy")
+                            .font(.title2)
+                            .foregroundColor(PLColor.textSecondary)
+                        Text("No trophies yet")
+                            .font(.subheadline)
+                            .foregroundColor(PLColor.textSecondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, PLSpacing.md)
+                } else {
+                    LazyVGrid(columns: columns, spacing: PLSpacing.md) {
+                        ForEach(friendTrophies) { trophy in
+                            VStack(spacing: 6) {
+                                Image(trophyImageName(for: trophy))
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(width: 56, height: 56)
+                                Text(trophy.name)
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundColor(trophyColor(for: trophy.level))
+                                    .multilineTextAlignment(.center)
+                            }
+                            .onTapGesture {
+                                withAnimation { selectedTrophy = trophy }
+                            }
+                        }
+                    }
+                }
+            }
+            .plCard()
+        }
+    }
+
+    private var inviteSheet: some View {
+        NavigationStack {
+            Form {
+                Section(header: Text("Access Level")) {
+                    Picker("Level", selection: $inviteLevel) {
+                        Text("View only").tag("view")
+                        Text("View & add events").tag("add")
+                    }
+                    .pickerStyle(.segmented)
+                }
+                if inviteLevel == "add" {
+                    Section(header: Text("Approval")) {
+                        Toggle("Require my approval for added events", isOn: $inviteRequireApproval)
+                            .tint(PLColor.accent)
+                    }
+                }
+            }
+            .navigationBarTitle("Share My Calendar", displayMode: .inline)
+            .navigationBarItems(
+                leading: Button("Cancel") { showInviteSheet = false },
+                trailing: Button("Send") {
+                    calendarVM.sendCalendarInvite(to: username, level: inviteLevel, requireApproval: inviteRequireApproval)
+                    showInviteSheet = false
+                }.bold()
+            )
+        }
+    }
 
     private func fetchFriendProfile() {
         Task {
@@ -354,7 +356,7 @@ struct FriendProfileView: View {
             } catch {
                 self.displayName = username
                 self.city = "Unknown"
-                print("Error fetching friend profile: \(error)")
+                AppBanner.report("load \(username)'s profile", error, retry: { fetchFriendProfile() })
             }
         }
     }

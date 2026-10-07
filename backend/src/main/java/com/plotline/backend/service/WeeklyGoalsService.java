@@ -1,5 +1,8 @@
 package com.plotline.backend.service;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.plotline.backend.dto.ChatMessage;
@@ -25,6 +28,8 @@ import static com.plotline.backend.util.UsernameUtils.normalize;
 
 @Service
 public class WeeklyGoalsService {
+    private static final Logger log = LoggerFactory.getLogger(WeeklyGoalsService.class);
+
 
   private final S3Client s3Client;
   private final String bucketName = "plotline-database-bucket";
@@ -52,7 +57,7 @@ public class WeeklyGoalsService {
       ObjectMapper objectMapper = new ObjectMapper();
       return objectMapper.readValue(data, Map.class);
     } catch (NoSuchKeyException e) {
-      System.out.println("⚠️ No weekly goals file found for " + username + ", returning empty list.");
+      log.debug("⚠️ No weekly goals file found for {}, returning empty list.", username);
       Map<String, Object> emptyData = new HashMap<>();
       emptyData.put("weeklyGoals", new ArrayList<>());
       return emptyData;
@@ -66,7 +71,7 @@ public class WeeklyGoalsService {
   public boolean addGoalToS3(String username, TaskItem newTask) {
     try {
       String key = "users/" + normalize(username) + "/weekly-goals.json";
-      System.out.println("📡 Fetching existing goals from: " + key);
+      log.debug("📡 Fetching existing goals from: {}", key);
 
       // Fetch existing goals
       GetObjectRequest getObjectRequest = GetObjectRequest.builder()
@@ -104,7 +109,7 @@ public class WeeklyGoalsService {
       return true; // Success
 
     } catch (NoSuchKeyException e) {
-      System.out.println("⚠️ File not found, creating a new one.");
+      log.debug("⚠️ File not found, creating a new one.");
 
       // Create a new goal list if the file does not exist
       Map<String, List<TaskItem>> newGoalData = new HashMap<>();
@@ -125,11 +130,11 @@ public class WeeklyGoalsService {
 
         return true;
       } catch (IOException ex) {
-        ex.printStackTrace();
+        log.error("addGoalToS3 failed", ex);
         return false;
       }
     } catch (Exception e) {
-      e.printStackTrace();
+      log.error("addGoalToS3 failed", e);
       return false;
     }
   }
@@ -137,7 +142,7 @@ public class WeeklyGoalsService {
   public boolean deleteGoalFromS3(String username, int taskId) {
     try {
       String key = "users/" + normalize(username) + "/weekly-goals.json";
-      System.out.println("📡 Fetching existing goals from: " + key);
+      log.debug("📡 Fetching existing goals from: {}", key);
 
       // Fetch existing goals
       GetObjectRequest getObjectRequest = GetObjectRequest.builder()
@@ -173,10 +178,10 @@ public class WeeklyGoalsService {
       return true; // Success
 
     } catch (NoSuchKeyException e) {
-      System.out.println("⚠️ File not found, nothing to delete.");
+      log.debug("⚠️ File not found, nothing to delete.");
       return false;
     } catch (Exception e) {
-      e.printStackTrace();
+      log.error("deleteGoalFromS3 failed", e);
       return false;
     }
   }
@@ -184,7 +189,7 @@ public class WeeklyGoalsService {
   public boolean updateGoalInS3(String username, int taskId, TaskItem updatedTask) {
     try {
       String key = "users/" + normalize(username) + "/weekly-goals.json";
-      System.out.println("📡 Fetching existing goals from: " + key);
+      log.debug("📡 Fetching existing goals from: {}", key);
 
       // Fetch existing goals
       GetObjectRequest getObjectRequest = GetObjectRequest.builder()
@@ -196,6 +201,7 @@ public class WeeklyGoalsService {
       String jsonData = new String(objectBytes.asByteArray(), StandardCharsets.UTF_8);
 
       ObjectMapper objectMapper = new ObjectMapper();
+      objectMapper.registerModule(new JavaTimeModule()); // goals have LocalDate due dates
       Map<String, List<TaskItem>> goalsData = objectMapper.readValue(jsonData, new TypeReference<>() {
       });
 
@@ -218,10 +224,10 @@ public class WeeklyGoalsService {
       return true; // Success
 
     } catch (NoSuchKeyException e) {
-      System.out.println("⚠️ File not found, cannot update.");
+      log.debug("⚠️ File not found, cannot update.");
       return false;
     } catch (Exception e) {
-      e.printStackTrace();
+      log.error("updateGoalInS3 failed", e);
       return false;
     }
   }
@@ -229,7 +235,7 @@ public class WeeklyGoalsService {
   public boolean resetGoalsInS3(String username) {
     try {
       String key = "users/" + normalize(username) + "/weekly-goals.json";
-      System.out.println("📡 Resetting all goals for: " + key);
+      log.debug("📡 Resetting all goals for: {}", key);
 
       // Create an empty goal list
       Map<String, List<TaskItem>> emptyGoalData = Map.of("weeklyGoals", new ArrayList<>());
@@ -249,10 +255,10 @@ public class WeeklyGoalsService {
       return true; // Success
 
     } catch (NoSuchKeyException e) {
-      System.out.println("⚠️ File not found, nothing to reset.");
+      log.debug("⚠️ File not found, nothing to reset.");
       return false;
     } catch (Exception e) {
-      e.printStackTrace();
+      log.error("resetGoalsInS3 failed", e);
       return false;
     }
   }
@@ -260,7 +266,7 @@ public class WeeklyGoalsService {
   public boolean updateGoalCompletionInS3(String username, int taskId, boolean isCompleted) {
     try {
       String key = "users/" + normalize(username) + "/weekly-goals.json";
-      System.out.println("📡 Fetching existing goals from: " + key);
+      log.debug("📡 Fetching existing goals from: {}", key);
 
       // Fetch existing goals
       GetObjectRequest getObjectRequest = GetObjectRequest.builder()
@@ -306,10 +312,10 @@ public class WeeklyGoalsService {
       return true;
 
     } catch (NoSuchKeyException e) {
-      System.out.println("⚠️ File not found, cannot update.");
+      log.debug("⚠️ File not found, cannot update.");
       return false;
     } catch (Exception e) {
-      e.printStackTrace();
+      log.error("updateGoalCompletionInS3 failed", e);
       return false;
     }
   }
@@ -332,7 +338,7 @@ public class WeeklyGoalsService {
 
       return costs;
     } catch (Exception e) {
-      e.printStackTrace();
+      log.error("getWeeklyCosts failed", e);
       throw new RuntimeException("Failed to fetch weekly costs", e);
     }
   }
@@ -355,7 +361,7 @@ public class WeeklyGoalsService {
 
       return budget;
     } catch (Exception e) {
-      e.printStackTrace();
+      log.error("getWeeklyBudget failed", e);
       throw new RuntimeException("Failed to fetch weekly budget", e);
     }
   }

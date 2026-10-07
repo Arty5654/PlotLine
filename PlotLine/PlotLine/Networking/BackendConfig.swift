@@ -53,13 +53,4 @@ enum BackendConfig {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
     }
-
-    /// USDA FoodData Central API key for food search.
-    static let usdaFdcApiKey: String = {
-        if let raw = Bundle.main.object(forInfoDictionaryKey: "USDA_FDC_API_KEY") as? String {
-            let val = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !val.isEmpty && !val.contains("$(") { return val }
-        }
-        return "DEMO_KEY"
-    }()
 }

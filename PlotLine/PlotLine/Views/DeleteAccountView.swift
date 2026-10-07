@@ -129,7 +129,7 @@ struct DeleteAccountView: View {
             session.deleteNeedsAppleConfirmation = false
             session.deleteNeedsFreshSignIn = false
         }
-        .onChange(of: session.isLoggedIn) { loggedIn in
+        .onChange(of: session.isLoggedIn) { _, loggedIn in
             if !loggedIn { dismiss() }
         }
     }

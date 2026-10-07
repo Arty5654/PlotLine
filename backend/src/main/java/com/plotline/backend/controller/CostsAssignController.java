@@ -1,5 +1,8 @@
 package com.plotline.backend.controller;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import com.plotline.backend.costs.CostsWriter;
 import com.plotline.backend.plaid.TokenStore;
 import org.springframework.http.ResponseEntity;
@@ -10,6 +13,8 @@ import java.util.*;
 @RestController
 @RequestMapping("/api/costs")
 public class CostsAssignController {
+    private static final Logger log = LoggerFactory.getLogger(CostsAssignController.class);
+
   private final CostsWriter costsWriter;
   private final TokenStore tokenStore;
 
@@ -48,7 +53,7 @@ public class CostsAssignController {
 
       return ResponseEntity.ok(Map.of("ok", true, "days", dayMap.keySet()));
     } catch (Exception ex) {
-      ex.printStackTrace();
+      log.error("assign failed", ex);
       return ResponseEntity.status(500).body(Map.of("error", ex.getMessage()));
     }
   }

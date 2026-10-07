@@ -1,10 +1,5 @@
 import SwiftUI
 
-private enum PLSpacing {
-    static let md: CGFloat = 16
-    static let lg: CGFloat = 20
-}
-
 struct GoalsView: View {
     @State private var selectedView: GoalViewType = .weekly
     @State private var tasks: [TaskItem] = []
@@ -78,9 +73,8 @@ struct GoalsView: View {
         var request = URLRequest(url: url)
         BackendConfig.addApiKey(to: &request)
         URLSession.shared.dataTask(with: request) { data, response, error in
-            if let error = error { print("❌ Network error: \(error.localizedDescription)"); return }
-            guard let http = response as? HTTPURLResponse, http.statusCode == 200,
-                  let data = data else { return }
+            if AppBanner.reportIfFailed("load your goals", data, response, error, retry: { fetchGoals() }) { return }
+            guard let data = data else { return }
             do {
                 let decoder = JSONDecoder()
                 let formatter = DateFormatter()
@@ -93,7 +87,7 @@ struct GoalsView: View {
                     WidgetDataWriter.reloadWidgets()
                 }
             } catch {
-                print("❌ Error decoding JSON: \(error)")
+                AppBanner.report("load your goals", error, retry: { fetchGoals() })
             }
         }.resume()
     }
@@ -105,14 +99,13 @@ struct GoalsView: View {
         var request = URLRequest(url: url)
         BackendConfig.addApiKey(to: &request)
         URLSession.shared.dataTask(with: request) { data, response, error in
-            if let error = error { print("❌ Network error: \(error.localizedDescription)"); return }
-            guard let http = response as? HTTPURLResponse, http.statusCode == 200,
-                  let data = data else { return }
+            if AppBanner.reportIfFailed("load your long-term goals", data, response, error, retry: { fetchLongTermGoals() }) { return }
+            guard let data = data else { return }
             do {
                 let decodedResponse = try JSONDecoder().decode(LongTermGoalsResponse.self, from: data)
                 DispatchQueue.main.async { self.longTermGoals = decodedResponse.longTermGoals }
             } catch {
-                print("❌ Error decoding long-term goals JSON: \(error)")
+                AppBanner.report("load your long-term goals", error, retry: { fetchLongTermGoals() })
             }
         }.resume()
     }

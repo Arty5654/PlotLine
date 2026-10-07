@@ -146,19 +146,27 @@ class CalendarViewModel: ObservableObject {
     }
     
     
-    // fetch all for username
+    // fetch all for username; quiet for refreshes the person didn't ask for (e.g. reopening the app)
     @MainActor
-    func fetchEvents() {
-        Task {
-            do {
-                let fetched = try await CalendarAPI.getEvents(username: username)
-                let expanded = expandRecurringEvents(fetched)
-                
-                self.events = expanded
-                
-                print("Fetched \(fetched.count) event(s) for user: \(username) and there are \(expanded.count) including recurrences")
-            } catch {
+    func fetchEvents(quiet: Bool = false) {
+        Task { await reloadEvents(quiet: quiet) }
+    }
+
+    /// the same load, for callers that need the events before continuing
+    @MainActor
+    func reloadEvents(quiet: Bool = false) async {
+        do {
+            let fetched = try await CalendarAPI.getEvents(username: username)
+            let expanded = expandRecurringEvents(fetched)
+            
+            self.events = expanded
+            
+            print("Fetched \(fetched.count) event(s) for user: \(username) and there are \(expanded.count) including recurrences")
+        } catch {
+            if quiet {
                 print("Error fetching events: \(error)")
+            } else {
+                AppBanner.report("load your calendar", error, retry: { [weak self] in self?.fetchEvents() })
             }
         }
     }
@@ -201,13 +209,22 @@ class CalendarViewModel: ObservableObject {
                         addedBy: username,
                         status: "pending"
                     )
-                    _ = try? await CalendarAPI.createEvent(publishEvent, username: friend.lowercased())
-                    print("Published event to \(friend)'s calendar")
+                    do {
+                        _ = try await CalendarAPI.createEvent(publishEvent, username: friend.lowercased())
+                        print("Published event to \(friend)'s calendar")
+                    } catch {
+                        AppBanner.report("add the event to \(friend)'s calendar", error)
+                    }
                 }
 
                 fetchEvents()
             } catch {
-                print("Error creating event: \(error)")
+                // the sheet has closed; Try again sends exactly what was typed
+                AppBanner.report("save your event", error, retry: { [weak self] in
+                    self?.createEvent(id: id, title: title, description: description, startDate: startDate, endDate: endDate,
+                                      eventType: eventType, recurrence: recurrence, invitedFriends: invitedFriends,
+                                      friendsCanSee: friendsCanSee, publishToCalendars: publishToCalendars)
+                })
             }
         }
     }
@@ -228,7 +245,7 @@ class CalendarViewModel: ObservableObject {
                     scheduleInvestmentNotification(for: updated.startDate)
                 }
             } catch {
-                print("Error updating event: \(error)")
+                AppBanner.report("save your changes to the event", error, retry: { [weak self] in self?.updateEvent(event: event) })
             }
         }
         fetchEvents()
@@ -244,7 +261,7 @@ class CalendarViewModel: ObservableObject {
                 events.removeAll { $0.id == eventID }
                 print("Deleted event with ID: \(eventID)")
             } catch {
-                print("Error deleting event: \(error)")
+                AppBanner.report("delete the event", error, retry: { [weak self] in self?.deleteEvent(eventID) })
             }
         }
         fetchEvents()
@@ -260,7 +277,7 @@ class CalendarViewModel: ObservableObject {
                 events.removeAll { $0.eventType == type }
                 print("Deleted event with type: \(type)")
             } catch {
-                print("Error deleting event: \(error)")
+                AppBanner.report("remove those calendar events", error, retry: { [weak self] in self?.deleteEventByType(type) })
             }
         }
     }
@@ -339,36 +356,54 @@ class CalendarViewModel: ObservableObject {
                 let data = try await CalendarAccessAPI.getAccessData(username: username)
                 await MainActor.run { self.accessData = data }
             } catch {
-                print("Error fetching access data: \(error)")
+                AppBanner.report("load calendar sharing", error, retry: { [weak self] in self?.fetchAccessData() })
             }
         }
     }
 
+    private var friendCalendarsTask: Task<Void, Never>?
+
     func fetchFriendCalendars() {
-        Task {
+        // only the newest load counts (several can start at once, e.g. after accepting an invite)
+        friendCalendarsTask?.cancel()
+        let username = self.username
+        friendCalendarsTask = Task {
             do {
                 let friendList = try await FriendsAPI.fetchFriendList(username: username)
-                var newCalendars: [String: [Event]] = [:]
-                var colorIdx = friendColors.count
-                for friend in friendList.friends {
-                    if let events = try? await CalendarAccessAPI.getSharedEvents(owner: friend, requester: username), !events.isEmpty {
-                        newCalendars[friend] = events
-                        if friendColors[friend] == nil {
-                            await MainActor.run {
-                                friendColors[friend] = friendColorPalette[colorIdx % friendColorPalette.count]
-                            }
-                            colorIdx += 1
+                // load every friend's shared events at once, then apply them in one step on the main actor
+                let loaded = await withTaskGroup(of: (String, [Event]?).self) { group in
+                    for friend in friendList.friends {
+                        group.addTask {
+                            (friend, try? await CalendarAccessAPI.getSharedEvents(owner: friend, requester: username))
                         }
                     }
+                    var results: [String: [Event]] = [:]
+                    for await (friend, events) in group {
+                        if let events, !events.isEmpty { results[friend] = events }
+                    }
+                    return results
                 }
-                await MainActor.run {
-                    self.friendCalendars = newCalendars
-                    self.friendColors = self.friendColors.filter { newCalendars.keys.contains($0.key) }
-                }
+                guard !Task.isCancelled else { return }
+                await MainActor.run { self.applyFriendCalendars(loaded) }
             } catch {
-                print("Error fetching friend calendars: \(error)")
+                if !Task.isCancelled {
+                    AppBanner.report("load your friends' calendars", error, retry: { [weak self] in self?.fetchFriendCalendars() })
+                }
             }
         }
+    }
+
+    // friends keep their color; new ones get the next unused palette color, in name order
+    @MainActor
+    private func applyFriendCalendars(_ calendars: [String: [Event]]) {
+        var colors = friendColors.filter { calendars.keys.contains($0.key) }
+        var next = colors.count
+        for friend in calendars.keys.sorted() where colors[friend] == nil {
+            colors[friend] = friendColorPalette[next % friendColorPalette.count]
+            next += 1
+        }
+        friendCalendars = calendars
+        friendColors = colors
     }
 
     func sendCalendarInvite(to friend: String, level: String, requireApproval: Bool) {
@@ -377,7 +412,9 @@ class CalendarViewModel: ObservableObject {
                 _ = try await CalendarAccessAPI.sendInvite(from: username, to: friend, level: level, requireApproval: requireApproval)
                 fetchAccessData()
             } catch {
-                print("Error sending calendar invite: \(error)")
+                AppBanner.report("send the calendar invite", error, retry: { [weak self] in
+                    self?.sendCalendarInvite(to: friend, level: level, requireApproval: requireApproval)
+                })
             }
         }
     }
@@ -389,7 +426,9 @@ class CalendarViewModel: ObservableObject {
                 fetchAccessData()
                 fetchFriendCalendars()
             } catch {
-                print("Error responding to calendar invite: \(error)")
+                AppBanner.report(accept ? "accept the calendar invite" : "decline the calendar invite", error, retry: { [weak self] in
+                    self?.respondToCalendarInvite(inviteId: inviteId, accept: accept)
+                })
             }
         }
     }
@@ -401,7 +440,7 @@ class CalendarViewModel: ObservableObject {
                 try await CalendarAccessAPI.approveEvent(owner: username, eventId: eventId)
                 fetchEvents()
             } catch {
-                print("Error approving event: \(error)")
+                AppBanner.report("approve the event", error, retry: { [weak self] in self?.approveCalendarEvent(eventId: eventId) })
             }
         }
     }
@@ -413,7 +452,7 @@ class CalendarViewModel: ObservableObject {
                 try await CalendarAccessAPI.rejectEvent(owner: username, eventId: eventId)
                 fetchEvents()
             } catch {
-                print("Error rejecting event: \(error)")
+                AppBanner.report("decline the event", error, retry: { [weak self] in self?.rejectCalendarEvent(eventId: eventId) })
             }
         }
     }
@@ -425,7 +464,9 @@ class CalendarViewModel: ObservableObject {
                 try await CalendarAPI.respondToEventInvite(username: username, eventId: eventId, accept: accept)
                 fetchEvents()
             } catch {
-                print("Error responding to event invite: \(error)")
+                AppBanner.report(accept ? "accept the invite" : "decline the invite", error, retry: { [weak self] in
+                    self?.respondToEventInvite(eventId: eventId, accept: accept)
+                })
             }
         }
     }
@@ -437,7 +478,9 @@ class CalendarViewModel: ObservableObject {
                 fetchAccessData()
                 fetchFriendCalendars()
             } catch {
-                print("Error revoking calendar access: \(error)")
+                AppBanner.report("stop sharing your calendar", error, retry: { [weak self] in
+                    self?.revokeCalendarAccess(from: friend, keepEvents: keepEvents)
+                })
             }
         }
     }
@@ -528,13 +571,13 @@ class CalendarViewModel: ObservableObject {
                 GIDSignIn.sharedInstance.restorePreviousSignIn { _, _ in c.resume() }
             }
             guard GIDSignIn.sharedInstance.currentUser != nil else { return }
-            await syncGoogleCalendar()
+            await syncGoogleCalendar(quiet: true)
         }
     }
 
     // Fetches Google Calendar events and batch-syncs them in a single backend call
     @MainActor
-    func syncGoogleCalendar() async {
+    func syncGoogleCalendar(quiet: Bool = false) async {
         do {
             let token = try await GoogleCalendarAPI.requestCalendarAccess()
             let now = Date()
@@ -552,7 +595,11 @@ class CalendarViewModel: ObservableObject {
             let allEvents = try await CalendarAPI.batchSyncGcal(gcalPlotlineEvents, username: username)
             self.events = expandRecurringEvents(allEvents)
         } catch {
-            print("Google Calendar sync skipped: \(error.localizedDescription)")
+            if quiet {
+                print("Google Calendar sync skipped: \(error.localizedDescription)")
+            } else {
+                AppBanner.report("import your Google Calendar", error)
+            }
         }
     }
 
@@ -563,8 +610,13 @@ class CalendarViewModel: ObservableObject {
         let gcalIds = events.filter { $0.id.hasPrefix("gcal_") }.map { $0.id }
         events.removeAll { $0.id.hasPrefix("gcal_") }
         Task {
+            var failed = 0
             for id in gcalIds {
-                try? await CalendarAPI.deleteEvent(id, username: username)
+                do { try await CalendarAPI.deleteEvent(id, username: username) } catch { failed += 1 }
+            }
+            if failed > 0 {
+                AppBanner.report("remove \(failed) imported Google event\(failed == 1 ? "" : "s")")
+                fetchEvents()
             }
         }
     }

@@ -69,7 +69,7 @@ class AuthViewModel: ObservableObject {
     ]
 
     // Sign in with Apple follow-up (new account needs a username, or an existing account needs its password)
-    enum AppleAccountStep: Identifiable, Equatable {
+    enum AccountSetupStep: Identifiable, Equatable {
         case chooseUsername(suggested: String)
         case linkAccount(existingUsername: String)
 
@@ -80,9 +80,9 @@ class AuthViewModel: ObservableObject {
             }
         }
     }
-    @Published var appleAccountStep: AppleAccountStep?
-    @Published var appleStepErrorMessage: String?
-    @Published var appleStepInFlight: Bool = false
+    @Published var accountSetupStep: AccountSetupStep?
+    @Published var accountSetupErrorMessage: String?
+    @Published var accountSetupInFlight: Bool = false
 
     private struct PendingAppleSignIn {
         let identityToken: String
@@ -91,6 +91,12 @@ class AuthViewModel: ObservableObject {
         let suggestedUsername: String
     }
     private var pendingApple: PendingAppleSignIn?
+
+    private struct PendingGoogleSignIn {
+        let idToken: String
+        let email: String
+    }
+    private var pendingGoogle: PendingGoogleSignIn?
     private var currentAppleNonce: String?
     private static let appleUserIDKey = "appleUserID"
 
@@ -124,7 +130,7 @@ class AuthViewModel: ObservableObject {
         }
         
         guard isValidEmail(email) else {
-            self.signupErrorMessage = "Enter a valid email."
+            self.signupErrorMessage = "Enter a valid email address."
             return
         }
         
@@ -207,60 +213,73 @@ class AuthViewModel: ObservableObject {
         }
         
         GIDSignIn.sharedInstance.signIn(withPresenting: rootViewController) { result, error in
-            if let error = error {
-                self.signupErrorMessage = "Google Sign-In failed: \(error.localizedDescription)"
-                self.loginErrorMessage = "Google Sign-In failed: \(error.localizedDescription)"
-                return
-            }
-            
-            guard let user = result?.user, let idToken = user.idToken?.tokenString else {
-                self.signupErrorMessage = "Google Sign-In: User or ID Token not found"
-                self.loginErrorMessage = "Google Sign-In: User or ID Token not found"
-                return
-            }
-            
-            let email = user.profile?.email ?? nil
-            
-            if (email == nil) {
-                self.signupErrorMessage = "No email found"
-                return
-            }
-            
-            let username = email!.components(separatedBy: "@").first
-            
             Task { @MainActor in
-                self.isAuthenticating = true
-                defer { self.isAuthenticating = false }
-                do {
-                    let response = try await AuthAPI.googleSignIn(idToken: idToken, username: username!, email: email!)
-                    //TODO make this use username instead of email
-                    
-                    if let token = response.token {
-                        KeychainManager.saveToken(token)
-                        // Use displayUsername from server (original case) or fall back to typed username
-                        let usernameToStore = response.displayUsername ?? username
-                        UserDefaults.standard.set(usernameToStore, forKey: "loggedInUsername")
-
-                        self.authToken = token
-
-                        self.needsTermsAcceptance = response.needsTerms ?? false
-                        self.isLoggedIn = true
-
-                        // trigger phone verification
-                        if response.error == "Needs Verification" {
-                            self.needVerification = true
-                        }
-                    }
-                } catch {
-                    self.loginErrorMessage = Self.message(for: error)
-                    self.signupErrorMessage = Self.message(for: error)
+                if let error = error {
+                    self.signupErrorMessage = "Google Sign-In failed: \(error.localizedDescription)"
+                    self.loginErrorMessage = "Google Sign-In failed: \(error.localizedDescription)"
+                    return
+                }
+            
+                guard let user = result?.user, let idToken = user.idToken?.tokenString else {
+                    self.signupErrorMessage = "Google Sign-In: User or ID Token not found"
+                    self.loginErrorMessage = "Google Sign-In: User or ID Token not found"
+                    return
+                }
+            
+                let email = user.profile?.email ?? nil
+            
+                if (email == nil) {
+                    self.signupErrorMessage = "No email found"
+                    return
+                }
+            
+                Task { @MainActor in
+                    self.pendingGoogle = PendingGoogleSignIn(idToken: idToken, email: email!)
+                    await self.submitGoogleSignIn(username: nil)
                 }
             }
-
-            
         }
-        
-        
+    }
+
+    private func submitGoogleSignIn(username: String?) async {
+        guard let pending = pendingGoogle, !accountSetupInFlight, !isAuthenticating else { return }
+        if accountSetupStep == nil { isAuthenticating = true } else { accountSetupInFlight = true }
+        accountSetupErrorMessage = nil
+        defer {
+            isAuthenticating = false
+            accountSetupInFlight = false
+        }
+
+        do {
+            let response = try await AuthAPI.googleSignIn(idToken: pending.idToken, username: username, email: pending.email)
+
+            if response.success, let token = response.token {
+                KeychainManager.saveToken(token)
+                UserDefaults.standard.set(response.displayUsername ?? username, forKey: "loggedInUsername")
+                self.authToken = token
+                cancelAccountSetup()
+                if response.error == "Needs Verification" {
+                    self.needVerification = true
+                }
+                self.needsTermsAcceptance = response.needsTerms ?? false
+                self.isLoggedIn = true
+                return
+            }
+
+            // new Google user: pick a username (the server suggests one from their email)
+            if response.error == AuthAPI.appleUsernameRequired {
+                self.accountSetupStep = .chooseUsername(suggested: response.displayUsername ?? "")
+            }
+        } catch {
+            let message = Self.message(for: error)
+            if accountSetupStep != nil && Self.fixableInSetupSheet(message) {
+                self.accountSetupErrorMessage = message
+            } else {
+                cancelAccountSetup()
+                self.loginErrorMessage = message
+                self.signupErrorMessage = message
+            }
+        }
     }
 
     // MARK: - Sign in with Apple
@@ -304,34 +323,48 @@ class AuthViewModel: ObservableObject {
         }
     }
 
-    func submitAppleUsername(_ username: String) {
+    // the username a new Apple or Google user picked in the setup sheet
+    func submitChosenUsername(_ username: String) {
         let trimmed = username.trimmingCharacters(in: .whitespaces)
-        guard isValidUsername(trimmed) else {
-            self.appleStepErrorMessage = "Username can only contain letters and numbers."
+        guard isValidUsername(trimmed), (3...30).contains(trimmed.count) else {
+            self.accountSetupErrorMessage = Self.usernameRules
             return
         }
-        Task { await submitAppleSignIn(username: trimmed, linkPassword: nil) }
+        if pendingGoogle != nil {
+            Task { await submitGoogleSignIn(username: trimmed) }
+        } else {
+            Task { await submitAppleSignIn(username: trimmed, linkPassword: nil) }
+        }
+    }
+
+    // same wording as the server
+    static let usernameRules = "Usernames must be 3 to 30 letters or numbers."
+
+    // errors the user can fix in the setup sheet; anything else closes it and starts over
+    private static func fixableInSetupSheet(_ message: String) -> Bool {
+        message == "Incorrect Password" || message == "Username already taken" || message == usernameRules
     }
 
     func submitAppleLinkPassword(_ password: String) {
         guard !password.isEmpty else {
-            self.appleStepErrorMessage = "Please enter your password."
+            self.accountSetupErrorMessage = "Please enter your password."
             return
         }
         Task { await submitAppleSignIn(username: nil, linkPassword: password) }
     }
 
-    func cancelAppleSignIn() {
+    func cancelAccountSetup() {
         pendingApple = nil
-        appleAccountStep = nil
-        appleStepErrorMessage = nil
+        pendingGoogle = nil
+        accountSetupStep = nil
+        accountSetupErrorMessage = nil
     }
 
     private func submitAppleSignIn(username: String?, linkPassword: String?) async {
-        guard let pending = pendingApple, !appleStepInFlight else { return }
-        appleStepInFlight = true
-        appleStepErrorMessage = nil
-        defer { appleStepInFlight = false }
+        guard let pending = pendingApple, !accountSetupInFlight else { return }
+        accountSetupInFlight = true
+        accountSetupErrorMessage = nil
+        defer { accountSetupInFlight = false }
 
         do {
             let response = try await AuthAPI.appleSignIn(identityToken: pending.identityToken,
@@ -344,7 +377,7 @@ class AuthViewModel: ObservableObject {
                 UserDefaults.standard.set(response.displayUsername ?? username, forKey: "loggedInUsername")
                 UserDefaults.standard.set(pending.userID, forKey: Self.appleUserIDKey)
                 self.authToken = token
-                cancelAppleSignIn()
+                cancelAccountSetup()
 
                 // trigger phone verification
                 if response.error == "Needs Verification" {
@@ -357,9 +390,9 @@ class AuthViewModel: ObservableObject {
 
             switch response.error {
             case AuthAPI.appleUsernameRequired:
-                self.appleAccountStep = .chooseUsername(suggested: pending.suggestedUsername)
+                self.accountSetupStep = .chooseUsername(suggested: pending.suggestedUsername)
             case AuthAPI.appleLinkRequired:
-                self.appleAccountStep = .linkAccount(existingUsername: response.displayUsername ?? "")
+                self.accountSetupStep = .linkAccount(existingUsername: response.displayUsername ?? "")
             default:
                 break
             }
@@ -367,12 +400,10 @@ class AuthViewModel: ObservableObject {
             let message = Self.message(for: error)
 
             // wrong password / taken username can be fixed in the sheet; anything else means start over
-            let fixableInSheet = message == "Incorrect Password" || message == "Username already taken"
-                || message == "Username can only contain letters and numbers."
-            if appleAccountStep != nil && fixableInSheet {
-                self.appleStepErrorMessage = message
+            if accountSetupStep != nil && Self.fixableInSetupSheet(message) {
+                self.accountSetupErrorMessage = message
             } else {
-                cancelAppleSignIn()
+                cancelAccountSetup()
                 self.signupErrorMessage = message
                 self.loginErrorMessage = message
             }
@@ -529,6 +560,8 @@ class AuthViewModel: ObservableObject {
                     self.isCodeSent = true
                 }
                 
+            } catch AuthError.custom(let message) where message.hasPrefix("Too many") {
+                self.verificationErrorMessage = message
             } catch {
                 self.verificationErrorMessage = "Couldn't send the code. Check the number and try again."
             }
@@ -566,6 +599,8 @@ class AuthViewModel: ObservableObject {
                     self.needVerification = false
                 }
                 
+            } catch AuthError.custom(let message) where message.hasPrefix("Too many") {
+                self.verificationErrorMessage = message
             } catch is AuthError {
                 self.verificationErrorMessage = "That code is incorrect or expired. Tap Resend to get a new one."
             } catch {
@@ -584,6 +619,7 @@ class AuthViewModel: ObservableObject {
         UserDefaults.standard.removeObject(forKey: Self.appleUserIDKey)
         WidgetDataWriter.clearCredentials()
         BadgeManager.clear()
+        MembershipManager.shared.reset()
         
         self.isCodeSent = false
         self.isSignin = true

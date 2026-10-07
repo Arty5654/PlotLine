@@ -10,7 +10,7 @@ struct ChatView: View {
                              "😤","😳","😆","🤩","😬","😇","💔","👀","🍀","🫶","🧡","💥","😴","🫠","😐","😜","🎯","🫢"]
 
     var body: some View {
-        VStack {
+        VStack(spacing: 0) {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 0) {
@@ -24,8 +24,8 @@ struct ChatView: View {
                             )
                             .environmentObject(vm)
                             .id(msg.id)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 4)
+                            .padding(.horizontal, PLSpacing.lg)
+                            .padding(.vertical, 5)
                         }
                     }
                     .padding(.vertical, 4)
@@ -45,15 +45,29 @@ struct ChatView: View {
                 }
             }
 
-            HStack {
-                TextField("Type a message…", text: $vm.draft)
-                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                Button("Send") {
+            HStack(spacing: 10) {
+                TextField("Message your friends…", text: $vm.draft, axis: .vertical)
+                    .lineLimit(1...4)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(PLColor.surface)
+                    .clipShape(RoundedRectangle(cornerRadius: 20))
+                Button {
                     Task { await vm.send() }
+                } label: {
+                    Image(systemName: "arrow.up")
+                        .font(.body.weight(.bold))
+                        .foregroundColor(.white)
+                        .frame(width: 36, height: 36)
+                        .background(PLColor.accent)
+                        .clipShape(Circle())
                 }
                 .disabled(vm.draft.trimmingCharacters(in: .whitespaces).isEmpty)
+                .opacity(vm.draft.trimmingCharacters(in: .whitespaces).isEmpty ? 0.4 : 1)
+                .accessibilityLabel("Send")
             }
-            .padding()
+            .padding(.horizontal, PLSpacing.lg)
+            .padding(.vertical, PLSpacing.sm)
         }
         .navigationTitle("Chat")
         .task {

@@ -37,7 +37,7 @@ struct ShareGroceryListView: View {
     }
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             Group {
                 if isLoading {
                     ProgressView("Loading friends…")

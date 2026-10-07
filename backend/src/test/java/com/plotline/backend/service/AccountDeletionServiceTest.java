@@ -1,7 +1,8 @@
 package com.plotline.backend.service;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.plotline.backend.accounts.AccountDirectory;
+import com.plotline.backend.testsupport.TestDatabase;
+import org.springframework.jdbc.core.JdbcTemplate;
 import com.plotline.backend.categorize.InMemoryUserCategoryStore;
 import com.plotline.backend.dto.AuthResponse;
 import com.plotline.backend.dto.FriendPost;
@@ -9,6 +10,7 @@ import com.plotline.backend.dto.FriendRequest;
 import com.plotline.backend.dto.GroceryList;
 import com.plotline.backend.dto.GroceryListInvite;
 import com.plotline.backend.dto.Trophy;
+import com.plotline.backend.membership.MembershipService;
 import com.plotline.backend.plaid.InMemoryPlaidCursorStore;
 import com.plotline.backend.plaid.InMemoryTokenStore;
 import com.plotline.backend.service.AppleTokenRevoker.AppleTokens;
@@ -20,7 +22,6 @@ import org.junit.jupiter.api.Test;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -42,8 +43,8 @@ class AccountDeletionServiceTest {
     private InMemoryTokenStore tokenStore;
     private FakeAppleRevoker appleRevoker;
     private AccountDeletionService deletion;
+    private JdbcTemplate jdbc;
     private final List<String> removedPlaidTokens = new ArrayList<>();
-    private final ObjectMapper objectMapper = new ObjectMapper();
 
     private static class NoOpUserProfileService extends UserProfileService {
         NoOpUserProfileService(InMemoryS3Client s3) {
@@ -71,11 +72,12 @@ class AccountDeletionServiceTest {
     @BeforeEach
     void setUp() {
         s3 = new InMemoryS3Client();
-        authService = new AuthService(s3, null, "test-jwt-secret");
+        jdbc = new JdbcTemplate(TestDatabase.newDatabase());
+        authService = new AuthService(s3, null, "test-jwt-secret", new AccountDirectory(jdbc));
         UserProfileService profiles = new NoOpUserProfileService(s3);
         CalendarAccessService calendarAccess = new CalendarAccessService(s3);
         friendsService = new FriendsService(s3, calendarAccess, new CalendarService(s3, profiles, calendarAccess));
-        feedService = new FriendsFeedService(s3);
+        feedService = new FriendsFeedService(s3, jdbc);
         groceryService = new GroceryListService(s3, profiles);
         tokenStore = new InMemoryTokenStore();
         appleRevoker = new FakeAppleRevoker();
@@ -84,7 +86,8 @@ class AccountDeletionServiceTest {
 
         deletion = new AccountDeletionService(s3, authService, appleSignIn, appleRevoker, friendsService,
                 feedService, groceryService, tokenStore, new InMemoryPlaidCursorStore(),
-                new InMemoryUserCategoryStore(), null) {
+                new InMemoryUserCategoryStore(), null,
+                new MembershipService(jdbc, authService, 1000, 7), new AccountDirectory(jdbc)) {
             @Override
             void removePlaidItem(String accessToken) {
                 removedPlaidTokens.add(accessToken);
@@ -116,13 +119,8 @@ class AccountDeletionServiceTest {
         return post.getId();
     }
 
-    private List<FriendPost> feed() throws Exception {
-        return objectMapper.readValue(s3.getObjectAsBytes(b -> b.bucket(BUCKET).key("friends-feed/posts.json")).asByteArray(),
-                new TypeReference<List<FriendPost>>() {});
-    }
-
-    private <T> T json(String key, TypeReference<T> type) throws Exception {
-        return objectMapper.readValue(s3.getObjectAsBytes(b -> b.bucket(BUCKET).key(key)).asByteArray(), type);
+    private List<FriendPost> feed() {
+        return feedService.getFriendsFeed("bob");
     }
 
     private List<String> keysStartingWith(String prefix) {
@@ -171,8 +169,8 @@ class AccountDeletionServiceTest {
         assertThat(keysStartingWith("users/alice/")).isEmpty();
         assertThat(keysStartingWith("chat-messages/alice/")).isEmpty();
         assertThat(authService.userExists("alice")).isFalse();
-        assertThat(json("all-users.json", new TypeReference<List<String>>() {})).containsExactlyInAnyOrder("bob", "carol");
-        assertThat(json("email-index.json", new TypeReference<Map<String, String>>() {})).doesNotContainValue("alice");
+        assertThat(jdbc.queryForList("select username from accounts", String.class)).containsExactlyInAnyOrder("bob", "carol");
+        assertThat(authService.usernameForEmail("alice@mail.com")).isNull();
 
         // Plaid disconnected
         assertThat(removedPlaidTokens).containsExactly("access-1");
@@ -192,6 +190,7 @@ class AccountDeletionServiceTest {
         assertThat(feed).extracting(FriendPost::getUsername).containsExactly("bob");
         assertThat(feed.get(0).getLikedBy()).doesNotContain("alice");
         assertThat(feed.get(0).getComments()).containsExactly("bob: thanks");
+        assertThat(jdbc.queryForList("select author from feed_posts", String.class)).containsExactly("bob");
 
         // other users untouched
         assertThat(authService.userExists("bob")).isTrue();

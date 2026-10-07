@@ -7,6 +7,7 @@
 
 import Testing
 import Foundation
+import StoreKit
 @testable import PlotLine
 
 struct BudgetSpendingTests {
@@ -59,11 +60,65 @@ struct BudgetSpendingTests {
 
     @Test("Membership status decodes")
     func membership() throws {
-        let status = try TestJSON.decode(SubscriptionStatus.self,
-            #"{"plan":"trial","monthlyPrice":5.0,"trialEndsAt":"2026-11-04","autoRenews":true,"message":"Trial ends soon"}"#,
+        let status = try TestJSON.decode(MembershipStatus.self,
+            #"{"plan":"trial","active":true,"expiresAt":"2026-11-04T18:30:00.123Z","autoRenews":null,"revoked":false}"#,
             iso8601: false)
         #expect(status.plan == "trial")
-        #expect(status.monthlyPrice == 5)
-        #expect(status.cancelled == nil)
+        #expect(status.active)
+        let expected = try #require(ISO8601DateFormatter().date(from: "2026-11-04T18:30:00Z"))
+        #expect(abs(try #require(status.expiresDate).timeIntervalSince(expected) - 0.123) < 0.001)
+        #expect(status.summary.hasPrefix("Free trial renews on"))
+
+        // the server leaves out fractional seconds when they're zero
+        let monthly = try TestJSON.decode(MembershipStatus.self,
+            #"{"plan":"monthly","active":true,"expiresAt":"2026-11-04T18:30:00Z","autoRenews":false}"#, iso8601: false)
+        #expect(monthly.expiresDate != nil)
+        #expect(monthly.summary.contains("won't renew"))
+    }
+
+    @Test("Membership messages")
+    func membershipSummaries() throws {
+        func status(_ json: String) throws -> MembershipStatus {
+            try TestJSON.decode(MembershipStatus.self, json, iso8601: false)
+        }
+        #expect(try status(#"{"plan":"lifetime","active":true}"#).summary.contains("free for you forever"))
+        #expect(try status(#"{"plan":"none","active":false}"#).summary == "Start your free trial to use PlotLine.")
+        #expect(try status(#"{"plan":"monthly","active":false,"expiresAt":"2026-01-01T00:00:00Z"}"#).summary == "Your membership has ended.")
+        #expect(try status(#"{"plan":"monthly","active":false,"revoked":true}"#).summary.contains("refunded"))
+        #expect(try status(#"{"plan":"free-week","active":true,"expiresAt":"2026-11-04T18:30:00Z"}"#).summary.hasPrefix("Your free week ends on"))
+        #expect(try status(#"{"plan":"free-week","active":false,"expiresAt":"2026-01-01T00:00:00Z"}"#).summary.hasPrefix("Your free week has ended"))
+    }
+
+    @Test("Free week countdown")
+    func freeWeekCountdown() throws {
+        let week = try TestJSON.decode(MembershipStatus.self,
+            #"{"plan":"free-week","active":true,"expiresAt":"2026-11-04T18:00:00Z"}"#, iso8601: false)
+        let end = try #require(week.expiresDate)
+        #expect(week.daysLeft(now: end.addingTimeInterval(-2.5 * 86_400)) == 3)
+        #expect(week.daysLeft(now: end.addingTimeInterval(-3600)) == 1)
+        #expect(week.isFreeWeek && !week.isSubscribed)
+
+        #expect(FreeWeekBanner.message(daysLeft: 3) == "3 days left in your free week")
+        #expect(FreeWeekBanner.message(daysLeft: 1) == "1 day left in your free week")
+        #expect(FreeWeekBanner.message(daysLeft: 0) == "Your free week ends today")
+    }
+
+    @Test("Paywall price wording")
+    func paywallPrice() {
+        #expect(PaywallView.periodText(value: 1, unit: .month) == "1 month")
+        #expect(PaywallView.periodText(value: 2, unit: .week) == "2 weeks")
+        #expect(PaywallView.priceTerms(price: "$4.99", trialPeriod: "1 month") == "1 month free, then $4.99/month")
+        #expect(PaywallView.priceTerms(price: "$4.99", trialPeriod: nil) == "$4.99/month")
+    }
+
+    @Test("Refused purchases show the server's reason")
+    func purchaseRefusal() throws {
+        let url = URL(string: "https://example.com/api/payments/apple/sync")!
+        let body = Data(#"{"success":false,"error":"This App Store subscription is already used by another PlotLine account."}"#.utf8)
+        let conflict = HTTPURLResponse(url: url, statusCode: 409, httpVersion: nil, headerFields: nil)!
+        #expect(PaymentAPI.refusal(body, conflict)?.errorDescription?.contains("another PlotLine account") == true)
+
+        let serverError = HTTPURLResponse(url: url, statusCode: 500, httpVersion: nil, headerFields: nil)!
+        #expect(PaymentAPI.refusal(body, serverError) == nil)
     }
 }

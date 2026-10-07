@@ -1,5 +1,8 @@
 package com.plotline.backend.service;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.Map;
 
 import org.springframework.stereotype.Service;
@@ -31,6 +34,8 @@ import software.amazon.awssdk.services.s3.model.PutObjectRequest;
  */
 @Service
 public class AppleSignInService {
+    private static final Logger log = LoggerFactory.getLogger(AppleSignInService.class);
+
 
     public static final String USERNAME_REQUIRED = "Username Required";
     public static final String LINK_REQUIRED = "Link Required";
@@ -81,7 +86,7 @@ public class AppleSignInService {
             return createAccount(identity, email, request.getUsername());
 
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("signIn failed", e);
             return fail("Server Error");
         }
     }
@@ -107,7 +112,7 @@ public class AppleSignInService {
 
         authService.updateUserRecord(owner, record -> record.setAppleSub(identity.subject()));
         saveLink(identity.subject(), owner);
-        System.out.println("Apple user LINKED");
+        log.debug("Apple user LINKED");
         return signedIn(owner);
     }
 
@@ -118,8 +123,8 @@ public class AppleSignInService {
 
         String displayUsername = requestedUsername.trim();
         String username = authService.normalizeUsername(displayUsername);
-        if (!displayUsername.matches("^[A-Za-z0-9]+$")) {
-            return fail("Username can only contain letters and numbers.");
+        if (!AuthService.isValidUsername(displayUsername)) {
+            return fail(AuthService.USERNAME_RULES);
         }
         if (authService.userExists(username)) {
             return fail("Username already taken");
@@ -131,7 +136,7 @@ public class AppleSignInService {
         }
         saveLink(identity.subject(), username);
 
-        System.out.println("Apple user CREATED");
+        log.debug("Apple user CREATED");
 
         String token = authService.generateToken(username);
         return new AuthResponse(true, token, null, displayUsername); // Apple already verified them

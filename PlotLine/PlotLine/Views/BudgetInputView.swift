@@ -1,79 +1,8 @@
 import SwiftUI
 import Foundation
 
-// ---------- Design tokens (match WeeklyMonthlyCostView) ----------
-private enum PLColor {
-    static let surface        = Color(.secondarySystemBackground)
-    static let cardBorder     = Color.black.opacity(0.06)
-    static let textPrimary    = Color.primary
-    static let textSecondary  = Color.secondary
-    static let accent         = Color(red: 0.32, green: 0.67, blue: 0.97) // lighter accent to improve readability
-    static let success        = Color.green
-    static let danger         = Color.red
-    static let warning        = Color.orange
-}
-private enum PLSpacing {
-    static let xs: CGFloat = 6
-    static let sm: CGFloat = 10
-    static let md: CGFloat = 16
-    static let lg: CGFloat = 20
-}
-private enum PLRadius {
-    static let md: CGFloat = 12
-}
-
-private struct CardModifier: ViewModifier {
-    func body(content: Content) -> some View {
-        content
-            .padding(PLSpacing.md)
-            .background(PLColor.surface)
-            .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
-            .overlay(
-                RoundedRectangle(cornerRadius: PLRadius.md)
-                    .stroke(PLColor.cardBorder)
-            )
-    }
-}
-private extension View { func plCard() -> some View { modifier(CardModifier()) } }
-
-private struct PrimaryButton: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.headline)
-            .foregroundColor(.white)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .background(PLColor.accent.opacity(configuration.isPressed ? 0.85 : 1))
-            .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
-    }
-}
-private struct OutlinedButton: ButtonStyle {
-    let tint: Color
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.headline)
-            .foregroundColor(tint)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .overlay(
-                RoundedRectangle(cornerRadius: PLRadius.md)
-                    .stroke(tint.opacity(configuration.isPressed ? 0.6 : 1))
-            )
-            .background(Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
-    }
-}
-private struct DestructiveButton: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.headline)
-            .foregroundColor(.white)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .background(PLColor.danger.opacity(configuration.isPressed ? 0.85 : 1))
-            .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
-    }
-}
+// a lighter blue than the rest of the app, for readability on this screen
+private let budgetAccent = Color(red: 0.32, green: 0.67, blue: 0.97)
 
 // ---------- View ----------
 // Common categories available across budget views
@@ -108,6 +37,9 @@ struct BudgetInputView: View {
     
     @State private var warningsAcknowledged: Bool = false
     @State private var isRegenerating: Bool = false
+    @State private var aiLimitMessage: String = ""
+    // saving replaces the whole budget, so it waits until the real one has loaded
+    @State private var budgetLoaded = false
     
     // Exclude from progress math (still visible as budget lines)
     private let trackerExclusions: Set<String> = ["401(k)", "401(k) Contribution"]
@@ -256,7 +188,7 @@ struct BudgetInputView: View {
                                 ProgressView().scaleEffect(0.8)
                                 Text("Generating updated budget…")
                                     .font(.footnote)
-                                    .foregroundColor(PLColor.accent)
+                                    .foregroundColor(budgetAccent)
                             }
                         }
                     }
@@ -266,17 +198,17 @@ struct BudgetInputView: View {
                 // Buttons
                 VStack(spacing: PLSpacing.sm) {
                     Button("Save Budget", action: attemptSaveBudget)
-                        .buttonStyle(PrimaryButton())
+                        .buttonStyle(PrimaryButton(color: budgetAccent))
                         .disabled(isRegenerating)
                     Button("Regenerate with New Categories") {
                         regenerateBudgetFromUI()
                     }
-                        .buttonStyle(OutlinedButton(tint: PLColor.accent))
+                        .buttonStyle(OutlineButton(tint: budgetAccent))
                     HStack(spacing: PLSpacing.sm) {
                         Button("Clear All", action: clearAllBudget)
-                            .buttonStyle(DestructiveButton())
+                            .buttonStyle(PrimaryButton(color: PLColor.danger))
                         Button("Revert to LLM Budget", action: revertToOriginalBudget)
-                            .buttonStyle(OutlinedButton(tint: PLColor.warning))
+                            .buttonStyle(OutlineButton(tint: PLColor.warning))
                     }
                 }
             }
@@ -291,7 +223,7 @@ struct BudgetInputView: View {
                     .font(.headline)
             }
         }
-        .tint(PLColor.accent)
+        .tint(budgetAccent)
         .alert(item: $activeAlert2) { alertType in
             switch alertType {
             case .warning:
@@ -300,6 +232,12 @@ struct BudgetInputView: View {
                     message: Text(budgetingWarnings),
                     primaryButton: .default(Text("Proceed Anyway"), action: { saveBudget() }),
                     secondaryButton: .cancel()
+                )
+            case .aiLimit:
+                return Alert(
+                    title: Text("Daily AI limit reached"),
+                    message: Text(aiLimitMessage),
+                    dismissButton: .default(Text("OK"))
                 )
             case .saved:
                 return Alert(
@@ -345,7 +283,7 @@ private struct BudgetRow: View {
             TextField("Amount ($)", text: $item.amount)
                 .keyboardType(.decimalPad)
                 .textFieldStyle(.roundedBorder)
-                .onChange(of: item.amount) { newValue in
+                .onChange(of: item.amount) { _, newValue in
                     onChangeAmount(newValue)
                 }
             
@@ -415,9 +353,15 @@ extension BudgetInputView {
         req.httpBody = data
 
         URLSession.shared.dataTask(with: req) { data, response, error in
-            guard error == nil,
-                  let http = response as? HTTPURLResponse,
-                  (200...299).contains(http.statusCode),
+            if let limit = AILimitError.from(data, response) {
+                DispatchQueue.main.async {
+                    self.isRegenerating = false
+                    self.aiLimitMessage = limit.message
+                    self.activeAlert2 = .aiLimit
+                }
+                return
+            }
+            guard !AppBanner.reportIfFailed("regenerate your budget", data, response, error),
                   let data = data,
                   let decoded = try? JSONDecoder().decode([String: Double].self, from: data)
             else {
@@ -467,27 +411,28 @@ extension BudgetInputView {
         guard let url = URL(string: urlString) else { return }
         var req = URLRequest(url: url)
         BackendConfig.addApiKey(to: &req)
-        URLSession.shared.dataTask(with: req) { data, _, error in
-            if let error = error {
-                print("❌ fetch budget:", error.localizedDescription)
-                DispatchQueue.main.async { self.budgetItems = Self.defaultBudgetCategories }
+        URLSession.shared.dataTask(with: req) { data, response, error in
+            // no budget yet: start from the default categories
+            let status = (response as? HTTPURLResponse)?.statusCode
+            if error == nil, status == 404 || (status.map { (200...299).contains($0) } == true && (data?.isEmpty ?? true)) {
+                DispatchQueue.main.async {
+                    self.budgetItems = Self.defaultBudgetCategories
+                    self.budgetLoaded = true
+                }
                 return
             }
-            guard let data = data, !data.isEmpty else {
-                DispatchQueue.main.async { self.budgetItems = Self.defaultBudgetCategories }
-                return
-            }
+            if AppBanner.reportIfFailed("load your budget", data, response, error, retry: { fetchBudgetData() }) { return }
             do {
-                let decoded = try JSONDecoder().decode(BudgetResponse.self, from: data)
+                let decoded = try JSONDecoder().decode(BudgetResponse.self, from: data ?? Data())
                 let filtered = decoded.budget
                     .filter { !self.is401kKey($0.key) }
                     .map { BudgetItem(category: $0.key, amount: String($0.value)) }
                 DispatchQueue.main.async {
                     self.budgetItems = filtered
+                    self.budgetLoaded = true
                 }
             } catch {
-                print("❌ decode budget:", error)
-                DispatchQueue.main.async { self.budgetItems = Self.defaultBudgetCategories }
+                AppBanner.report("load your budget", error, retry: { fetchBudgetData() })
             }
         }.resume()
     }
@@ -511,6 +456,10 @@ extension BudgetInputView {
     }
     
     private func saveBudget() {
+        guard budgetLoaded else {
+            AppBanner.shared.show("Your budget didn't load, so saving now could erase it.", retry: { fetchBudgetData() })
+            return
+        }
         let budgetDict = budgetItems.reduce(into: [String: Double]()) { result, item in
             guard !is401kKey(item.category) else { return }
             if let val = Double(item.amount) { result[item.category] = val }
@@ -526,8 +475,9 @@ extension BudgetInputView {
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = json
-        URLSession.shared.dataTask(with: req) { _, resp, err in
-            guard err == nil else { return }
+        URLSession.shared.dataTask(with: req) { data, resp, err in
+            // on failure the amounts stay as typed, ready to save again
+            if AppBanner.reportIfFailed("save your budget", data, resp, err, retry: { saveBudget() }) { return }
             DispatchQueue.main.async {
                 self.activeAlert2 = .saved
                 UINotificationFeedbackGenerator().notificationOccurred(.success)
@@ -557,9 +507,11 @@ extension BudgetInputView {
         var req = URLRequest(url: url)
         BackendConfig.addApiKey(to: &req)
         req.httpMethod = "DELETE"
-        URLSession.shared.dataTask(with: req) { _,_,_ in
+        URLSession.shared.dataTask(with: req) { data, response, error in
+            if AppBanner.reportIfFailed("clear your budget", data, response, error, retry: { clearAllBudget() }) { return }
             DispatchQueue.main.async {
                 self.budgetItems = Self.defaultBudgetCategories
+                self.budgetLoaded = true
                 self.activeAlert2 = .cleared
             }
         }.resume()
@@ -571,7 +523,8 @@ extension BudgetInputView {
         var req = URLRequest(url: url)
         BackendConfig.addApiKey(to: &req)
         req.httpMethod = "POST"
-        URLSession.shared.dataTask(with: req) { _,_,_ in
+        URLSession.shared.dataTask(with: req) { data, response, error in
+            if AppBanner.reportIfFailed("go back to your original budget", data, response, error, retry: { revertToOriginalBudget() }) { return }
             DispatchQueue.main.async { self.fetchBudgetData() }
         }.resume()
     }
@@ -619,12 +572,13 @@ extension BudgetInputView {
 
 // ---------- Alert enum (your existing model) ----------
 fileprivate enum ActiveAlert2: Identifiable {
-    case saved, cleared, warning
+    case saved, cleared, warning, aiLimit
     var id: String {
         switch self {
         case .saved: return "saved"
         case .cleared: return "cleared"
         case .warning: return "warning"
+        case .aiLimit: return "aiLimit"
         }
     }
 }

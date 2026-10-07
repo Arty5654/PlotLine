@@ -1,34 +1,5 @@
 import SwiftUI
 
-// MARK: - Design tokens
-
-private enum PLColor {
-    static let surface       = Color(.secondarySystemBackground)
-    static let cardBorder    = Color.black.opacity(0.06)
-    static let textPrimary   = Color.primary
-    static let textSecondary = Color.secondary
-    static let success       = Color.green
-    static let danger        = Color.red
-}
-private enum PLSpacing {
-    static let xs: CGFloat = 6
-    static let sm: CGFloat = 10
-    static let md: CGFloat = 16
-    static let lg: CGFloat = 20
-}
-private enum PLRadius { static let md: CGFloat = 12 }
-
-private struct CardModifier: ViewModifier {
-    func body(content: Content) -> some View {
-        content
-            .padding(PLSpacing.md)
-            .background(PLColor.surface)
-            .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
-            .overlay(RoundedRectangle(cornerRadius: PLRadius.md).stroke(PLColor.cardBorder))
-    }
-}
-private extension View { func plCard() -> some View { modifier(CardModifier()) } }
-
 // MARK: - View
 
 struct LongTermGoalsView: View {
@@ -45,9 +16,6 @@ struct LongTermGoalsView: View {
     @State private var shareAlertMessage = ""
     @State private var showShareAlert = false
 
-    private var adaptiveTextColor: Color {
-        colorScheme == .dark ? .white : .blue
-    }
 
     var body: some View {
         ScrollView {
@@ -57,16 +25,16 @@ struct LongTermGoalsView: View {
                 VStack(alignment: .leading, spacing: PLSpacing.sm) {
                     Label("New Long-Term Goal", systemImage: "flag.fill")
                         .font(.headline)
-                        .foregroundColor(adaptiveTextColor)
+                        .foregroundColor(PLColor.tint)
 
                     TextField("Goal title", text: $newLongTermTitle)
                         .textFieldStyle(.roundedBorder)
-                        .tint(adaptiveTextColor)
+                        .tint(PLColor.accent)
 
                     HStack(spacing: PLSpacing.sm) {
                         TextField("Add a step", text: $newStep)
                             .textFieldStyle(.roundedBorder)
-                            .tint(adaptiveTextColor)
+                            .tint(PLColor.accent)
 
                         Button {
                             guard !newStep.isEmpty else { return }
@@ -75,7 +43,7 @@ struct LongTermGoalsView: View {
                         } label: {
                             Image(systemName: "plus.circle.fill")
                                 .font(.title2)
-                                .foregroundColor(adaptiveTextColor)
+                                .foregroundColor(PLColor.tint)
                         }
                         .buttonStyle(.plain)
                     }
@@ -87,7 +55,7 @@ struct LongTermGoalsView: View {
                                 .foregroundColor(PLColor.textSecondary)
                             ForEach(newLongTermSteps, id: \.self) { step in
                                 HStack(spacing: 6) {
-                                    Circle().fill(adaptiveTextColor).frame(width: 6, height: 6)
+                                    Circle().fill(PLColor.accent).frame(width: 6, height: 6)
                                     Text(step)
                                         .font(.subheadline)
                                         .foregroundColor(PLColor.textPrimary)
@@ -196,7 +164,7 @@ struct LongTermGoalsView: View {
                 Spacer()
                 Button { archiveGoal(goal) } label: {
                     Image(systemName: "archivebox")
-                        .foregroundColor(adaptiveTextColor)
+                        .foregroundColor(PLColor.tint)
                         .font(.headline)
                 }
                 .buttonStyle(.plain)
@@ -248,7 +216,14 @@ struct LongTermGoalsView: View {
         request.httpMethod = "PUT"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         BackendConfig.addApiKey(to: &request)
-        URLSession.shared.dataTask(with: request) { _, _, _ in }.resume()
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            if AppBanner.reportIfFailed("archive the goal", data, response, error) {
+                DispatchQueue.main.async { // put it back
+                    archivedGoals.removeAll { $0.id == goal.id }
+                    if !longTermGoals.contains(where: { $0.id == goal.id }) { longTermGoals.append(goal) }
+                }
+            }
+        }.resume()
     }
 
     private func unarchiveGoal(_ goal: LongTermGoal) {
@@ -260,7 +235,14 @@ struct LongTermGoalsView: View {
         request.httpMethod = "PUT"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         BackendConfig.addApiKey(to: &request)
-        URLSession.shared.dataTask(with: request) { _, _, _ in }.resume()
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            if AppBanner.reportIfFailed("restore the goal", data, response, error) {
+                DispatchQueue.main.async { // put it back
+                    longTermGoals.removeAll { $0.id == goal.id }
+                    if !archivedGoals.contains(where: { $0.id == goal.id }) { archivedGoals.append(goal) }
+                }
+            }
+        }.resume()
     }
 
     private func addLongTermGoal() {
@@ -280,7 +262,9 @@ struct LongTermGoalsView: View {
         guard let jsonData = try? JSONEncoder().encode(newGoal) else { return }
         request.httpBody = jsonData
 
-        URLSession.shared.dataTask(with: request) { _, _, _ in
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            // on failure the title and steps stay filled in, ready to add again
+            if AppBanner.reportIfFailed("add your goal", data, response, error) { return }
             DispatchQueue.main.async {
                 self.longTermGoals.append(newGoal)
                 self.newLongTermTitle = ""
@@ -306,7 +290,18 @@ struct LongTermGoalsView: View {
         let payload = ["isCompleted": longTermGoals[goalIndex].steps[stepIndex].isCompleted]
         guard let jsonData = try? JSONEncoder().encode(payload) else { return }
         request.httpBody = jsonData
-        URLSession.shared.dataTask(with: request) { _, _, _ in }.resume()
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            if AppBanner.reportIfFailed("update the step", data, response, error) {
+                DispatchQueue.main.async { // put the checkmark back the way it was
+                    if let g = longTermGoals.firstIndex(where: { $0.id == goalId }),
+                       let s = longTermGoals[g].steps.firstIndex(where: { $0.id == stepId }) {
+                        longTermGoals[g].steps[s].isCompleted.toggle()
+                        WidgetDataWriter.writeLongTermGoals(longTermGoals)
+                        WidgetDataWriter.reloadWidgets()
+                    }
+                }
+            }
+        }.resume()
     }
 
     private func resetLongTermGoals() {
@@ -314,7 +309,8 @@ struct LongTermGoalsView: View {
         var request = URLRequest(url: url)
         request.httpMethod = "DELETE"
         BackendConfig.addApiKey(to: &request)
-        URLSession.shared.dataTask(with: request) { _, _, _ in
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            if AppBanner.reportIfFailed("reset your goals", data, response, error, retry: { resetLongTermGoals() }) { return }
             DispatchQueue.main.async { self.longTermGoals.removeAll() }
         }.resume()
     }

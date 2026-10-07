@@ -13,52 +13,8 @@ import UIKit
 #endif
 
 // MARK: - Minimal Design Tokens (self-contained for now)
-private enum PLColor {
-    static let surface        = Color(.secondarySystemBackground)
-    static let cardBorder     = Color.black.opacity(0.06)
-    static let textPrimary    = Color.primary
-    static let textSecondary  = Color.secondary
-    static let accent         = Color.blue
-    static let success        = Color.green
-    static let danger         = Color.red
-    static let warning        = Color.orange
-}
-private enum PLSpacing {
-    static let xs: CGFloat = 6
-    static let sm: CGFloat = 10
-    static let md: CGFloat = 16
-    static let lg: CGFloat = 20
-}
-private enum PLRadius {
-    static let md: CGFloat = 12
-}
 
 // Reusable Card + Primary Button
-private struct CardModifier: ViewModifier {
-    func body(content: Content) -> some View {
-        content
-            .padding(PLSpacing.md)
-            .background(PLColor.surface)
-            .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
-            .overlay(
-                RoundedRectangle(cornerRadius: PLRadius.md)
-                    .stroke(PLColor.cardBorder)
-            )
-    }
-}
-private extension View { func plCard() -> some View { modifier(CardModifier()) } }
-
-private struct PrimaryButton: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.headline)
-            .foregroundColor(.white)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .background(PLColor.accent.opacity(configuration.isPressed ? 0.85 : 1))
-            .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
-    }
-}
 
 // MARK: - View
 // Common categories available across budget views
@@ -260,7 +216,7 @@ struct WeeklyMonthlyCostView: View {
             pendingAssignments = []
             skippedTransactionIds = []
         }) {
-            NavigationView {
+            NavigationStack {
                 VStack(spacing: 12) {
                     if pendingAssignments.isEmpty && skippedTransactionIds.isEmpty {
                         Text("Loading…").padding()
@@ -460,7 +416,7 @@ struct WeeklyMonthlyCostView: View {
                     Text("Daily").tag("Daily")
                 }
                 .pickerStyle(.segmented)
-                .onChange(of: costsViewMode) { _ in
+                .onChange(of: costsViewMode) { _, _ in
                     if costsViewMode == "Monthly" {
                         loadMonthlyTotalsIntoCostItems()
                     } else {
@@ -779,7 +735,7 @@ struct WeeklyMonthlyCostView: View {
                             showAddFixedCost = true
                         } label: {
                             Image(systemName: "pencil.circle")
-                                .foregroundColor(PLColor.accent)
+                                .foregroundColor(PLColor.tint)
                         }
                         .buttonStyle(.plain)
                         Button {
@@ -815,7 +771,7 @@ struct WeeklyMonthlyCostView: View {
     }
 
     private var fixedCostSheet: some View {
-        NavigationView {
+        NavigationStack {
             Form {
                 Section("Category") {
                     Picker("Category", selection: $fixedCostCategory) {
@@ -874,8 +830,9 @@ struct WeeklyMonthlyCostView: View {
         guard let url = URL(string: "\(BackendConfig.baseURLString)/api/costs/fixed/\(username)") else { return }
         var request = URLRequest(url: url)
         BackendConfig.addApiKey(to: &request)
-        URLSession.shared.dataTask(with: request) { data, _, _ in
-            guard let data = data,
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            guard !AppBanner.reportIfFailed("load your fixed costs", data, response, error),
+                  let data = data,
                   let decoded = try? JSONDecoder().decode([FixedCostItem].self, from: data) else { return }
             DispatchQueue.main.async {
                 self.fixedCosts = decoded
@@ -903,9 +860,9 @@ struct WeeklyMonthlyCostView: View {
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = body
 
-        URLSession.shared.dataTask(with: req) { data, response, _ in
-            let code = (response as? HTTPURLResponse)?.statusCode ?? -1
-            guard (200...299).contains(code),
+        URLSession.shared.dataTask(with: req) { data, response, error in
+            // on failure the form stays open with what was typed
+            guard !AppBanner.reportIfFailed("save the fixed cost", data, response, error),
                   let data = data,
                   let updated = try? JSONDecoder().decode([FixedCostItem].self, from: data) else { return }
             DispatchQueue.main.async {
@@ -923,9 +880,8 @@ struct WeeklyMonthlyCostView: View {
         BackendConfig.addApiKey(to: &req)
         req.httpMethod = "DELETE"
 
-        URLSession.shared.dataTask(with: req) { data, response, _ in
-            let code = (response as? HTTPURLResponse)?.statusCode ?? -1
-            guard (200...299).contains(code),
+        URLSession.shared.dataTask(with: req) { data, response, error in
+            guard !AppBanner.reportIfFailed("delete the fixed cost", data, response, error),
                   let data = data,
                   let updated = try? JSONDecoder().decode([FixedCostItem].self, from: data) else { return }
             DispatchQueue.main.async {
@@ -1066,11 +1022,9 @@ struct WeeklyMonthlyCostView: View {
 
         var request = URLRequest(url: url)
         BackendConfig.addApiKey(to: &request)
-        URLSession.shared.dataTask(with: request) { data, _, error in
-            if let error = error {
-                print("Error fetching budget:", error.localizedDescription)
-                return
-            }
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            if (response as? HTTPURLResponse)?.statusCode == 404 { return } // no budget yet
+            if AppBanner.reportIfFailed("load your budget", data, response, error) { return }
             guard let data = data, !data.isEmpty else { return }
             do {
                 let decoded = try JSONDecoder().decode(BudgetResponse.self, from: data)
@@ -1079,7 +1033,7 @@ struct WeeklyMonthlyCostView: View {
                     self.loadMonthlyData()
                 }
             } catch {
-                print("Failed to decode budget data:", error)
+                AppBanner.report("load your budget", error)
             }
         }.resume()
     }
@@ -1091,8 +1045,8 @@ struct WeeklyMonthlyCostView: View {
 
         var request = URLRequest(url: url)
         BackendConfig.addApiKey(to: &request)
-        URLSession.shared.dataTask(with: request) { data, _, error in
-            if let error = error { print("Monthly fetch error:", error); return }
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            if AppBanner.reportIfFailed("load your spending", data, response, error, retry: { loadMonthlyData() }) { return }
             guard let data = data else { return }
             if let period = try? JSONDecoder().decode(WeeklyPeriod.self, from: data) {
                 DispatchQueue.main.async {
@@ -1245,9 +1199,10 @@ struct WeeklyMonthlyCostView: View {
         guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
         req.httpBody = data
         do {
-            _ = try await URLSession.shared.data(for: req)
+            let (data, response) = try await URLSession.shared.data(for: req)
+            AppBanner.reportIfFailed("snooze the reminder", data, response, nil)
         } catch {
-            print("snooze error:", error)
+            AppBanner.report("snooze the reminder", error)
         }
         await MainActor.run {
             recurringPrompts.removeAll { $0.id == prompt.id }
@@ -1262,13 +1217,21 @@ struct WeeklyMonthlyCostView: View {
             do {
                 var request = URLRequest(url: url)
                 BackendConfig.addApiKey(to: &request)
-                let (data, _) = try await URLSession.shared.data(for: request)
-                if let decoded = try? JSONDecoder().decode(SubscriptionMapResponse.self, from: data) {
+                let (data, response) = try await URLSession.shared.data(for: request)
+                // saving replaces the whole list, so stop unless the current one loaded
+                if AppBanner.reportIfFailed("add the subscription", data, response, nil) { return }
+                // the server answers {} when there are none yet
+                let isEmpty = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?.isEmpty == true
+                if !isEmpty {
+                    let decoded = try JSONDecoder().decode(SubscriptionMapResponse.self, from: data)
                     for (name, subData) in decoded.subscriptions {
-                        merged[name.lowercased()] = SubscriptionItem(name: name, cost: "", dueDate: subData.dueDate)
+                        merged[name.lowercased()] = SubscriptionItem(name: name, cost: subData.cost ?? "", dueDate: subData.dueDate)
                     }
                 }
-            } catch { }
+            } catch {
+                AppBanner.report("add the subscription", error)
+                return
+            }
         }
         for sub in newSubs {
             merged[sub.name.lowercased()] = sub
@@ -1276,7 +1239,7 @@ struct WeeklyMonthlyCostView: View {
 
         var dict: [String: SubscriptionData] = [:]
         for sub in merged.values {
-            dict[sub.name] = SubscriptionData(name: sub.name, cost: "", dueDate: sub.dueDate)
+            dict[sub.name] = SubscriptionData(name: sub.name, cost: sub.cost, dueDate: sub.dueDate)
             await MainActor.run {
                 ensureSubscriptionEvent(sub)
                 scheduleMonthlySubscriptionReminder(for: sub)
@@ -1292,9 +1255,10 @@ struct WeeklyMonthlyCostView: View {
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = body
         do {
-            _ = try await URLSession.shared.data(for: req)
+            let (data, response) = try await URLSession.shared.data(for: req)
+            AppBanner.reportIfFailed("add the subscription", data, response, nil)
         } catch {
-            print("save subs error:", error)
+            AppBanner.report("add the subscription", error)
         }
     }
 
@@ -1580,12 +1544,12 @@ struct WeeklyMonthlyCostView: View {
         req.httpBody = data
 
         do {
-            let (_, resp) = try await URLSession.shared.data(for: req)
-            if let http = resp as? HTTPURLResponse, (200...299).contains(http.statusCode) {
+            let (data, resp) = try await URLSession.shared.data(for: req)
+            if !AppBanner.reportIfFailed("skip those transactions", data, resp, nil) {
                 print("Successfully skipped \(skippedTransactionIds.count) transactions")
             }
         } catch {
-            print("Error skipping transactions: \(error)")
+            AppBanner.report("skip those transactions", error)
         }
     }
     
@@ -1670,7 +1634,7 @@ private struct CostRow: View {
                     .keyboardType(.decimalPad)
                     .textFieldStyle(.roundedBorder)
                     .frame(width: 90)
-                    .onChange(of: item.amount) { newValue in
+                    .onChange(of: item.amount) { _, newValue in
                         onChangeAmount(newValue)
                     }
 
@@ -1828,7 +1792,7 @@ private struct RecurringPromptSheet: View {
     var onDecline: (RecurringChargePromptModel) -> Void
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             List {
                 ForEach(prompts) { prompt in
                     VStack(alignment: .leading, spacing: 6) {
@@ -2158,7 +2122,7 @@ private struct AccountPickerSheet: View {
     let onConfirm: () -> Void
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             Group {
                 if accounts.isEmpty {
                     VStack(spacing: 12) {

@@ -1,5 +1,8 @@
 package com.plotline.backend.service;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -34,6 +37,8 @@ import software.amazon.awssdk.services.s3.model.ObjectCannedACL;
 
 @Service
 public class UserProfileService {
+    private static final Logger log = LoggerFactory.getLogger(UserProfileService.class);
+
 
   static DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssXXX");
 
@@ -169,7 +174,7 @@ public class UserProfileService {
             s3Client.putObject(putRequest, RequestBody.fromString(user));
 
       } catch (JsonProcessingException e) {
-          e.printStackTrace();
+          log.error("contentType failed", e);
       }
   }
 
@@ -177,7 +182,7 @@ public class UserProfileService {
       
       try {
 
-        System.out.println(username);
+        log.debug("{}", username);
         String key = "users/" + normalize(username) + "/profile.json";
 
         GetObjectRequest getRequest = GetObjectRequest.builder()
@@ -201,7 +206,7 @@ public class UserProfileService {
       
     try {
 
-      System.out.println(username);
+      log.debug("{}", username);
       String key = "users/" + normalize(username) + "/account.json";
 
       GetObjectRequest getRequest = GetObjectRequest.builder()
@@ -225,7 +230,7 @@ public class UserProfileService {
         String normUser = normalize(username);
         String fileName = "users/" + normUser + "/profile_pictures/" + normUser + ".jpg";
 
-        System.out.println("Uploading profile picture");
+        log.debug("Uploading profile picture");
 
         PutObjectRequest putRequest = PutObjectRequest.builder()
                 .bucket(bucketName)
@@ -236,7 +241,7 @@ public class UserProfileService {
 
         s3Client.putObject(putRequest, RequestBody.fromBytes(file.getBytes()));
 
-        System.out.println("Profile picture uploaded successfully");
+        log.debug("Profile picture uploaded successfully");
         // first profile picture trophy awarded
         incrementTrophy(username, "first-profile-picture", 1);
 
@@ -258,7 +263,7 @@ public class UserProfileService {
 
       // parse json into trophy
       List<Trophy> trophies = objectMapper.readValue(content, new TypeReference<List<Trophy>>() {});
-      System.out.println("Trophies: " + trophies);
+      log.debug("Trophies: {}", trophies);
 
       // if new trophies were added since this user created their default trophies, add here
       if (trophies.size() < DEFAULT_TROPHIES.size()) {
@@ -291,7 +296,7 @@ public class UserProfileService {
     } catch (software.amazon.awssdk.services.s3.model.NoSuchKeyException e) {
       // If the trophies.json file does not exist, create default trophies     
       if (e.awsErrorDetails().errorCode().equals("NoSuchKey")) {
-          System.out.println("No trophies found for user: " + username + ". Creating default trophies.");
+          log.debug("No trophies found for user: {}. Creating default trophies.", username);
           return createDefaultTrophies(username);
       } else {
           throw e;
@@ -350,7 +355,7 @@ public class UserProfileService {
                   chatService.postMessage(username, new com.plotline.backend.dto.ChatMessage(null, username, null, content));
               } catch (JsonProcessingException e) {
                   // log and continue
-                  e.printStackTrace();
+                  log.error("incrementTrophy failed", e);
               }
             }
 
@@ -369,7 +374,7 @@ public class UserProfileService {
               chatService.postMessage(username, new com.plotline.backend.dto.ChatMessage(null, username, null, content));
             } catch (JsonProcessingException e) {
               // log and continue
-              e.printStackTrace();
+              log.error("incrementTrophy failed", e);
             }
           }
         }

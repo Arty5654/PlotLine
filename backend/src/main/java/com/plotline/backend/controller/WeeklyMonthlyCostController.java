@@ -1,5 +1,8 @@
 package com.plotline.backend.controller;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.plotline.backend.dto.WeeklyMonthlyCostRequest;
@@ -43,6 +46,8 @@ import java.math.RoundingMode;
 @RestController
 @RequestMapping("/api/costs")
 public class WeeklyMonthlyCostController {
+    private static final Logger log = LoggerFactory.getLogger(WeeklyMonthlyCostController.class);
+
 
     @Autowired
     private S3Service s3Service;
@@ -134,11 +139,11 @@ public class WeeklyMonthlyCostController {
             byte[] imageBytes = image.getBytes();
             String base64Image = java.util.Base64.getEncoder().encodeToString(imageBytes);
 
-            System.out.println("Sending receipt image to GPT-4o Vision (size: " + imageBytes.length + " bytes)");
+            log.debug("Sending receipt image to GPT-4o Vision (size: {} bytes)", imageBytes.length);
 
             // Use GPT-4o Vision to analyze the receipt directly (much more accurate than OCR)
             String response = openAIService.analyzeReceiptFromImage(base64Image);
-            System.out.println("GPT-4o Vision Response:\n" + response);
+            log.debug("GPT-4o Vision Response:\n{}", response);
 
             // Clean up response to parse (remove markdown code blocks if present)
             String cleanedJson = response
@@ -168,7 +173,7 @@ public class WeeklyMonthlyCostController {
             updateDatedCosts(normUser, "weekly", today, parsed);
             updateDatedCosts(normUser, "monthly", today, parsed);
 
-            System.out.println("Receipt processed successfully: " + result);
+            log.debug("Receipt processed successfully: {}", result);
 
             // Return the parsed costs so iOS can use them for undo/edit
             Map<String, Object> responseWithMeta = new HashMap<>(result);
@@ -177,7 +182,7 @@ public class WeeklyMonthlyCostController {
             return ResponseEntity.ok(responseWithMeta);
 
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("handleReceiptUpload failed", e);
             Map<String, Object> error = new HashMap<>();
             error.put("error", e.getMessage());
             return ResponseEntity.status(500).body(error);
@@ -243,7 +248,7 @@ public class WeeklyMonthlyCostController {
         private void updateWeeklyCosts(String username, Map<String,Double> delta){
         try { mergeCosts(normalize(username), "weekly", delta); }
         catch (Exception e){                       // you can log if you like
-        System.err.println("merge error: "+e.getMessage());
+        log.error("merge error: {}", e.getMessage());
         }
     }
 
@@ -256,9 +261,9 @@ public class WeeklyMonthlyCostController {
             String periodKey = "weekly".equalsIgnoreCase(type) ? weekKey(date) : monthKey(date);
             String key = "users/%s/costs/%s/%s.json".formatted(username, type.toLowerCase(), periodKey);
 
-            System.out.println("[DEBUG] updateDatedCosts: Loading from S3 key: " + key);
+            log.debug("[DEBUG] updateDatedCosts: Loading from S3 key: {}", key);
             Map<String, Object> period = loadJsonOrEmpty(key);
-            System.out.println("[DEBUG] Loaded period: " + period);
+            log.debug("[DEBUG] Loaded period: {}", period);
 
             // Initialize fields if new
             period.putIfAbsent("periodKey", periodKey);
@@ -270,14 +275,14 @@ public class WeeklyMonthlyCostController {
             @SuppressWarnings("unchecked")
             Map<String, Object> totals = (Map<String, Object>) period.get("totals");
 
-            System.out.println("[DEBUG] Current totals before update: " + totals);
+            log.debug("[DEBUG] Current totals before update: {}", totals);
 
             String dayKey = date.toString();
             @SuppressWarnings("unchecked")
             Map<String, Object> dayCostsRaw = (Map<String, Object>) days.getOrDefault(dayKey, new LinkedHashMap<>());
 
-            System.out.println("[DEBUG] Current day costs for " + dayKey + ": " + dayCostsRaw);
-            System.out.println("[DEBUG] Delta to add: " + delta);
+            log.debug("[DEBUG] Current day costs for {}: {}", dayKey, dayCostsRaw);
+            log.debug("[DEBUG] Delta to add: {}", delta);
 
             // Add delta to day's costs
             for (var entry : delta.entrySet()) {
@@ -322,10 +327,10 @@ public class WeeklyMonthlyCostController {
             }
 
             saveJson(key, period);
-            System.out.println("Updated " + type + " costs for " + username + ": " + delta);
+            log.debug("Updated {} costs for {}: {}", type, username, delta);
         } catch (Exception e) {
-            System.err.println("updateDatedCosts error: " + e.getMessage());
-            e.printStackTrace();
+            log.error("updateDatedCosts error: {}", e.getMessage());
+            log.error("updateDatedCosts failed", e);
         }
     }
 
@@ -368,7 +373,7 @@ public class WeeklyMonthlyCostController {
 
             return ResponseEntity.ok(Map.of("success", true, "added", delta));
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("addDatedCosts failed", e);
             return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
         }
     }
@@ -400,7 +405,7 @@ public class WeeklyMonthlyCostController {
 
             return ResponseEntity.ok(Map.of("success", true, "message", "Receipt costs undone"));
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("undoReceiptCosts failed", e);
             return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
         }
     }
@@ -462,9 +467,9 @@ public class WeeklyMonthlyCostController {
             }
 
             saveJson(key, period);
-            System.out.println("Subtracted " + type + " costs for " + username + ": " + negativeDelta);
+            log.debug("Subtracted {} costs for {}: {}", type, username, negativeDelta);
         } catch (Exception e) {
-            System.err.println("subtractDatedCosts error: " + e.getMessage());
+            log.error("subtractDatedCosts error: {}", e.getMessage());
         }
     }
 
@@ -651,7 +656,7 @@ public class WeeklyMonthlyCostController {
             return ResponseEntity.ok(period);
 
         } catch (Exception ex) {
-            ex.printStackTrace();
+            log.error("mergeDatedCosts failed", ex);
             return ResponseEntity.status(500).body("merge-dated failed: " + ex.getMessage());
         }
     }

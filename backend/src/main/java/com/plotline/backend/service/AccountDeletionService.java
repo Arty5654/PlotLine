@@ -1,32 +1,32 @@
 package com.plotline.backend.service;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 
 import org.springframework.stereotype.Service;
 
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.plotline.backend.accounts.AccountDirectory;
 import com.plotline.backend.categorize.UserCategoryStore;
 import com.plotline.backend.dto.AuthResponse;
 import com.plotline.backend.dto.S3UserRecord;
+import com.plotline.backend.membership.MembershipService;
 import com.plotline.backend.plaid.PlaidCursorStore;
 import com.plotline.backend.plaid.TokenStore;
 import com.plotline.backend.service.AppleTokenRevoker.AppleTokens;
 import com.plaid.client.model.ItemRemoveRequest;
 import com.plaid.client.request.PlaidApi;
 
-import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Response;
-import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
-import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Object;
 
 import static com.plotline.backend.util.UsernameUtils.normalize;
@@ -40,6 +40,8 @@ import static com.plotline.backend.util.UsernameUtils.normalize;
  */
 @Service
 public class AccountDeletionService {
+    private static final Logger log = LoggerFactory.getLogger(AccountDeletionService.class);
+
 
     public static final String APPLE_AUTHORIZATION_REQUIRED = "Apple Authorization Required";
 
@@ -56,13 +58,16 @@ public class AccountDeletionService {
     private final PlaidCursorStore plaidCursorStore;
     private final UserCategoryStore userCategoryStore;
     private final PlaidApi plaidApi;
+    private final MembershipService membershipService;
+    private final AccountDirectory accountDirectory;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public AccountDeletionService(S3Client s3Client, AuthService authService, AppleSignInService appleSignInService,
                                   AppleTokenRevoker appleTokenRevoker, FriendsService friendsService,
                                   FriendsFeedService friendsFeedService, GroceryListService groceryListService,
                                   TokenStore tokenStore, PlaidCursorStore plaidCursorStore,
-                                  UserCategoryStore userCategoryStore, PlaidApi plaidApi) {
+                                  UserCategoryStore userCategoryStore, PlaidApi plaidApi,
+                                  MembershipService membershipService, AccountDirectory accountDirectory) {
         this.s3Client = s3Client;
         this.authService = authService;
         this.appleSignInService = appleSignInService;
@@ -74,6 +79,8 @@ public class AccountDeletionService {
         this.plaidCursorStore = plaidCursorStore;
         this.userCategoryStore = userCategoryStore;
         this.plaidApi = plaidApi;
+        this.membershipService = membershipService;
+        this.accountDirectory = accountDirectory;
     }
 
     public AuthResponse deleteAccount(String username, String appleAuthorizationCode) {
@@ -96,11 +103,11 @@ public class AccountDeletionService {
                     }
                     appleTokenRevoker.revoke(tokens.refreshToken());
                 } catch (Exception e) {
-                    e.printStackTrace();
+                    log.error("deleteAccount failed", e);
                     return fail("Couldn't disconnect your Apple ID. Please try again.");
                 }
             } else {
-                System.out.println("WARNING: Apple sign-in key not configured, skipping Apple token revocation for " + user);
+                log.warn("WARNING: Apple sign-in key not configured, skipping Apple token revocation for {}", user);
             }
         }
 
@@ -116,7 +123,7 @@ public class AccountDeletionService {
                 try {
                     removePlaidItem(accessToken);
                 } catch (Exception e) {
-                    System.err.println("Plaid item removal failed during account deletion: " + e.getMessage());
+                    log.error("Plaid item removal failed during account deletion: {}", e.getMessage());
                 }
             }
             tokenStore.deleteUser(variant);
@@ -130,11 +137,11 @@ public class AccountDeletionService {
                 try {
                     friendsService.removeFriend(user, friend);
                 } catch (Exception e) {
-                    System.err.println("Failed to remove friend " + friend + ": " + e.getMessage());
+                    log.error("Failed to remove friend {}: {}", friend, e.getMessage());
                 }
             }
         } catch (Exception e) {
-            System.err.println("Failed to load friends during account deletion: " + e.getMessage());
+            log.error("Failed to load friends during account deletion: {}", e.getMessage());
         }
 
         // 4. Grocery: delete owned lists (and members' pointers), leave lists shared with us,
@@ -145,33 +152,40 @@ public class AccountDeletionService {
         try {
             friendsFeedService.removeUser(user);
         } catch (Exception e) {
-            System.err.println("Failed to clean friends feed: " + e.getMessage());
+            log.error("Failed to clean friends feed: {}", e.getMessage());
         }
 
-        // 6. Everything stored under the user (account.json is kept for last)
+        // 6. Membership: free their App Store subscription for another account (the subscription
+        //    itself is managed by Apple, and deleting the account doesn't cancel it)
+        try {
+            membershipService.forget(user);
+        } catch (Exception e) {
+            log.error("Failed to release App Store subscription: {}", e.getMessage());
+        }
+
+        // 7. Everything stored under the user (account.json is kept for last)
         try {
             deletePrefix("chat-messages/" + user + "/");
             deletePrefix("users/" + user + "/", "users/" + user + "/account.json");
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("deleteAccount failed", e);
             return fail("Couldn't delete your data. Please try again.");
         }
 
-        // 7. Indexes, Apple link, and finally the account itself
+        // 8. Username and email (frees them for new accounts), Apple link, and finally the account itself
         try {
-            removeFromAllUsers(user);
-            removeFromEmailIndex(user);
+            accountDirectory.delete(user);
             if (record.getAppleSub() != null) {
                 appleSignInService.deleteLink(record.getAppleSub());
             }
             s3Client.deleteObject(DeleteObjectRequest.builder().bucket(BUCKET).key("users/" + user + "/account.json").build());
             authService.evictAccountCache(user);
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("deleteAccount failed", e);
             return fail("Couldn't delete your account. Please try again.");
         }
 
-        System.out.println("Account DELETED: " + user);
+        log.info("Account DELETED: {}", user);
         return new AuthResponse(true, null, null);
     }
 
@@ -198,23 +212,7 @@ public class AccountDeletionService {
                 if (from != null) deleteKey("users/" + normalize(from) + "/grocery/invites/sent/" + fileNameOf(key));
             }
         } catch (Exception e) {
-            System.err.println("Failed to clean up grocery lists: " + e.getMessage());
-        }
-    }
-
-    private void removeFromAllUsers(String user) throws Exception {
-        List<String> allUsers = readJson("all-users.json", new TypeReference<List<String>>() {});
-        if (allUsers == null) return;
-        if (allUsers.removeIf(u -> u.equalsIgnoreCase(user))) {
-            writeJson("all-users.json", allUsers);
-        }
-    }
-
-    private void removeFromEmailIndex(String user) throws Exception {
-        Map<String, String> index = readJson("email-index.json", new TypeReference<Map<String, String>>() {});
-        if (index == null) return;
-        if (index.values().removeIf(owner -> owner.equalsIgnoreCase(user))) {
-            writeJson("email-index.json", index);
+            log.error("Failed to clean up grocery lists: {}", e.getMessage());
         }
     }
 
@@ -250,19 +248,6 @@ public class AccountDeletionService {
         } catch (Exception e) {
             return null;
         }
-    }
-
-    private <T> T readJson(String key, TypeReference<T> type) throws Exception {
-        try {
-            return objectMapper.readValue(s3Client.getObjectAsBytes(b -> b.bucket(BUCKET).key(key)).asByteArray(), type);
-        } catch (NoSuchKeyException e) {
-            return null;
-        }
-    }
-
-    private void writeJson(String key, Object value) throws Exception {
-        s3Client.putObject(PutObjectRequest.builder().bucket(BUCKET).key(key).contentType("application/json").build(),
-                RequestBody.fromString(objectMapper.writeValueAsString(value)));
     }
 
     private static String fileNameOf(String key) {

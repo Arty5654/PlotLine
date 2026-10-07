@@ -1,4 +1,7 @@
 package com.plotline.backend.controller;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import com.plotline.backend.service.OpenAIService;
 import com.plotline.backend.service.PortfolioService;
 import com.plotline.backend.dto.SavedPortfolio;
@@ -29,6 +32,8 @@ import java.util.Iterator;
 @RestController
 @RequestMapping("/api/llm")
 public class PortfolioController {
+    private static final Logger log = LoggerFactory.getLogger(PortfolioController.class);
+
 
     @Autowired
     private OpenAIService openAIService;
@@ -72,7 +77,7 @@ public class PortfolioController {
                 brokerageOrig = m.get("Brokerage");
                 rothOrig      = m.get("Roth IRA");
             } catch (Exception ignore) { 
-                System.out.println("No original monthly budget found; using edited/income if available.");
+                log.debug("No original monthly budget found; using edited/income if available.");
             }
 
             Double chosenMonthly = null;
@@ -102,7 +107,7 @@ public class PortfolioController {
                 amountBasis = String.format("$%.2f/month (based on %s budget)",
                         chosenMonthly, usedEdited ? "edited" : "original");
             } else {
-                System.out.println("No Budget For Investments");
+                log.debug("No Budget For Investments");
             }
 
              // Different prompt for Roth IRA
@@ -188,7 +193,7 @@ public class PortfolioController {
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("generatePortfolio failed", e);
             return ResponseEntity.status(500).body("Error generating portfolio");
         }
     }
@@ -239,7 +244,7 @@ public class PortfolioController {
             portfolioService.saveEditedPortfolio(normalize(newPortfolio.getUsername()), newPortfolio.getAccount(), newPortfolio);
             return ResponseEntity.ok("Edited portfolio saved.");
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("saveEditedPortfolio failed", e);
             return ResponseEntity.status(500).body("Failed to save edited portfolio.");
         }
     }
@@ -248,7 +253,7 @@ public class PortfolioController {
     public ResponseEntity<SavedPortfolio> getPortfolio(@PathVariable String username, @RequestParam(name="account", defaultValue="BROKERAGE") AccountType account) {
         String normUser = normalize(username);
         SavedPortfolio edited = portfolioService.loadEditedPortfolio(normUser, account);
-        System.out.println("Edited: " + edited);
+        log.debug("Edited: {}", edited);
         
         if (edited != null) {
             return ResponseEntity.ok(edited);
@@ -293,7 +298,7 @@ public class PortfolioController {
             JsonNode ratingNode = mapper.readTree(rating);
             return ResponseEntity.ok(ratingNode);
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("ratePortfolio failed", e);
             return ResponseEntity.status(500).body(Map.of("error", "Error rating portfolio"));
         }
     }
@@ -315,7 +320,7 @@ public class PortfolioController {
             }
         }
     
-        System.out.println("RISK FOR NEWS: " + portfolio.getRiskTolerance());
+        log.debug("RISK FOR NEWS: {}", portfolio.getRiskTolerance());
         return ResponseEntity.ok(portfolio.getRiskTolerance());
     }
     

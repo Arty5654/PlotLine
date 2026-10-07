@@ -1,5 +1,8 @@
 package com.plotline.backend.config;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import com.plaid.client.ApiClient;
 import com.plaid.client.request.PlaidApi;
 import org.springframework.context.annotation.Bean;
@@ -10,6 +13,8 @@ import java.util.HashMap;
 
 @Configuration
 public class PlaidConfig {
+    private static final Logger log = LoggerFactory.getLogger(PlaidConfig.class);
+
 
   @Bean
   public PlaidApi plaidApi() {
@@ -32,10 +37,10 @@ public class PlaidConfig {
     // Choose environment based on PLAID_ENV (defaults to sandbox)
     if ("production".equalsIgnoreCase(plaidEnv)) {
       client.setPlaidAdapter(ApiClient.Production);
-      System.out.println("Plaid configured for PRODUCTION environment");
+      log.debug("Plaid configured for PRODUCTION environment");
     } else {
       client.setPlaidAdapter(ApiClient.Sandbox);
-      System.out.println("Plaid configured for SANDBOX environment");
+      log.debug("Plaid configured for SANDBOX environment");
     }
 
     return client.createService(PlaidApi.class);

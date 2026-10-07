@@ -17,23 +17,22 @@ struct DayView: View {
     @State private var showingAddEventSheet = false
     @State private var selectedEvent: Event? = nil
 
-    private var adaptiveTextColor: Color {
-        colorScheme == .dark ? .white : .blue
-    }
-
     var body: some View {
         VStack {
-            Text("Events")
-                .font(.custom("AvenirNext-Bold", size: 20))
-                .padding(.top, 16)
-
             let eventsToday = viewModel.eventsOnDay(day)
             let friendEventsToday = viewModel.friendEventsOnDay(day)
             if eventsToday.isEmpty && friendEventsToday.isEmpty {
                 Spacer()
-                Text("No events")
-                    .foregroundColor(.secondary)
-                    .font(.subheadline)
+                VStack(spacing: 8) {
+                    Image(systemName: "calendar")
+                        .font(.largeTitle)
+                        .foregroundColor(PLColor.textSecondary)
+                    Text("No events")
+                        .font(.headline)
+                    Text("Tap + to add one.")
+                        .font(.subheadline)
+                        .foregroundColor(PLColor.textSecondary)
+                }
                 Spacer()
             } else {
                 DayEventsList(
@@ -45,16 +44,16 @@ struct DayView: View {
             }
         }
         .navigationTitle(formattedDate(day))
-        .tint(adaptiveTextColor)
+        .navigationBarTitleDisplayMode(.inline)
+        .tint(PLColor.tint)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button(action: {
                     showingAddEventSheet = true
                 }) {
                     Image(systemName: "plus")
-                        .imageScale(.large)
-                        .foregroundColor(adaptiveTextColor)
                 }
+                .accessibilityLabel("Add event")
             }
         }
         .sheet(isPresented: $showingAddEventSheet) {
@@ -92,9 +91,7 @@ struct DayView: View {
     }
 
     private func formattedDate(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .full
-        return formatter.string(from: date)
+        date.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())
     }
     
     private func format(_ date: Date) -> String {
@@ -123,9 +120,6 @@ private struct DayEventsList: View {
     @ObservedObject var viewModel: CalendarViewModel
     @Binding var selectedEvent: Event?
 
-    @Environment(\.colorScheme) var colorScheme
-    private var adaptiveTextColor: Color { colorScheme == .dark ? .white : .blue }
-
     @State private var eventToMove: Event? = nil
     @State private var showMoveDatePicker = false
     @State private var moveTargetDate = Date()
@@ -138,6 +132,7 @@ private struct DayEventsList: View {
         List {
             ForEach(events) { event in
                 eventRowContent(for: event)
+                    .listRowBackground(PLColor.surface)
             }
             .onDelete(perform: delete)
 
@@ -170,20 +165,22 @@ private struct DayEventsList: View {
                         }
                         .buttonStyle(PlainButtonStyle())
                         .padding(.vertical, 4)
+                        .listRowBackground(PLColor.surface)
                     }
                 }
             }
         }
         .listStyle(InsetGroupedListStyle())
+        .scrollContentBackground(.hidden)
         .sheet(item: $selectedFriendEvent) { item in
             FriendEventDetailSheet(event: item.event, friend: item.friend, color: item.color)
         }
         .sheet(isPresented: $showMoveDatePicker) {
-            NavigationView {
+            NavigationStack {
                 Form {
                     Section(header: Text("New Date")) {
                         DatePicker("Date", selection: $moveTargetDate, displayedComponents: .date)
-                            .accentColor(adaptiveTextColor)
+                            .tint(PLColor.accent)
                     }
                     if let event = eventToMove {
                         Section(header: Text("Event")) {
@@ -200,14 +197,14 @@ private struct DayEventsList: View {
                     }.bold()
                 )
             }
-            .tint(adaptiveTextColor)
+            .tint(PLColor.accent)
         }
         .sheet(isPresented: $showDuplicateDatePicker) {
-            NavigationView {
+            NavigationStack {
                 Form {
                     Section(header: Text("Duplicate To")) {
                         DatePicker("Date", selection: $duplicateTargetDate, displayedComponents: .date)
-                            .accentColor(adaptiveTextColor)
+                            .tint(PLColor.accent)
                     }
                     if let event = eventToDuplicate {
                         Section(header: Text("Event")) {
@@ -224,7 +221,7 @@ private struct DayEventsList: View {
                     }.bold()
                 )
             }
-            .tint(adaptiveTextColor)
+            .tint(PLColor.accent)
         }
     }
 
@@ -307,9 +304,9 @@ private struct DayEventsList: View {
                         Label("Remove from My Calendar", systemImage: "calendar.badge.minus")
                     }
                 } label: {
-                    Image(systemName: "ellipsis.circle")
-                        .foregroundColor(adaptiveTextColor)
-                        .font(.title3)
+                    Image(systemName: "ellipsis")
+                        .foregroundColor(PLColor.textSecondary)
+                        .frame(width: 32, height: 32)
                 }
             }
         } else {
@@ -346,9 +343,9 @@ private struct DayEventsList: View {
                         Label("Delete", systemImage: "trash")
                     }
                 } label: {
-                    Image(systemName: "ellipsis.circle")
-                        .foregroundColor(adaptiveTextColor)
-                        .font(.title3)
+                    Image(systemName: "ellipsis")
+                        .foregroundColor(PLColor.textSecondary)
+                        .frame(width: 32, height: 32)
                 }
             }
         }
@@ -358,22 +355,31 @@ private struct DayEventsList: View {
 
 private struct EventRow: View {
     let event: Event
-    @Environment(\.colorScheme) var colorScheme
 
-    private var adaptiveTextColor: Color {
-        colorScheme == .dark ? .white : .blue
+    private var typeColor: Color {
+        event.eventType == "rent" ? .red :
+        event.eventType.hasPrefix("subscription") ? .orange :
+        event.eventType.hasPrefix("weekly-goal") ? .green :
+        PLColor.accent
+    }
+
+    private var timeText: String {
+        let start = event.startDate.formatted(date: .omitted, time: .shortened)
+        guard event.endDate > event.startDate, Calendar.current.isDate(event.startDate, inSameDayAs: event.endDate) else { return start }
+        return "\(start) – \(event.endDate.formatted(date: .omitted, time: .shortened))"
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(event.title)
-                .font(.headline)
-                .foregroundColor(
-                    event.eventType == "rent" ? .red :
-                    event.eventType.hasPrefix("subscription") ? .orange :
-                    event.eventType.hasPrefix("weekly-goal") ? .green :
-                    .primary
-                )
+            HStack(spacing: 8) {
+                Circle().fill(typeColor).frame(width: 8, height: 8)
+                Text(event.title)
+                    .font(.headline)
+                    .foregroundColor(PLColor.textPrimary)
+            }
+            Text(timeText)
+                .font(.subheadline)
+                .foregroundColor(PLColor.textSecondary)
 
             if let addedBy = event.addedBy {
                 Text("Added by \(addedBy)")
@@ -391,20 +397,20 @@ private struct EventRow: View {
             if !Calendar.current.isDate(event.startDate, inSameDayAs: event.endDate) {
                 Text("\(format(event.startDate)) through \(format(event.endDate))")
                     .font(.subheadline)
-                    .foregroundColor(adaptiveTextColor)
+                    .foregroundColor(PLColor.textSecondary)
             }
 
             if event.recurrence != "none" {
                 Text("Occurs \(event.recurrence)")
                     .font(.subheadline)
-                    .foregroundColor(adaptiveTextColor)
+                    .foregroundColor(PLColor.textSecondary)
             }
 
             if !filteredInvitedFriends.isEmpty {
                 if event.inviteStatuses.isEmpty {
                     Text("Invited: \(filteredInvitedFriends.joined(separator: ", "))")
                         .font(.subheadline)
-                        .foregroundColor(adaptiveTextColor)
+                        .foregroundColor(PLColor.textSecondary)
                 } else {
                     VStack(alignment: .leading, spacing: 2) {
                         ForEach(filteredInvitedFriends, id: \.self) { friend in
@@ -423,6 +429,7 @@ private struct EventRow: View {
             }
         }
         .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func rsvpIcon(_ status: String) -> String {
@@ -474,8 +481,6 @@ private struct FriendEventDetailSheet: View {
     let color: Color
 
     @Environment(\.presentationMode) var presentationMode
-    @Environment(\.colorScheme) var colorScheme
-    private var adaptiveTextColor: Color { colorScheme == .dark ? .white : .blue }
 
     struct ReminderOption: Identifiable {
         let id: TimeInterval
@@ -499,7 +504,7 @@ private struct FriendEventDetailSheet: View {
     }
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             Form {
                 Section {
                     HStack(spacing: 10) {
@@ -553,7 +558,7 @@ private struct FriendEventDetailSheet: View {
                 presentationMode.wrappedValue.dismiss()
             })
         }
-        .tint(adaptiveTextColor)
+        .tint(PLColor.accent)
     }
 
     private func formatDateTime(_ date: Date) -> String {

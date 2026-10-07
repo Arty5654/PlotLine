@@ -8,83 +8,89 @@ struct FriendSearchView: View {
     @State private var searchText = ""
     @State private var suggestions: [String] = []
 
-    @Environment(\.colorScheme) var colorScheme
-    private var adaptiveTextColor: Color { colorScheme == .dark ? .white : .blue }
-
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 16) {
-
-                // Brought up
-                Text("Search by Username")
-                    .font(.custom("AvenirNext-Bold", size: 16))
-                    .foregroundColor(adaptiveTextColor)
-                    .padding(.top, 8)
-
-                // Search bar + Suggestions
-                VStack(spacing: 8) {
-                    TextField("Username", text: $searchText)
-                        .padding(12)
-                        .background(Color(.systemGray6))
-                        .cornerRadius(10)
-                        .onChange(of: searchText) {
-                            updateSuggestions(for: searchText)
-                        }
-                        .padding(.horizontal)
-
-                    ScrollView {
-                        VStack(spacing: 12) {
-                            ForEach(suggestions, id: \.self) { username in
-                                NavigationLink(destination: FriendProfileView(username: username)) {
-                                    HStack(spacing: 12) {
-                                        FriendProfilePicture(username: username)
-                                            .frame(width: 36, height: 36)
-
-                                        Text(username)
-                                            .font(.body)
-                                            .foregroundColor(.primary)
-
-                                        Spacer()
-                                    }
-                                    .padding()
-                                    .background(Color(.systemGray6))
-                                    .cornerRadius(12)
-                                    .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 2)
-                                }
-                            }
-                        }
-                        .padding(.horizontal)
-                        .padding(.top, 4)
+        VStack(spacing: PLSpacing.md) {
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundColor(PLColor.textSecondary)
+                TextField("Search usernames", text: $searchText)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    // the server searches; wait for a short pause in typing first
+                    .task(id: searchText) {
+                        try? await Task.sleep(for: .milliseconds(250))
+                        guard !Task.isCancelled else { return }
+                        await updateSuggestions(for: searchText)
                     }
-                    .frame(maxHeight: .infinity) // <--- Expand to fill remaining space
+                if !searchText.isEmpty {
+                    Button { searchText = "" } label: {
+                        Image(systemName: "xmark.circle.fill").foregroundColor(Color(.tertiaryLabel))
+                    }
+                    .accessibilityLabel("Clear")
                 }
+            }
+            .padding(12)
+            .background(PLColor.surface)
+            .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
 
-                Spacer()
-            }
-            .padding(.top, 20)
-            .navigationTitle("Add Friends") // (only 1 title now!)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") { dismiss() }
+            ScrollView {
+                if searchText.trimmingCharacters(in: .whitespaces).isEmpty {
+                    Text("Type part of a username to find people.")
+                        .font(.subheadline)
+                        .foregroundColor(PLColor.textSecondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, PLSpacing.lg)
+                } else if suggestions.isEmpty {
+                    Text("No usernames match \"\(searchText)\".")
+                        .font(.subheadline)
+                        .foregroundColor(PLColor.textSecondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, PLSpacing.lg)
+                } else {
+                    VStack(spacing: 0) {
+                        ForEach(Array(suggestions.enumerated()), id: \.element) { index, username in
+                            if index > 0 { Divider().padding(.leading, 48) }
+                            NavigationLink(destination: FriendProfileView(username: username)) {
+                                HStack(spacing: 12) {
+                                    FriendProfilePicture(username: username)
+                                        .frame(width: 36, height: 36)
+                                    Text(username)
+                                        .foregroundColor(PLColor.textPrimary)
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                        .font(.footnote.weight(.semibold))
+                                        .foregroundColor(Color(.tertiaryLabel))
+                                }
+                                .padding(.vertical, 8)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .plCard()
                 }
             }
-            .onAppear {
-                Task { await viewModel.fetchAllUsernames() }
+        }
+        .padding(.horizontal, PLSpacing.lg)
+        .padding(.top, PLSpacing.md)
+        .navigationTitle("Add Friends")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button("Cancel") { dismiss() }
             }
         }
     }
 
-    private func updateSuggestions(for text: String) {
+    private func updateSuggestions(for text: String) async {
         let query = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else {
             suggestions = []
             return
         }
-        suggestions = viewModel.allUsers.filter {
-            $0.lowercased().contains(query.lowercased()) &&
-            $0.lowercased() != currentUsername.lowercased()
-        }
+        let results = await viewModel.searchUsernames(query)
+        guard query == searchText.trimmingCharacters(in: .whitespacesAndNewlines) else { return } // typed more since
+        suggestions = results.filter { $0.lowercased() != currentUsername.lowercased() }
     }
 }
 

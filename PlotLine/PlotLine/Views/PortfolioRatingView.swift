@@ -51,9 +51,6 @@ struct PortfolioRatingView: View {
 
     private let username = UserDefaults.standard.string(forKey: "loggedInUsername") ?? "UnknownUser"
 
-    private var adaptiveTextColor: Color {
-        colorScheme == .dark ? .white : .blue
-    }
 
     private var totalPercentage: Double {
         holdings.compactMap { Double($0.percentage) }.reduce(0, +)
@@ -67,7 +64,7 @@ struct PortfolioRatingView: View {
                     ForEach(ViewAccount.allCases) { a in Text(a.rawValue).tag(a) }
                 }
                 .pickerStyle(.segmented)
-                .onChange(of: viewAccount) { _ in
+                .onChange(of: viewAccount) { _, _ in
                     rating = nil
                     errorText = nil
                     loadSavedPortfolio()
@@ -82,7 +79,7 @@ struct PortfolioRatingView: View {
                         Button(action: loadSavedPortfolio) {
                             Label("Load Saved", systemImage: "arrow.down.circle")
                                 .font(.caption)
-                                .foregroundColor(adaptiveTextColor)
+                                .foregroundColor(PLColor.tint)
                         }
                     }
 
@@ -95,7 +92,7 @@ struct PortfolioRatingView: View {
                                 .padding(8)
                                 .background(Color(.systemBackground))
                                 .cornerRadius(8)
-                                .tint(adaptiveTextColor)
+                                .tint(PLColor.accent)
 
                             TextField("%", text: $holding.percentage)
                                 .keyboardType(.decimalPad)
@@ -103,7 +100,7 @@ struct PortfolioRatingView: View {
                                 .padding(8)
                                 .background(Color(.systemBackground))
                                 .cornerRadius(8)
-                                .tint(adaptiveTextColor)
+                                .tint(PLColor.accent)
 
                             Text("%")
                                 .foregroundColor(.secondary)
@@ -126,7 +123,7 @@ struct PortfolioRatingView: View {
                     } label: {
                         Label("Add Holding", systemImage: "plus.circle")
                             .font(.subheadline)
-                            .foregroundColor(adaptiveTextColor)
+                            .foregroundColor(PLColor.tint)
                     }
 
                     HStack {
@@ -256,7 +253,11 @@ struct PortfolioRatingView: View {
         request.httpBody = jsonData
 
         do {
-            let (data, _) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await URLSession.shared.data(for: request)
+            if let limit = AILimitError.from(data, response) {
+                await MainActor.run { isLoading = false; errorText = limit.message }
+                return
+            }
 
             if let decoded = try? JSONDecoder().decode(PortfolioRating.self, from: data) {
                 await MainActor.run { self.rating = decoded; self.isLoading = false }

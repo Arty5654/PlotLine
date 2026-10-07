@@ -1,5 +1,8 @@
 package com.plotline.backend.categorize;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.plotline.backend.service.S3Service;
@@ -18,6 +21,8 @@ import java.util.concurrent.ConcurrentHashMap;
 @Component
 @Primary
 public class S3UserCategoryStore implements UserCategoryStore {
+    private static final Logger log = LoggerFactory.getLogger(S3UserCategoryStore.class);
+
     private static final String OVERRIDES_PREFIX = "plaid/category-overrides/";
 
     private final S3Service s3Service;
@@ -29,7 +34,7 @@ public class S3UserCategoryStore implements UserCategoryStore {
 
     public S3UserCategoryStore(S3Service s3Service) {
         this.s3Service = s3Service;
-        System.out.println("S3UserCategoryStore initialized - merchant overrides will persist across restarts");
+        log.debug("S3UserCategoryStore initialized - merchant overrides will persist across restarts");
     }
 
     @Override
@@ -48,7 +53,7 @@ public class S3UserCategoryStore implements UserCategoryStore {
         cache.computeIfAbsent(username, k -> new ConcurrentHashMap<>())
              .put(merchantNormalized, category);
         persistOverrides(username);
-        System.out.println("Saved category override for " + username + ": " + merchantNormalized + " → " + category);
+        log.debug("Saved category override for {}: {} → {}", username, merchantNormalized, category);
     }
 
     @Override
@@ -58,7 +63,7 @@ public class S3UserCategoryStore implements UserCategoryStore {
         try {
             s3Service.deleteFile(OVERRIDES_PREFIX + username.toLowerCase() + ".json");
         } catch (Exception e) {
-            System.err.println("Error deleting category overrides for " + username + ": " + e.getMessage());
+            log.error("Error deleting category overrides for {}: {}", username, e.getMessage());
         }
     }
 
@@ -74,7 +79,7 @@ public class S3UserCategoryStore implements UserCategoryStore {
                 Map<String, String> overrides = objectMapper.readValue(data,
                     new TypeReference<Map<String, String>>() {});
                 cache.put(username, new ConcurrentHashMap<>(overrides));
-                System.out.println("Loaded " + overrides.size() + " category overrides for user " + username);
+                log.debug("Loaded {} category overrides for user {}", overrides.size(), username);
             }
         } catch (Exception e) {
             // No overrides found or error - that's fine
@@ -97,7 +102,7 @@ public class S3UserCategoryStore implements UserCategoryStore {
                 json.getBytes(StandardCharsets.UTF_8));
             s3Service.uploadFile(s3Key, inputStream, json.length());
         } catch (Exception e) {
-            System.err.println("Error persisting category overrides for " + username + ": " + e.getMessage());
+            log.error("Error persisting category overrides for {}: {}", username, e.getMessage());
         }
     }
 }

@@ -5,21 +5,6 @@
 
 import SwiftUI
 
-private enum PLColor {
-    static let surface       = Color(.secondarySystemBackground)
-    static let cardBorder    = Color.black.opacity(0.06)
-    static let textPrimary   = Color.primary
-    static let textSecondary = Color.secondary
-    static let danger        = Color.red
-}
-private enum PLSpacing {
-    static let xs: CGFloat = 6
-    static let sm: CGFloat = 10
-    static let md: CGFloat = 16
-    static let lg: CGFloat = 20
-}
-private enum PLRadius { static let md: CGFloat = 12 }
-
 struct ArchivedGroceryListsView: View {
     let username: String
 

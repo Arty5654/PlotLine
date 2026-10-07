@@ -43,7 +43,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  * in-memory S3. Only things that would reach AWS/Twilio/Plaid directly are mocked.
  * Walks through: sign up, use your data, get blocked from others', befriend, refresh, delete.
  */
-@SpringBootTest
+@SpringBootTest(properties = {"plotline.ratelimit.enabled=false", "plotline.membership.required=false"}) // these have their own tests
 @AutoConfigureMockMvc
 @Import(FullStackAuthFlowTest.InMemoryStorage.class)
 class FullStackAuthFlowTest {
@@ -249,4 +249,49 @@ class FullStackAuthFlowTest {
         call(as(dave, post("/auth/accept-terms")), 200);
         call(as(dave, get("/friends/get-friends").param("username", "dave")), 200);
     }
+
+    @Test
+    @DisplayName("Sign-up refuses usernames that break the rule (no account is created)")
+    void signUpUsernameRule() throws Exception {
+        for (String bad : new String[]{"bob/grocery", "ab", "john.smith", "x".repeat(31)}) {
+            JsonNode response = call(withKey(post("/auth/signup")).contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(Map.of("username", bad, "email", "u" + bad.hashCode() + "@mail.com",
+                            "phone", "5555550123", "password", "Password1", "acceptedTerms", true))), 200);
+            assertThat(response.get("success").asBoolean()).as(bad).isFalse();
+            assertThat(response.get("error").asText()).isEqualTo(com.plotline.backend.service.AuthService.USERNAME_RULES);
+        }
+        assertThat(authService.userExists("bob/grocery")).isFalse();
+    }
+
+    @Test
+    @DisplayName("Sign-up refuses weak passwords and malformed emails (no account is created)")
+    void signUpPasswordAndEmailRules() throws Exception {
+        record Attempt(String email, String password, String expectedError) { }
+        for (Attempt attempt : new Attempt[]{
+                new Attempt("weak@mail.com", "password", com.plotline.backend.service.AuthService.PASSWORD_RULES),
+                new Attempt("weak@mail.com", "Pass1", com.plotline.backend.service.AuthService.PASSWORD_RULES),
+                new Attempt("not-an-email", "Password1", com.plotline.backend.service.AuthService.EMAIL_RULES),
+                new Attempt("me@example", "Password1", com.plotline.backend.service.AuthService.EMAIL_RULES)}) {
+            JsonNode response = call(withKey(post("/auth/signup")).contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(Map.of("username", "ruletester", "email", attempt.email(),
+                            "phone", "5555550123", "password", attempt.password(), "acceptedTerms", true))), 200);
+            assertThat(response.get("success").asBoolean()).as(attempt.toString()).isFalse();
+            assertThat(response.get("error").asText()).isEqualTo(attempt.expectedError());
+        }
+        assertThat(authService.userExists("ruletester")).isFalse();
+    }
+
+    @Test
+    @DisplayName("Changing your password to a weak one is refused")
+    void changePasswordRule() throws Exception {
+        String erin = signUp("erin", "erin@mail.com");
+        markPhoneVerified("erin");
+
+        JsonNode response = call(json(erin, post("/auth/change-password"),
+                Map.of("username", "erin", "oldPassword", "Password1", "newPassword", "weak")), 200);
+
+        assertThat(response.get("success").asBoolean()).isFalse();
+        assertThat(response.get("error").asText()).isEqualTo(com.plotline.backend.service.AuthService.PASSWORD_RULES);
+    }
 }
+

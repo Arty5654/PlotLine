@@ -1,5 +1,8 @@
 package com.plotline.backend.controller;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import com.plaid.client.request.PlaidApi;
 import com.plaid.client.model.*;
 import com.plaid.client.model.TransactionsSyncRequestOptions;
@@ -20,6 +23,8 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/plaid")
 public class PlaidSyncController {
+    private static final Logger log = LoggerFactory.getLogger(PlaidSyncController.class);
+
   private final PlaidApi plaid;
   private final TokenStore tokenStore;
   private final PlaidCursorStore cursorStore;
@@ -47,14 +52,14 @@ public ResponseEntity<?> sync(@RequestBody Map<String, Object> body) {
     @SuppressWarnings("unchecked")
     List<String> accountIdsFilter = (List<String>) body.get("account_ids");
 
-    System.out.println("=== Starting Plaid sync for user: " + username + " ===");
+    log.debug("=== Starting Plaid sync for user: {} ===", username);
 
     // Clear cached categories so we get fresh user categories
     categorizer.clearCategoryCache(username);
 
     Map<String, String> tokens = tokenStore.listAccessTokens(username);
     if (tokens.isEmpty()) {
-      System.out.println("No linked items for user: " + username);
+      log.debug("No linked items for user: {}", username);
       return ResponseEntity.badRequest().body(Map.of("error", "no linked items"));
     }
 
@@ -69,7 +74,7 @@ public ResponseEntity<?> sync(@RequestBody Map<String, Object> body) {
       final String itemId = entry.getKey();
       final String accessToken = entry.getValue();
 
-      System.out.println("Processing item: " + itemId);
+      log.debug("Processing item: {}", itemId);
 
       // decide which account IDs we care about
       List<String> targetAccountIds =
@@ -109,12 +114,11 @@ public ResponseEntity<?> sync(@RequestBody Map<String, Object> body) {
         hasMore = Boolean.TRUE.equals(res.getHasMore());
       }
 
-      System.out.println("Fetched from Plaid - added: " + added.size() +
-          ", modified: " + modified.size() + ", removed: " + removed.size());
+      log.debug("Fetched from Plaid - added: {}, modified: {}, removed: {}", added.size(), modified.size(), removed.size());
 
       // Always save cursor for incremental sync
       cursorStore.saveCursor(username, itemId, cursor);
-      System.out.println("Saved cursor for item: " + itemId);
+      log.debug("Saved cursor for item: {}", itemId);
 
       // If caller selected accounts, filter results here
       if (targetAccountIds != null && !targetAccountIds.isEmpty()) {
@@ -123,8 +127,7 @@ public ResponseEntity<?> sync(@RequestBody Map<String, Object> body) {
         added.removeIf(t -> !targetAccountIds.contains(t.getAccountId()));
         modified.removeIf(t -> !targetAccountIds.contains(t.getAccountId()));
         removed.removeIf(t -> !targetAccountIds.contains(t.getAccountId()));
-        System.out.println("After account filter - added: " + added.size() +
-            " (was " + beforeAdded + "), modified: " + modified.size() + " (was " + beforeModified + ")");
+        log.debug("After account filter - added: {} (was {}), modified: {} (was {})", added.size(), beforeAdded, modified.size(), beforeModified);
       }
 
       // Only sync transactions from the last 30 days
@@ -155,11 +158,10 @@ public ResponseEntity<?> sync(@RequestBody Map<String, Object> body) {
           continue;
         }
 
-        System.out.println("Processing txn: " + txnName + " | $" + amount +
-            " | date: " + t.getDate() + " | plaidCat: " + plaidCat);
+        log.debug("Processing txn: {} | ${} | date: {} | plaidCat: {}", txnName, amount, t.getDate(), plaidCat);
 
         String bucket = categorizer.map(username, t);
-        System.out.println("  → Categorized as: " + bucket);
+        log.debug(" → Categorized as: {}", bucket);
 
         if (bucket == null || bucket.isBlank() || "UNCATEGORIZED".equalsIgnoreCase(bucket)) {
           uncategorized.add(Map.of(
@@ -228,18 +230,16 @@ public ResponseEntity<?> sync(@RequestBody Map<String, Object> body) {
       if (e.getValue().isEmpty()) continue;
       String dayIso = e.getKey();
       Map<String, Double> costs = e.getValue();
-      System.out.println("Writing costs for " + dayIso + ": " + costs);
+      log.debug("Writing costs for {}: {}", dayIso, costs);
       costsWriter.mergeDated(username, "weekly",  dayIso, costs);
       costsWriter.mergeDated(username, "monthly", dayIso, costs);
       daysUpdated++;
     }
 
-    System.out.println("=== Sync complete for " + username + " ===");
-    System.out.println("Added: " + totalAdded + ", Modified: " + totalModified +
-        ", Removed: " + totalRemoved + ", Days updated: " + daysUpdated);
-    System.out.println("Skipped - pending: " + skippedPending + ", seen: " + skippedSeen +
-        ", old: " + skippedOld + ", negative: " + skippedNegative);
-    System.out.println("Uncategorized: " + uncategorized.size());
+    log.debug("=== Sync complete for {} ===", username);
+    log.debug("Added: {}, Modified: {}, Removed: {}, Days updated: {}", totalAdded, totalModified, totalRemoved, daysUpdated);
+    log.debug("Skipped - pending: {}, seen: {}, old: {}, negative: {}", skippedPending, skippedSeen, skippedOld, skippedNegative);
+    log.debug("Uncategorized: {}", uncategorized.size());
 
     return ResponseEntity.ok(Map.of(
         "added", totalAdded,
@@ -249,10 +249,10 @@ public ResponseEntity<?> sync(@RequestBody Map<String, Object> body) {
         "uncategorized", uncategorized
     ));
   } catch (Exception e) {
-    System.err.println("Sync error for user: " + body.get("username"));
-    System.err.println("Error type: " + e.getClass().getName());
-    System.err.println("Error message: " + e.getMessage());
-    e.printStackTrace();
+    log.error("Sync error for user: {}", body.get("username"));
+    log.error("Error type: {}", e.getClass().getName());
+    log.error("Error message: {}", e.getMessage());
+    log.error("sync failed", e);
     String errorMsg = e.getMessage() != null ? e.getMessage() : "Unknown error during sync";
     return ResponseEntity.status(500).body(Map.of("error", errorMsg));
   }
@@ -287,10 +287,10 @@ public ResponseEntity<?> sync(@RequestBody Map<String, Object> body) {
         skipped++;
       }
 
-      System.out.println("Skipped " + skipped + " transactions for user: " + username);
+      log.debug("Skipped {} transactions for user: {}", skipped, username);
       return ResponseEntity.ok(Map.of("skipped", skipped));
     } catch (Exception e) {
-      System.err.println("Error skipping transactions: " + e.getMessage());
+      log.error("Error skipping transactions: {}", e.getMessage());
       return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
     }
   }
@@ -309,7 +309,7 @@ public ResponseEntity<?> sync(@RequestBody Map<String, Object> body) {
         return ResponseEntity.badRequest().body(Map.of("error", "Missing username"));
       }
 
-      System.out.println("=== Resetting sync state for user: " + username + " ===");
+      log.debug("=== Resetting sync state for user: {} ===", username);
 
       // Clear all cursor and seen transaction state
       cursorStore.clearSyncState(username);
@@ -317,14 +317,14 @@ public ResponseEntity<?> sync(@RequestBody Map<String, Object> body) {
       // Also clear the categorizer cache
       categorizer.clearCategoryCache(username);
 
-      System.out.println("Sync state reset complete for: " + username);
+      log.debug("Sync state reset complete for: {}", username);
       return ResponseEntity.ok(Map.of(
           "success", true,
           "message", "Sync state cleared. Next sync will fetch all transactions from the last 30 days."
       ));
     } catch (Exception e) {
-      System.err.println("Error resetting sync state: " + e.getMessage());
-      e.printStackTrace();
+      log.error("Error resetting sync state: {}", e.getMessage());
+      log.error("resetSync failed", e);
       return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
     }
   }

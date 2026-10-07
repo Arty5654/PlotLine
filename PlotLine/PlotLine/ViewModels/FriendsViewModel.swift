@@ -18,7 +18,6 @@ class FriendsViewModel: ObservableObject {
     @Published var foundUser: String? = nil
     @Published var searchExecuted: Bool = false
     
-    @Published var allUsers: [String] = []
     
     func loadFriends(for username: String) async {
         do {
@@ -55,7 +54,7 @@ class FriendsViewModel: ObservableObject {
     // accept a friend request
     func acceptFriendRequest(sender: String, receiver: String) async{
         do {
-            var resp = try await FriendsAPI.createOrUpdateFriendRequest(
+            _ = try await FriendsAPI.createOrUpdateFriendRequest(
                 senderUsername: sender,
                 receiverUsername: receiver,
                 status: "ACCEPTED"
@@ -69,7 +68,7 @@ class FriendsViewModel: ObservableObject {
     // decline a friend request
     func declineFriendRequest(sender: String, receiver: String) async {
         do {
-            try await FriendsAPI.createOrUpdateFriendRequest(
+            _ = try await FriendsAPI.createOrUpdateFriendRequest(
                 senderUsername: sender,
                 receiverUsername: receiver,
                 status: "DECLINED"
@@ -109,12 +108,12 @@ class FriendsViewModel: ObservableObject {
         searchExecuted = true
     }
     
-    func fetchAllUsernames() async {
+    func searchUsernames(_ text: String) async -> [String] {
         do {
-            let users = try await FriendsAPI.getAllUsers()
-            allUsers = users
+            return try await FriendsAPI.searchUsers(text)
         } catch {
-            print("❌ Failed to load all users:", error)
+            AppBanner.report("search usernames", error)
+            return []
         }
     }
 }

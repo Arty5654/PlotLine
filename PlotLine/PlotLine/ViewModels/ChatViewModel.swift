@@ -14,7 +14,7 @@ class ChatViewModel: ObservableObject {
 
     func load() async {
         do { messages = try await api.fetchFeed(userId: username) }
-        catch { print("Fetch feed error:", error) }
+        catch { AppBanner.report("load messages", error, retry: { [weak self] in Task { await self?.load() } }) }
     }
 
     func send() async {
@@ -25,7 +25,7 @@ class ChatViewModel: ObservableObject {
             draft = ""
             await load()
         } catch {
-            print("Send message error:", error)
+            AppBanner.report("send your message", error) // the message stays in the box
         }
     }
 
@@ -35,19 +35,22 @@ class ChatViewModel: ObservableObject {
             try await api.addReaction(owner: msg.creator, messageId: msg.id, emoji: emoji)
             await load()
         } catch {
-            print("Reaction error:", error)
+            AppBanner.report("add your reaction", error)
         }
     }
 
-    // new: add a reply then reload
-    func reply(to msg: ChatMessage, text: String) async {
+    // new: add a reply then reload; false if it didn't send (the reply box keeps the text)
+    @discardableResult
+    func reply(to msg: ChatMessage, text: String) async -> Bool {
         let trimmed = text.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty else { return }
+        guard !trimmed.isEmpty else { return false }
         do {
             try await api.addReply(owner: msg.creator, messageId: msg.id, text: trimmed)
             await load()
+            return true
         } catch {
-            print("Reply error:", error)
+            AppBanner.report("send your reply", error)
+            return false
         }
     }
     
@@ -56,7 +59,7 @@ class ChatViewModel: ObservableObject {
             try await api.removeReaction(owner: msg.creator, messageId: msg.id, emoji: emoji)
             await load()
         } catch {
-            print("Remove reaction error:", error)
+            AppBanner.report("remove your reaction", error)
         }
     }
 
@@ -66,7 +69,11 @@ class ChatViewModel: ObservableObject {
         do {
             try await api.removeReaction(owner: msg.creator, messageId: msg.id, emoji: emoji)
         } catch {
-            try? await api.addReaction(owner: msg.creator, messageId: msg.id, emoji: emoji)
+            do {
+                try await api.addReaction(owner: msg.creator, messageId: msg.id, emoji: emoji)
+            } catch {
+                AppBanner.report("update your reaction", error)
+            }
         }
         await load()
     }

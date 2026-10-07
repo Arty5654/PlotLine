@@ -24,73 +24,82 @@ struct MealsView: View {
     }
     
     var body: some View {
-        NavigationView {
-            VStack {
-                // Search bar
-                HStack {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundColor(.gray)
-                    
-                    TextField("Search meals...", text: $searchText)
-                        .padding(8)
-                        .background(Color(.systemGray6))
-                        .cornerRadius(10)
-                        .padding(.trailing, 8)
-                    
-                    if !searchText.isEmpty {
-                        Button(action: {
-                            searchText = ""
-                        }) {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundColor(.gray)
-                        }
+        VStack(spacing: PLSpacing.md) {
+            // Search bar
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundColor(PLColor.textSecondary)
+                TextField("Search meals", text: $searchText)
+                if !searchText.isEmpty {
+                    Button { searchText = "" } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(Color(.tertiaryLabel))
                     }
+                    .accessibilityLabel("Clear")
                 }
-                .padding(.horizontal)
-                .padding(.top, 10)
-                
-                if !viewModel.meals.isEmpty {
-                    if filteredMeals.isEmpty {
-                        VStack {
-                            Spacer()
-                            Text("No meals match your search")
-                                .font(.headline)
-                                .foregroundColor(.gray)
-                            Spacer()
-                        }
-                    } else {
-                        List {
-                            ForEach(filteredMeals) { meal in
-                                NavigationLink(destination: MealDetailView(meal: meal)) {
+            }
+            .padding(12)
+            .background(PLColor.surface)
+            .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
+            .padding(.horizontal, PLSpacing.lg)
+            .padding(.top, PLSpacing.sm)
+
+            if !viewModel.meals.isEmpty {
+                if filteredMeals.isEmpty {
+                    Spacer()
+                    Text("No meals match \"\(searchText)\".")
+                        .font(.subheadline)
+                        .foregroundColor(PLColor.textSecondary)
+                    Spacer()
+                } else {
+                    List {
+                        ForEach(filteredMeals) { meal in
+                            NavigationLink(destination: MealDetailView(meal: meal)) {
+                                VStack(alignment: .leading, spacing: 2) {
                                     Text(meal.mealName)
                                         .font(.headline)
+                                    Text("\(meal.ingredients.count) ingredients · \(meal.recipe.count) steps")
+                                        .font(.subheadline)
+                                        .foregroundColor(PLColor.textSecondary)
                                 }
-                                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                                    Button(role: .destructive) {
-                                        deleteMeal(meal)
-                                    } label: {
-                                        Label("Delete", systemImage: "trash")
-                                    }
+                                .padding(.vertical, 4)
+                            }
+                            .listRowBackground(PLColor.surface)
+                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                Button(role: .destructive) {
+                                    deleteMeal(meal)
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
                                 }
                             }
                         }
-                        .listStyle(PlainListStyle())
                     }
-                } else {
-                    Spacer()
-                    Text("No meals yet!")
-                        .font(.headline)
-                        .padding()
-                    Spacer()
+                    .listStyle(.insetGrouped)
+                    .scrollContentBackground(.hidden)
                 }
+            } else {
+                Spacer()
+                VStack(spacing: 8) {
+                    Image(systemName: "fork.knife")
+                        .font(.largeTitle)
+                        .foregroundColor(PLColor.textSecondary)
+                    Text("No meals yet")
+                        .font(.headline)
+                    Text("Create a meal from a grocery list, and it shows up here.")
+                        .font(.subheadline)
+                        .foregroundColor(PLColor.textSecondary)
+                        .multilineTextAlignment(.center)
+                }
+                .padding(.horizontal, PLSpacing.lg)
+                Spacer()
             }
-            .onAppear {
-                Task {
-                    do {
-                        try await viewModel.fetchMeals(username: username)
-                    } catch {
-                        print("Error fetching meals: \(error)")
-                    }
+        }
+        .onAppear {
+            Task {
+                do {
+                    try await viewModel.fetchMeals(username: username)
+                } catch {
+                    AppBanner.report("load your meals", error)
                 }
             }
         }
@@ -105,7 +114,7 @@ struct MealsView: View {
                 await MainActor.run {
                     viewModel.meals.append(meal)
                 }
-                print("Failed to delete meal: \(error)")
+                AppBanner.report("delete the meal", error, retry: { deleteMeal(meal) })
             }
         }
     }

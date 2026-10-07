@@ -11,9 +11,10 @@ struct TrophyDetailPopup: View {
                 Spacer()
                 Button(action: onClose) {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.title)
-                        .foregroundColor(.gray)
+                        .font(.title2)
+                        .foregroundColor(Color(.tertiaryLabel))
                 }
+                .accessibilityLabel("Close")
             }
 
             Text(trophy.name)
@@ -28,36 +29,40 @@ struct TrophyDetailPopup: View {
 
             Text("Earned on \(formattedDate(trophy.earnedDate))")
                 .font(.footnote)
-                .foregroundColor(.gray)
+                .foregroundColor(PLColor.textSecondary)
                 .multilineTextAlignment(.center)
 
-            Text("Level: \(levelName(for: trophy.level))")
-                .font(.headline)
-                .multilineTextAlignment(.center)
+            Text(levelName(for: trophy.level))
+                .font(.footnote.weight(.semibold))
+                .foregroundColor(trophyColor(for: trophy.level))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(trophyColor(for: trophy.level).opacity(0.15))
+                .clipShape(Capsule())
 
             // progress or max‑level message
             if let nextThreshold = nextLevelThreshold(for: trophy) {
                 ProgressView(value: Float(trophy.progress),
                              total: Float(nextThreshold))
-                    .accentColor(.green)
+                    .tint(PLColor.success)
                 Text("\(trophy.progress)/\(nextThreshold) until next level")
                     .font(.caption)
                     .multilineTextAlignment(.center)
             } else {
                 ProgressView(value: 1.0)
-                    .accentColor(.green)
+                    .tint(PLColor.success)
                 Text("No further upgrades!")
                     .font(.caption)
-                    .foregroundColor(.green)
+                    .foregroundColor(PLColor.success)
                     .multilineTextAlignment(.center)
             }
         }
         .frame(maxWidth: .infinity)
-        .padding()
-        .background(Color(.systemBackground))
-        .cornerRadius(16)
-        .shadow(radius: 10)
-        .padding(40)
+        .padding(PLSpacing.lg)
+        .background(Color(.secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 20))
+        .shadow(color: .black.opacity(0.2), radius: 20)
+        .padding(32)
     }
 
     func levelName(for level: Int) -> String {

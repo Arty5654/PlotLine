@@ -208,6 +208,60 @@ class CalendarFeatureTest extends FeatureTestBase {
     }
 
     @Test
+    @DisplayName("Only friends get event invites; strangers are dropped and no placeholder is saved (BUGS.md #2, #3)")
+    void invitesOnlyFriends() throws Exception {
+        User me = newUser();
+        User friend = newUser();
+        User stranger = newUser();
+        befriend(me, friend);
+        Map<String, Object> party = event(me.name(), "Party");
+        party.put("invitedFriends", new ArrayList<>(List.of(friend.name(), stranger.name(), me.name())));
+        String id = (String) party.get("id");
+
+        ok(postJson(me, "/calendar/create-event", party));
+
+        assertThat(find(events(friend), id)).isNotNull();
+        assertThat(find(events(stranger), id)).isNull();
+        assertThat(find(events(me), id).get("invitedFriends").toString()).isEqualTo("[\"" + friend.name() + "\"]");
+    }
+
+    @Test
+    @DisplayName("Editing an event can't invite strangers either")
+    void editInvitesOnlyFriends() throws Exception {
+        User me = newUser();
+        User friend = newUser();
+        User stranger = newUser();
+        befriend(me, friend);
+        Map<String, Object> party = event(me.name(), "Party");
+        party.put("invitedFriends", new ArrayList<>(List.of(friend.name())));
+        String id = (String) party.get("id");
+        ok(postJson(me, "/calendar/create-event", party));
+
+        party.put("invitedFriends", new ArrayList<>(List.of(friend.name(), stranger.name())));
+        ok(postJson(me, "/calendar/update-event", party));
+
+        assertThat(find(events(stranger), id)).isNull();
+        assertThat(find(events(me), id).get("invitedFriends").toString()).isEqualTo("[\"" + friend.name() + "\"]");
+    }
+
+    @Test
+    @DisplayName("Events saved with the old placeholder come back without it")
+    void oldPlaceholderStripped() throws Exception {
+        User me = newUser();
+        Map<String, Object> dinner = event(me.name(), "Dinner");
+        String id = (String) dinner.get("id");
+        ok(postJson(me, "/calendar/create-event", dinner));
+        String key = "users/" + me.name() + "/calendar.json";
+        String stored = new String(s3.getObjectAsBytes(b -> b.bucket("plotline-database-bucket").key(key)).asByteArray(),
+                java.nio.charset.StandardCharsets.UTF_8);
+        assertThat(stored).contains("\"invitedFriends\":[]"); // so the placeholder really gets injected below
+        s3.putObject(b -> b.bucket("plotline-database-bucket").key(key), software.amazon.awssdk.core.sync.RequestBody.fromString(
+                stored.replace("\"invitedFriends\":[]", "\"invitedFriends\":[\"c-123-creator-user-c-987\"]")));
+
+        assertThat(find(events(me), id).get("invitedFriends").toString()).isEqualTo("[]");
+    }
+
+    @Test
     @DisplayName("Removing a friend removes their event invites from both calendars")
     void unfriendRemovesInvites() throws Exception {
         User me = newUser();

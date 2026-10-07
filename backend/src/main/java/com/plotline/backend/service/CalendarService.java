@@ -1,5 +1,8 @@
 package com.plotline.backend.service;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -23,6 +26,8 @@ import static com.plotline.backend.util.UsernameUtils.normalize;
 
 @Service
 public class CalendarService {
+    private static final Logger log = LoggerFactory.getLogger(CalendarService.class);
+
 
     private final S3Client s3Client;
     private final ObjectMapper objectMapper;
@@ -36,6 +41,38 @@ public class CalendarService {
         this.objectMapper = new ObjectMapper();
         this.userProfileService = userProfileService;
         this.calendarAccessService = calendarAccessService;
+    }
+
+    // marker of the placeholder string older events had in their invite lists
+    private static final String OLD_PLACEHOLDER = "-creator-user-";
+
+    /**
+     * The invite list cut down to the owner's friends (BUGS.md #2): no strangers, not yourself,
+     * no duplicates. Usernames come back normalized.
+     */
+    List<String> onlyFriends(String owner, List<String> invited) {
+        List<String> result = new ArrayList<>();
+        if (invited == null || invited.isEmpty()) return result;
+        java.util.Set<String> friends = new java.util.HashSet<>();
+        for (String f : friendsOf(owner)) friends.add(normalize(f));
+        for (String person : invited) {
+            String norm = normalize(person);
+            if (friends.contains(norm) && !norm.equals(owner) && !result.contains(norm)) result.add(norm);
+        }
+        return result;
+    }
+
+    private List<String> friendsOf(String owner) {
+        try {
+            byte[] bytes = s3Client.getObjectAsBytes(GetObjectRequest.builder()
+                    .bucket(bucketName).key("users/" + owner + "/friends.json").build()).asByteArray();
+            com.plotline.backend.dto.FriendList list = objectMapper.readValue(bytes, com.plotline.backend.dto.FriendList.class);
+            return list.getFriends() != null ? list.getFriends() : List.of();
+        } catch (software.amazon.awssdk.services.s3.model.NoSuchKeyException e) {
+            return List.of(); // no friends yet
+        } catch (Exception e) {
+            throw new IllegalStateException("Couldn't read friends of " + owner, e);
+        }
     }
 
     // get all events for the user
@@ -53,6 +90,12 @@ public class CalendarService {
 
             // parse json into eventDto
             List<EventDto> eventList = objectMapper.readValue(eventsJson, new TypeReference<List<EventDto>>() {});
+            // older events carry a placeholder in their invite lists (BUGS.md #3); drop it
+            for (EventDto event : eventList) {
+                if (event.getInvitedFriends() != null) {
+                    event.getInvitedFriends().removeIf(f -> f == null || f.contains(OLD_PLACEHOLDER));
+                }
+            }
             return eventList;
         } catch (Exception e) {
             // return empty if error
@@ -68,11 +111,11 @@ public class CalendarService {
             String normUser = normalize(username);
             List<EventDto> existingEvents = getEvents(normUser);
 
-            System.out.println(username + " is creating event: " + newEvent.getTitle());
+            log.debug("{} is creating event: {}", username, newEvent.getTitle());
 
             // if it is rent, subscription, or goal, avoid duplication
             if (!"user".equals(newEvent.getEventType())) {
-                System.out.println("Type: " + newEvent.getEventType());
+                log.debug("Type: {}", newEvent.getEventType());
                 newEvent = avoidDupe(newEvent, existingEvents, normUser, newEvent.getEventType());
                 return newEvent;
             }
@@ -96,6 +139,9 @@ public class CalendarService {
             
             // Event planner (creating calendar events) Trophy
             userProfileService.incrementTrophy(normUser, "calendar-events-created", 1);
+
+            // only friends can be invited (anyone else is dropped from the list)
+            newEvent.setInvitedFriends(new ArrayList<>(onlyFriends(normUser, newEvent.getInvitedFriends())));
 
             // add to each friend's calendar as a pending invite
             if (newEvent.getInvitedFriends() != null && !newEvent.getInvitedFriends().isEmpty()) {
@@ -123,8 +169,7 @@ public class CalendarService {
                     newEvent.getInviteStatuses().put(normFriend, "pending");
                 }
 
-                newEvent.getInvitedFriends().add("c-123-creator-user-c-987");
-                userProfileService.incrementTrophy(normUser, "friends-invited", newEvent.getInvitedFriends().size() - 1);
+                userProfileService.incrementTrophy(normUser, "friends-invited", newEvent.getInvitedFriends().size());
             }
 
             existingEvents.add(newEvent);
@@ -139,6 +184,8 @@ public class CalendarService {
 
     public EventDto updateEvent(EventDto updated, String username) throws Exception {
         String normUser = normalize(username);
+        // only friends can be invited (anyone else is dropped from the list)
+        updated.setInvitedFriends(new ArrayList<>(onlyFriends(normUser, updated.getInvitedFriends())));
         List<EventDto> existingEvents = getEvents(normUser);
         boolean found = false;
         EventDto previousVersion = null;
@@ -167,21 +214,17 @@ public class CalendarService {
             updated.setInviteStatuses(new java.util.HashMap<>(previousVersion.getInviteStatuses()));
         }
 
-        // Build set of new friends (normalized, excluding sentinel)
+        // Build set of new friends (already normalized friends only)
         java.util.Set<String> newFriendSet = new java.util.HashSet<>();
         if (updated.getInvitedFriends() != null) {
-            for (String f : updated.getInvitedFriends()) {
-                if (!f.contains("-creator-user-")) newFriendSet.add(normalize(f));
-            }
+            newFriendSet.addAll(updated.getInvitedFriends());
         }
 
         // Build complete set of previously invited friends from BOTH invitedFriends and inviteStatuses
         java.util.Set<String> prevFriendSet = new java.util.HashSet<>();
         if (previousVersion != null) {
             if (previousVersion.getInvitedFriends() != null) {
-                for (String f : previousVersion.getInvitedFriends()) {
-                    if (!f.contains("-creator-user-")) prevFriendSet.add(normalize(f));
-                }
+                for (String f : previousVersion.getInvitedFriends()) prevFriendSet.add(normalize(f));
             }
             if (previousVersion.getInviteStatuses() != null) {
                 prevFriendSet.addAll(previousVersion.getInviteStatuses().keySet());
@@ -318,11 +361,7 @@ public class CalendarService {
                 friendsToClean.addAll(eventToDelete.getInviteStatuses().keySet());
             }
             if (eventToDelete.getInvitedFriends() != null) {
-                for (String f : eventToDelete.getInvitedFriends()) {
-                    if (!f.contains("-creator-user-")) {
-                        friendsToClean.add(normalize(f));
-                    }
-                }
+                for (String f : eventToDelete.getInvitedFriends()) friendsToClean.add(normalize(f));
             }
             for (String friend : friendsToClean) {
                 List<EventDto> friendEvents = getEvents(friend);
@@ -350,10 +389,10 @@ public class CalendarService {
                     .build();
     
             s3Client.putObject(putRequest, RequestBody.fromString(eventsJson));
-            System.out.println("Successfully saved to S3 for user: " + username);
+            log.debug("Successfully saved to S3 for user: {}", username);
         } catch (Exception e) {
-            System.err.println("Error saving to S3: " + e.getMessage());
-            e.printStackTrace();
+            log.error("Error saving to S3: {}", e.getMessage());
+            log.error("saveEventsToS3 failed", e);
         }
     }
     
@@ -389,7 +428,7 @@ public class CalendarService {
             existingEvents.add(newEvent);
     
             for (int i = 0; i < existingEvents.size(); i++) {
-                System.out.println("Event " + i + ": " + existingEvents.get(i).getTitle());
+                log.debug("Event {}: {}", i, existingEvents.get(i).getTitle());
             }
     
             saveEventsToS3(username, existingEvents);
@@ -461,8 +500,7 @@ public class CalendarService {
                 changed = true;
             }
             if (event.getInvitedFriends() != null) {
-                boolean removed = event.getInvitedFriends().removeIf(f ->
-                    !f.contains("-creator-user-") && exFriend.equals(normalize(f)));
+                boolean removed = event.getInvitedFriends().removeIf(f -> exFriend.equals(normalize(f)));
                 if (removed) changed = true;
             }
 
