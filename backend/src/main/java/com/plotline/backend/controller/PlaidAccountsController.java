@@ -1,5 +1,8 @@
 package com.plotline.backend.controller;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import com.plaid.client.model.*;
 import com.plaid.client.request.PlaidApi;
 import com.plotline.backend.plaid.TokenStore;
@@ -11,6 +14,8 @@ import java.util.*;
 @RestController
 @RequestMapping("/api/plaid")
 public class PlaidAccountsController {
+    private static final Logger log = LoggerFactory.getLogger(PlaidAccountsController.class);
+
   private final PlaidApi plaid;
   private final TokenStore tokenStore;
 
@@ -27,11 +32,11 @@ public class PlaidAccountsController {
   public List<AccountOut> list(@RequestParam String username) throws Exception {
     Map<String,String> items = tokenStore.listAccessTokens(username);
     if (items.isEmpty()) {
-      System.out.println("No items for " + username);
+      log.debug("No items for {}", username);
       return List.of();
     }
-    System.out.println("items: " + items);
-    System.out.println("username: " + username);
+    log.debug("items: {}", items);
+    log.debug("username: {}", username);
 
     List<AccountOut> out = new ArrayList<>();
 
@@ -59,7 +64,7 @@ public class PlaidAccountsController {
         ));
       }
     }
-    System.out.println("accounts returned: " + out.size());
+    log.debug("accounts returned: {}", out.size());
     return out;
   }
 }

@@ -24,15 +24,21 @@ public class S3Service {
     this.s3Client = s3Client;
   }
 
+  /**
+   * Uploads the whole stream. {@code contentLength} is ignored: many callers passed a string's
+   * character count, which is shorter than its UTF-8 bytes when there are accents or emoji, and
+   * S3 then stored a cut-off file (BUGS.md #1).
+   */
   public void uploadFile(String fileName, InputStream inputStream, long contentLength) {
     try {
+      byte[] bytes = inputStream.readAllBytes();
       PutObjectRequest putObjectRequest = PutObjectRequest.builder()
           .bucket(bucketName)
           .key(fileName)
-          .contentLength(contentLength)
+          .contentLength((long) bytes.length)
           .build();
 
-      s3Client.putObject(putObjectRequest, RequestBody.fromInputStream(inputStream, contentLength));
+      s3Client.putObject(putObjectRequest, RequestBody.fromBytes(bytes));
     } catch (Exception e) {
       throw new RuntimeException("Error uploading file to S3", e);
     }

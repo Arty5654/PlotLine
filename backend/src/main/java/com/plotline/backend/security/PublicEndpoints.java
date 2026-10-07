@@ -15,7 +15,8 @@ public final class PublicEndpoints {
             "/auth/google-signin",
             "/auth/apple-signin",
             "/auth/change-password-code",   // forgot-password flow (proves ownership with an SMS code)
-            "/sms/send-verification"        // sends that code
+            "/sms/send-verification",       // sends that code
+            "/api/payments/apple/notifications" // from Apple's servers; checked by Apple's signature instead
     );
 
     private static final Set<String> PUBLIC_GETS = Set.of(
@@ -36,6 +37,21 @@ public final class PublicEndpoints {
 
     public static boolean isAllowedDuringSetup(HttpServletRequest request) {
         return "POST".equals(request.getMethod()) && SETUP_POSTS.contains(normalizedPath(request));
+    }
+
+    // what an account can still reach without an active membership: the setup steps above,
+    // checking its membership, and linking an App Store purchase (the paywall in the app)
+    private static final Set<String> NO_MEMBERSHIP_POSTS = Set.of(
+            "/api/payments/apple/sync"
+    );
+    private static final String MEMBERSHIP_STATUS_PREFIX = "/api/payments/status/";
+
+    public static boolean isAllowedWithoutMembership(HttpServletRequest request) {
+        if (isAllowedDuringSetup(request)) return true;
+        String path = normalizedPath(request);
+        if ("POST".equals(request.getMethod())) return NO_MEMBERSHIP_POSTS.contains(path);
+        return "GET".equals(request.getMethod()) && path.startsWith(MEMBERSHIP_STATUS_PREFIX)
+                && path.indexOf('/', MEMBERSHIP_STATUS_PREFIX.length()) < 0;
     }
 
     private static String normalizedPath(HttpServletRequest request) {

@@ -143,7 +143,7 @@ struct GroceryListAPI {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(groceryItem)
         
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (_, response) = try await URLSession.shared.data(for: request)
         
         guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
             throw URLError(.badServerResponse)
@@ -183,7 +183,7 @@ struct GroceryListAPI {
         request.httpMethod = "DELETE"
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (_, response) = try await URLSession.shared.data(for: request)
         
         guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
             throw URLError(.badServerResponse)
@@ -208,7 +208,7 @@ struct GroceryListAPI {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (_, response) = try await URLSession.shared.data(for: request)
             
             // Ensure we get a successful response
             guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
@@ -244,7 +244,7 @@ struct GroceryListAPI {
         }
         
         // Send the request and handle the response
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (_, response) = try await URLSession.shared.data(for: request)
         
         // Check if the response is successful (status code 200-299)
         guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
@@ -415,6 +415,7 @@ struct GroceryListAPI {
         
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
+            if let limit = AILimitError.from(data, response) { throw limit }
             
             // Check for a successful response
             guard let httpResponse = response as? HTTPURLResponse else {
@@ -422,9 +423,6 @@ struct GroceryListAPI {
             }
             
             if !(200...299).contains(httpResponse.statusCode) {
-                // Try to get more info from response body
-                let responseString = String(data: data, encoding: .utf8) ?? "No response body"
-                
                 throw URLError(.badServerResponse)
             }
             
@@ -466,6 +464,7 @@ struct GroceryListAPI {
         
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
+            if let limit = AILimitError.from(data, response) { throw limit }
             
             // Check for a successful response
             guard let httpResponse = response as? HTTPURLResponse else {
@@ -473,8 +472,6 @@ struct GroceryListAPI {
             }
             
             if !(200...299).contains(httpResponse.statusCode) {
-                // Try to get more info from response body
-                let responseString = String(data: data, encoding: .utf8) ?? "No response body"
                 throw URLError(.badServerResponse)
             }
             
@@ -584,6 +581,7 @@ struct GroceryListAPI {
         
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
+            if let limit = AILimitError.from(data, response) { throw limit }
             
             // Check for a successful response
             guard let httpResponse = response as? HTTPURLResponse else {

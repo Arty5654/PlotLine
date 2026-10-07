@@ -1,5 +1,8 @@
 package com.plotline.backend.service;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -23,6 +26,8 @@ import static com.plotline.backend.util.UsernameUtils.normalize;
 
 @Service
 public class CostsService {
+    private static final Logger log = LoggerFactory.getLogger(CostsService.class);
+
 
     @Autowired
     private S3Service s3Service;
@@ -115,11 +120,11 @@ public class CostsService {
             }
 
             saveJson(key, period);
-            System.out.println("[CostsService] Merged " + type + " costs for " + normUser + " on " + dateStr + ": " + costs);
+            log.debug("[CostsService] Merged {} costs for {} on {}: {}", type, normUser, dateStr, costs);
 
         } catch (Exception ex) {
-            System.err.println("[CostsService] mergeDated failed: " + ex.getMessage());
-            ex.printStackTrace();
+            log.error("[CostsService] mergeDated failed: {}", ex.getMessage());
+            log.error("mergeDated failed", ex);
         }
     }
 
@@ -238,11 +243,11 @@ public class CostsService {
             }
 
             saveJson(key, period);
-            System.out.println("[CostsService] Added " + type + " costs for " + normUser + " on " + dateStr + ": " + costs);
+            log.debug("[CostsService] Added {} costs for {} on {}: {}", type, normUser, dateStr, costs);
 
         } catch (Exception ex) {
-            System.err.println("[CostsService] addDated failed: " + ex.getMessage());
-            ex.printStackTrace();
+            log.error("[CostsService] addDated failed: {}", ex.getMessage());
+            log.error("addDated failed", ex);
         }
     }
 
@@ -277,7 +282,7 @@ public class CostsService {
             period.put("transactions", transactions);
             saveJson(key, period);
         } catch (Exception ex) {
-            System.err.println("[CostsService] storeTransaction failed: " + ex.getMessage());
+            log.error("[CostsService] storeTransaction failed: {}", ex.getMessage());
         }
     }
 
@@ -293,7 +298,7 @@ public class CostsService {
             List<Map<String, Object>> transactions = (List<Map<String, Object>>) period.getOrDefault("transactions", new ArrayList<>());
             return transactions;
         } catch (Exception ex) {
-            System.err.println("[CostsService] getTransactions failed: " + ex.getMessage());
+            log.error("[CostsService] getTransactions failed: {}", ex.getMessage());
             return new ArrayList<>();
         }
     }
@@ -345,10 +350,10 @@ public class CostsService {
                 saveJson(key, period);
             }
 
-            System.out.println("[CostsService] Edited txn " + txnId + " from $" + oldAmount + " to $" + newAmount);
+            log.debug("[CostsService] Edited txn {} from ${} to ${}", txnId, oldAmount, newAmount);
             return target;
         } catch (Exception ex) {
-            System.err.println("[CostsService] editTransaction failed: " + ex.getMessage());
+            log.error("[CostsService] editTransaction failed: {}", ex.getMessage());
             return null;
         }
     }
@@ -403,10 +408,10 @@ public class CostsService {
                 saveJson(key, period);
             }
 
-            System.out.println("[CostsService] Recategorized txn " + txnId + " from " + oldCategory + " to " + newCategory);
+            log.debug("[CostsService] Recategorized txn {} from {} to {}", txnId, oldCategory, newCategory);
             return target;
         } catch (Exception ex) {
-            System.err.println("[CostsService] recategorizeTransaction failed: " + ex.getMessage());
+            log.error("[CostsService] recategorizeTransaction failed: {}", ex.getMessage());
             return null;
         }
     }
@@ -455,10 +460,10 @@ public class CostsService {
                 saveJson(key, period);
             }
 
-            System.out.println("[CostsService] Reverted txn " + txnId + " from $" + currentAmount + " back to $" + originalAmount);
+            log.debug("[CostsService] Reverted txn {} from ${} back to ${}", txnId, currentAmount, originalAmount);
             return target;
         } catch (Exception ex) {
-            System.err.println("[CostsService] revertTransaction failed: " + ex.getMessage());
+            log.error("[CostsService] revertTransaction failed: {}", ex.getMessage());
             return null;
         }
     }
@@ -504,10 +509,10 @@ public class CostsService {
                 saveJson(key, period);
             }
 
-            System.out.println("[CostsService] Deleted txn " + txnId + " ($" + amount + " " + category + ")");
+            log.debug("[CostsService] Deleted txn {} (${} {})", txnId, amount, category);
             return true;
         } catch (Exception ex) {
-            System.err.println("[CostsService] deleteTransaction failed: " + ex.getMessage());
+            log.error("[CostsService] deleteTransaction failed: {}", ex.getMessage());
             return false;
         }
     }
@@ -595,7 +600,7 @@ public class CostsService {
 
             saveJson(key, period);
         } catch (Exception ex) {
-            System.err.println("[CostsService] applyDeltaToWeekly failed: " + ex.getMessage());
+            log.error("[CostsService] applyDeltaToWeekly failed: {}", ex.getMessage());
         }
     }
 
@@ -749,12 +754,12 @@ public class CostsService {
             period.put("end", ym.atEndOfMonth().toString());
 
             saveJson(key, period);
-            System.out.println("[CostsService] Set monthly totals for " + normUser + " month=" + monthStr + ": " + desiredTotals);
+            log.debug("[CostsService] Set monthly totals for {} month={}: {}", normUser, monthStr, desiredTotals);
             return period;
 
         } catch (Exception ex) {
-            System.err.println("[CostsService] setMonthlyTotals failed: " + ex.getMessage());
-            ex.printStackTrace();
+            log.error("[CostsService] setMonthlyTotals failed: {}", ex.getMessage());
+            log.error("setMonthlyTotals failed", ex);
             return null;
         }
     }

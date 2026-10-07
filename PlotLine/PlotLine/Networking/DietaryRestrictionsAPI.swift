@@ -83,15 +83,11 @@ class DietaryRestrictionsAPI {
                 return
             }
             
-            do {
-                // Since the response is just a string, decode it as a string
-                if let responseMessage = String(data: data, encoding: .utf8) {
-                    completion(.success(responseMessage))
-                } else {
-                    completion(.failure(NetworkError.noData))
-                }
-            } catch {
-                completion(.failure(error))
+            // the response is just a string
+            if let responseMessage = String(data: data, encoding: .utf8) {
+                completion(.success(responseMessage))
+            } else {
+                completion(.failure(NetworkError.noData))
             }
         }
         

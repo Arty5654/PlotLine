@@ -8,36 +8,6 @@
 import SwiftUI
 import Charts
 
-// MARK: - Local tokens (scoped to this file)
-private enum PLColor {
-    static let surface        = Color(.secondarySystemBackground)
-    static let cardBorder     = Color.black.opacity(0.06)
-    static let textPrimary    = Color.primary
-    static let textSecondary  = Color.secondary
-    static let accent         = Color.blue
-    static let success        = Color.green
-    static let warning        = Color.orange
-    static let danger         = Color.red
-}
-private enum PLSpacing {
-    static let xs: CGFloat = 6
-    static let sm: CGFloat = 10
-    static let md: CGFloat = 16
-    static let lg: CGFloat = 20
-}
-private enum PLRadius { static let md: CGFloat = 12 }
-
-private struct CardModifier: ViewModifier {
-    func body(content: Content) -> some View {
-        content
-            .padding(PLSpacing.md)
-            .background(PLColor.surface)
-            .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
-            .overlay(RoundedRectangle(cornerRadius: PLRadius.md).stroke(PLColor.cardBorder))
-    }
-}
-private extension View { func plCard() -> some View { modifier(CardModifier()) } }
-
 // MARK: - Root
 struct ContentView: View {
     @EnvironmentObject var session: AuthViewModel
@@ -105,12 +75,12 @@ struct ContentView: View {
                 }
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button { isFriendsPresented = true } label: {
-                        Image(systemName: "person.2.fill").font(.title3).foregroundColor(PLColor.accent)
+                        Image(systemName: "person.2.fill").font(.title3).foregroundColor(PLColor.tint)
                     }
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button { isProfilePresented = true } label: {
-                        Image(systemName: "person.circle.fill").font(.title3).foregroundColor(PLColor.accent)
+                        Image(systemName: "person.circle.fill").font(.title3).foregroundColor(PLColor.tint)
                     }
                 }
             }
@@ -126,31 +96,21 @@ struct ContentView: View {
                         .environmentObject(friendsVM)
                 }
             }
-            .background(
-                Group {
-                    NavigationLink(
-                        destination: CalendarView()
-                            .environmentObject(calendarVM)
-                            .environmentObject(friendsVM),
-                        isActive: $navigateToCalendar
-                    ) { EmptyView() }.hidden()
-
-                    NavigationLink(
-                        destination: NutritionView(),
-                        isActive: $navigateToNutrition
-                    ) { EmptyView() }.hidden()
-
-                    NavigationLink(
-                        destination: BudgetView().environmentObject(calendarVM),
-                        isActive: $navigateToBudget
-                    ) { EmptyView() }.hidden()
-
-                    NavigationLink(
-                        destination: GoalsView().environmentObject(calendarVM),
-                        isActive: $navigateToGoals
-                    ) { EmptyView() }.hidden()
-                }
-            )
+            // opened from notifications and links (see the onReceive handlers below)
+            .navigationDestination(isPresented: $navigateToCalendar) {
+                CalendarView()
+                    .environmentObject(calendarVM)
+                    .environmentObject(friendsVM)
+            }
+            .navigationDestination(isPresented: $navigateToNutrition) {
+                NutritionView()
+            }
+            .navigationDestination(isPresented: $navigateToBudget) {
+                BudgetView().environmentObject(calendarVM)
+            }
+            .navigationDestination(isPresented: $navigateToGoals) {
+                GoalsView().environmentObject(calendarVM)
+            }
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("NavigateToCalendar"))) { notification in
                 if let userInfo = notification.userInfo,
                    let showDayView = userInfo["showDayView"] as? Bool,
@@ -254,7 +214,7 @@ struct CalendarWidget: View {
                     VStack(alignment: .leading, spacing: 6) {
                         ForEach(todayEvents) { event in
                             HStack(spacing: 8) {
-                                Circle().frame(width: 6, height: 6).foregroundColor(PLColor.accent)
+                                Circle().frame(width: 6, height: 6).foregroundColor(PLColor.tint)
                                 Text(event.title).font(.body).lineLimit(1)
                                 Spacer()
                                 if event.eventType == "rent" {
@@ -285,7 +245,7 @@ struct CalendarWidget: View {
             Text(text)
                 .font(.caption).foregroundColor(color)
                 .padding(.horizontal, 8).padding(.vertical, 4)
-                .background(Color.white)
+                .background(Color(.systemBackground))
                 .clipShape(RoundedRectangle(cornerRadius: 6))
                 .overlay(RoundedRectangle(cornerRadius: 6).stroke(color.opacity(0.25)))
         }
@@ -609,7 +569,7 @@ struct NutritionWidget: View {
                         VStack {
                             Text("\(Int(entry.totalCalories))")
                                 .font(.system(.title2, design: .rounded).bold())
-                                .foregroundColor(PLColor.accent)
+                                .foregroundColor(PLColor.tint)
                             Text("cal").font(.caption).foregroundColor(PLColor.textSecondary)
                         }
                         Spacer()

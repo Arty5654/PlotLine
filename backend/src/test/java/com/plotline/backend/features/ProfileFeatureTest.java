@@ -66,14 +66,15 @@ class ProfileFeatureTest extends FeatureTestBase {
     }
 
     @Test
-    @DisplayName("Membership: start a trial, then cancel")
+    @DisplayName("Membership: status loads, and free trials can't be started outside the App Store")
     void membership() throws Exception {
         User me = newUser();
-        JsonNode trial = ok(postJson(me, "/api/payments/claim", Map.of("username", me.name())));
-        assertThat(trial.get("plan").asText()).isEqualTo("trial");
-        assertThat(ok(getAs(me, "/api/payments/status/{u}", me.name())).get("plan").asText()).isEqualTo("trial");
+        String plan = ok(getAs(me, "/api/payments/status/{u}", me.name())).get("plan").asText();
+        assertThat(plan).isIn("lifetime", "none"); // the first 1,000 accounts are free forever
 
-        ok(postJson(me, "/api/payments/cancel", Map.of("username", me.name())));
-        assertThat(ok(getAs(me, "/api/payments/status/{u}", me.name())).toString()).doesNotContain("\"active\":true");
+        // the old server-side trial endpoints could be called again and again for a fresh 30 days
+        call(postJson(me, "/api/payments/claim", Map.of("username", me.name())), 404);
+        call(postJson(me, "/api/payments/cancel", Map.of("username", me.name())), 404);
+        assertThat(ok(getAs(me, "/api/payments/status/{u}", me.name())).get("plan").asText()).isEqualTo(plan);
     }
 }

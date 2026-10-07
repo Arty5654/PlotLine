@@ -1,57 +1,6 @@
 import SwiftUI
 import UIKit
 
-private enum PLColor {
-    static let surface       = Color(.secondarySystemBackground)
-    static let cardBorder    = Color.black.opacity(0.08)
-    static let textPrimary   = Color.primary
-    static let textSecondary = Color.secondary
-    static let success       = Color.green
-    static let danger        = Color.red
-    static let warning       = Color.orange
-}
-private enum PLSpacing {
-    static let xs: CGFloat = 6
-    static let sm: CGFloat = 10
-    static let md: CGFloat = 16
-    static let lg: CGFloat = 20
-}
-private enum PLRadius { static let md: CGFloat = 12 }
-
-private struct CardModifier: ViewModifier {
-    func body(content: Content) -> some View {
-        content
-            .padding(PLSpacing.md)
-            .background(PLColor.surface)
-            .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
-            .overlay(RoundedRectangle(cornerRadius: PLRadius.md).stroke(PLColor.cardBorder))
-    }
-}
-private extension View { func plCard() -> some View { modifier(CardModifier()) } }
-
-private struct PrimaryButton: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.headline)
-            .foregroundColor(.white)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .background(Color.blue.opacity(configuration.isPressed ? 0.85 : 1))
-            .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
-    }
-}
-private struct SecondaryButton: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.headline)
-            .foregroundColor(.white)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .background(PLColor.success.opacity(configuration.isPressed ? 0.85 : 1))
-            .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
-    }
-}
-
 // MARK: - View
 
 struct GroceryListDetailView: View {
@@ -88,6 +37,8 @@ struct GroceryListDetailView: View {
     @State private var isGenerating: Bool = false
     @State private var errorMessage: String? = nil
     @State private var showError: Bool = false
+    /// Price estimates run once per item, so the daily AI limit is only explained once per visit.
+    @State private var shownAILimit = false
     @State private var dietaryMessage: String? = nil
     @State private var showDietaryInfo: Bool = false
     @State private var showMealCreatedAlert: Bool = false
@@ -346,7 +297,7 @@ struct GroceryListDetailView: View {
                                     Text("Done Shopping")
                                 }
                             }
-                            .buttonStyle(SecondaryButton())
+                            .buttonStyle(PrimaryButton(color: PLColor.success))
                         }
                         .plCard()
                     }
@@ -454,7 +405,7 @@ struct GroceryListDetailView: View {
                 await refreshListMeta()
             }
         }
-        .onChange(of: items) { _ in
+        .onChange(of: items) { _, _ in
             canArchiveList = isListCompleted()
         }
         .alert("Share Result", isPresented: .constant(shareSuccess != nil)) {
@@ -532,7 +483,7 @@ struct GroceryListDetailView: View {
                     }
                 }
             } catch {
-                print("Failed to fetch items: \(error)")
+                AppBanner.report("load the list", error, retry: { fetchItems() })
             }
         }
     }
@@ -587,7 +538,7 @@ struct GroceryListDetailView: View {
                 newItemName = ""
                 newItemQuantity = 1
             } catch {
-                print("Failed to add item: \(error)")
+                AppBanner.report("add \(newItemName)", error) // the item stays typed in
             }
         }
     }
@@ -608,6 +559,15 @@ struct GroceryListDetailView: View {
         request.httpBody = jsonData
 
         URLSession.shared.dataTask(with: request) { data, response, _ in
+            if let limit = AILimitError.from(data, response) {
+                DispatchQueue.main.async {
+                    guard !shownAILimit else { return }
+                    shownAILimit = true
+                    errorMessage = "Prices couldn't be estimated. \(limit.message)"
+                    showError = true
+                }
+                return
+            }
             guard let data = data,
                   let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode),
                   let estimatedCost = try? JSONDecoder().decode(Double.self, from: data),
@@ -641,7 +601,7 @@ struct GroceryListDetailView: View {
                 try await GroceryListAPI.deleteItem(listId: listIdString, itemId: item.id.uuidString)
                 items.removeAll { $0.id == item.id }
             } catch {
-                print("Failed to delete item: \(error)")
+                AppBanner.report("remove \(item.name)", error, retry: { deleteItem(item) })
             }
         }
     }
@@ -662,7 +622,7 @@ struct GroceryListDetailView: View {
                     items[index] = updatedItem
                 }
             } catch {
-                print("Failed to toggle checked status: \(error)")
+                AppBanner.report("update \(item.name)", error)
             }
         }
     }
@@ -754,7 +714,8 @@ struct GroceryListDetailView: View {
                 "costs": ["Groceries": amount]
             ]
             req.httpBody = try? JSONSerialization.data(withJSONObject: payload)
-            URLSession.shared.dataTask(with: req) { _, _, _ in
+            URLSession.shared.dataTask(with: req) { data, response, error in
+                AppBanner.reportIfFailed("add this trip to your spending", data, response, error)
                 DispatchQueue.main.async { WidgetDataWriter.refreshFinancialData() }
             }.resume()
         }
@@ -773,8 +734,9 @@ struct GroceryListDetailView: View {
         guard let getURL = URL(string: "\(BackendConfig.baseURLString)/api/costs/\(username)/weekly") else { return }
         var getRequest = URLRequest(url: getURL)
         BackendConfig.addApiKey(to: &getRequest)
-        URLSession.shared.dataTask(with: getRequest) { data, _, _ in
-            guard let data = data,
+        URLSession.shared.dataTask(with: getRequest) { data, response, error in
+            guard !AppBanner.reportIfFailed("add this trip to your grocery budget", data, response, error),
+                  let data = data,
                   var decoded = try? JSONDecoder().decode(WeeklyMonthlyCostResponse.self, from: data) else { return }
             var current = decoded.costs["Groceries"] ?? 0.0
             current += amount
@@ -793,7 +755,8 @@ struct GroceryListDetailView: View {
             uploadRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
             uploadRequest.httpBody = newJson
 
-            URLSession.shared.dataTask(with: uploadRequest) { _, _, _ in
+            URLSession.shared.dataTask(with: uploadRequest) { data, response, error in
+                if AppBanner.reportIfFailed("add this trip to your grocery budget", data, response, error) { return }
                 DispatchQueue.main.async {
                     showGroceryAddedAlert = true
                     canUndoGroceryAddition = true
@@ -810,8 +773,9 @@ struct GroceryListDetailView: View {
         guard let getURL = URL(string: "\(BackendConfig.baseURLString)/api/costs/\(username)/weekly") else { return }
         var getRequest = URLRequest(url: getURL)
         BackendConfig.addApiKey(to: &getRequest)
-        URLSession.shared.dataTask(with: getRequest) { data, _, _ in
-            guard let data = data,
+        URLSession.shared.dataTask(with: getRequest) { data, response, error in
+            guard !AppBanner.reportIfFailed("undo the grocery spending", data, response, error),
+                  let data = data,
                   var decoded = try? JSONDecoder().decode(WeeklyMonthlyCostResponse.self, from: data) else { return }
             var current = decoded.costs["Groceries"] ?? 0.0
             current = max(0.0, current - amount)
@@ -830,7 +794,8 @@ struct GroceryListDetailView: View {
             uploadRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
             uploadRequest.httpBody = newJson
 
-            URLSession.shared.dataTask(with: uploadRequest) { _, _, _ in
+            URLSession.shared.dataTask(with: uploadRequest) { data, response, error in
+                if AppBanner.reportIfFailed("undo the grocery spending", data, response, error) { return }
                 DispatchQueue.main.async {
                     canUndoGroceryAddition = false
                     recentlyAddedGroceryAmount = nil
@@ -854,11 +819,13 @@ struct GroceryListDetailView: View {
             "costs": ["Groceries": amount]
         ]
         req.httpBody = try? JSONSerialization.data(withJSONObject: payload)
-        URLSession.shared.dataTask(with: req) { _, _, _ in
+        URLSession.shared.dataTask(with: req) { data, response, error in
+            AppBanner.reportIfFailed("undo the grocery spending", data, response, error)
             DispatchQueue.main.async { WidgetDataWriter.refreshFinancialData() }
         }.resume()
     }
 
+    @discardableResult
     func generateMealFromListView() -> [(name: String, quantity: Int)] {
         let listItems = items
         var items_short: [(name: String, quantity: Int)] = []

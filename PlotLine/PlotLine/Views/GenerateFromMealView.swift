@@ -8,44 +8,6 @@
 import SwiftUI
 
 // MARK: - Local design tokens (scoped)
-private enum PLColor {
-    static let surface       = Color(.secondarySystemBackground)
-    static let cardBorder    = Color.black.opacity(0.08)
-    static let textPrimary   = Color.primary
-    static let textSecondary = Color.secondary
-    static let accent        = Color.blue
-    static let success       = Color.green
-}
-private enum PLSpacing {
-    static let xs: CGFloat = 6
-    static let sm: CGFloat = 10
-    static let md: CGFloat = 16
-    static let lg: CGFloat = 20
-}
-private enum PLRadius { static let md: CGFloat = 12 }
-
-private struct CardModifier: ViewModifier {
-    func body(content: Content) -> some View {
-        content
-            .padding(PLSpacing.md)
-            .background(PLColor.surface)
-            .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
-            .overlay(RoundedRectangle(cornerRadius: PLRadius.md).stroke(PLColor.cardBorder))
-    }
-}
-private extension View { func plCard() -> some View { modifier(CardModifier()) } }
-
-private struct PrimaryButton: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.headline)
-            .foregroundColor(.white)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .background(PLColor.accent.opacity(configuration.isPressed ? 0.85 : 1))
-            .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
-    }
-}
 
 // MARK: - View
 struct GenerateFromMealView: View {

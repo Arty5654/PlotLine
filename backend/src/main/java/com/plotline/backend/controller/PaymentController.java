@@ -1,191 +1,109 @@
 package com.plotline.backend.controller;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.plotline.backend.dto.SubscriptionStatus;
-import com.plotline.backend.service.AuthService;
-import com.plotline.backend.service.S3Service;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.io.ByteArrayInputStream;
-import java.nio.charset.StandardCharsets;
-import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
-import java.util.List;
-import java.util.Map;
+import com.apple.itunes.storekit.model.JWSRenewalInfoDecodedPayload;
+import com.apple.itunes.storekit.model.JWSTransactionDecodedPayload;
+import com.apple.itunes.storekit.model.ResponseBodyV2DecodedPayload;
+import com.apple.itunes.storekit.verification.VerificationException;
+import com.plotline.backend.membership.AppStoreVerifier;
+import com.plotline.backend.membership.Membership;
+import com.plotline.backend.membership.MembershipService;
+import com.plotline.backend.membership.MembershipService.SyncResult;
+import com.plotline.backend.security.CurrentUser;
 
+/**
+ * Membership: the first 1,000 accounts are free forever; everyone else subscribes through the
+ * App Store (one free trial per Apple ID, then monthly). The app sends each purchase here, and
+ * Apple's server notifications keep renewals, cancellations and refunds up to date.
+ */
 @RestController
 @RequestMapping("/api/payments")
 public class PaymentController {
+    private static final Logger log = LoggerFactory.getLogger(PaymentController.class);
 
-    private final S3Service s3Service;
-    private final AuthService authService;
-    private final ObjectMapper mapper = new ObjectMapper();
-    private static final DateTimeFormatter ISO = DateTimeFormatter.ISO_LOCAL_DATE;
 
-    public PaymentController(S3Service s3Service, AuthService authService) {
-        this.s3Service = s3Service;
-        this.authService = authService;
-    }
+    private final MembershipService membershipService;
+    private final AppStoreVerifier appStoreVerifier;
 
-    private String subKey(String username) {
-        return "users/%s/subscription.json".formatted(username);
+    public PaymentController(MembershipService membershipService, AppStoreVerifier appStoreVerifier) {
+        this.membershipService = membershipService;
+        this.appStoreVerifier = appStoreVerifier;
     }
 
     @GetMapping("/status/{username}")
     public ResponseEntity<?> status(@PathVariable String username) {
+        return ResponseEntity.ok(view(membershipService.membership(username)));
+    }
+
+    /** a purchase or restore from the app: {"signedTransaction": Transaction.jwsRepresentation} */
+    @PostMapping("/apple/sync")
+    public ResponseEntity<?> syncApplePurchase(@RequestBody Map<String, String> body) {
+        String signedTransaction = body.get("signedTransaction");
+        if (signedTransaction == null || signedTransaction.isBlank()) {
+            return error(HttpStatus.BAD_REQUEST, "signedTransaction required");
+        }
+        JWSTransactionDecodedPayload transaction;
         try {
-            SubscriptionStatus stored = readStatus(username);
-            if (stored == null) {
-                SubscriptionStatus offer = defaultOffer(username);
-                writeStatus(username, offer);
-                return ResponseEntity.ok(offer);
-            }
-            SubscriptionStatus effective = rollForward(stored);
-            writeStatus(username, effective);
-            return ResponseEntity.ok(effective);
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(Map.of("error", "Failed to load status", "detail", e.getMessage()));
+            transaction = appStoreVerifier.transaction(signedTransaction);
+        } catch (VerificationException e) {
+            log.error("App Store purchase failed verification: {}", e.getStatus());
+            return error(HttpStatus.BAD_REQUEST, "We couldn't verify this purchase with the App Store.");
         }
+
+        SyncResult result = membershipService.applyPurchase(CurrentUser.require(), transaction);
+        if (result.error() != null) {
+            HttpStatus status = MembershipService.ALREADY_LINKED.equals(result.error()) ? HttpStatus.CONFLICT : HttpStatus.BAD_REQUEST;
+            return error(status, result.error());
+        }
+        return ResponseEntity.ok(view(result.membership()));
     }
 
-    @PostMapping("/claim")
-    public ResponseEntity<?> claim(@RequestBody Map<String, String> body) {
+    /** App Store Server Notifications v2 (set this URL in App Store Connect): {"signedPayload": ...} */
+    @PostMapping("/apple/notifications")
+    public ResponseEntity<?> appleNotification(@RequestBody Map<String, String> body) {
+        String signedPayload = body.get("signedPayload");
+        if (signedPayload == null || signedPayload.isBlank()) {
+            return error(HttpStatus.BAD_REQUEST, "signedPayload required");
+        }
         try {
-            String username = authService.normalizeUsername(body.get("username"));
-            if (username == null || username.isBlank()) {
-                return ResponseEntity.badRequest().body(Map.of("error", "username required"));
+            ResponseBodyV2DecodedPayload notification = appStoreVerifier.notification(signedPayload);
+            if (notification.getData() == null || notification.getData().getSignedTransactionInfo() == null) {
+                return ResponseEntity.ok().build(); // e.g. TEST notifications
             }
-            SubscriptionStatus current = readStatus(username);
-            if (current != null && "lifetime".equalsIgnoreCase(current.getPlan())) {
-                return ResponseEntity.ok(current);
-            }
-            LocalDate now = LocalDate.now();
-            LocalDate trialEnd = now.plusDays(30);
-            SubscriptionStatus newStatus = new SubscriptionStatus(
-                    "trial",
-                    5.0,
-                    trialEnd.format(ISO),
-                    true,
-                    "Trial ends on " + trialEnd.format(ISO) + ", then $5/month",
-                    current != null ? current.getGraceEndsAt() : null,
-                    false
-            );
-            writeStatus(username, newStatus);
-            return ResponseEntity.ok(newStatus);
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(Map.of("error", "Failed to claim", "detail", e.getMessage()));
+            JWSTransactionDecodedPayload transaction =
+                    appStoreVerifier.transaction(notification.getData().getSignedTransactionInfo());
+            String signedRenewal = notification.getData().getSignedRenewalInfo();
+            JWSRenewalInfoDecodedPayload renewal = signedRenewal != null ? appStoreVerifier.renewalInfo(signedRenewal) : null;
+            membershipService.applyNotification(transaction, renewal);
+            return ResponseEntity.ok().build();
+        } catch (VerificationException e) {
+            log.error("App Store notification failed verification: {}", e.getStatus());
+            return error(HttpStatus.BAD_REQUEST, "Invalid notification");
         }
     }
 
-    @PostMapping("/cancel")
-    public ResponseEntity<?> cancel(@RequestBody Map<String, String> body) {
-        try {
-            String username = authService.normalizeUsername(body.get("username"));
-            if (username == null || username.isBlank()) {
-                return ResponseEntity.badRequest().body(Map.of("error", "username required"));
-            }
-            SubscriptionStatus current = readStatus(username);
-            if (current == null) current = defaultOffer(username);
-            SubscriptionStatus cancelled = new SubscriptionStatus(
-                    "cancelled",
-                    current.getMonthlyPrice(),
-                    current.getTrialEndsAt(),
-                    false,
-                    "Subscription cancelled. Access continues until the end of your period.",
-                    current.getGraceEndsAt(),
-                    true
-            );
-            writeStatus(username, cancelled);
-            return ResponseEntity.ok(cancelled);
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(Map.of("error", "Failed to cancel", "detail", e.getMessage()));
-        }
+    // what the app sees: plan, whether it's unlocked, and until when
+    private static Map<String, Object> view(Membership membership) {
+        Map<String, Object> view = new LinkedHashMap<>();
+        view.put("plan", membership.getPlan());
+        view.put("active", membership.isActive(System.currentTimeMillis()));
+        view.put("expiresAt", membership.getExpiresAt() != null ? Instant.ofEpochMilli(membership.getExpiresAt()).toString() : null);
+        view.put("autoRenews", membership.getAutoRenews());
+        view.put("revoked", membership.isRevoked());
+        return view;
     }
 
-    private SubscriptionStatus defaultOffer(String username) throws Exception {
-        boolean lifetime = isEarlyBird(username);
-        if (lifetime) {
-            return new SubscriptionStatus("lifetime", 0.0, null, false, "Lifetime member", null, false);
-        }
-        LocalDate graceEnd = LocalDate.now().plusDays(30);
-        return new SubscriptionStatus("grace", 5.0, null, false, "Free access for 30 days, then start free trial.", graceEnd.format(ISO), false);
-    }
-
-    private boolean isEarlyBird(String username) throws Exception {
-        List<String> users = authService.getAllUsernames();
-        int idx = 0;
-        for (String u : users) {
-            idx++;
-            if (u.equalsIgnoreCase(username)) break;
-        }
-        return idx > 0 && idx <= 1000;
-    }
-
-    private SubscriptionStatus readStatus(String username) {
-        try {
-            byte[] bytes = s3Service.downloadFile(subKey(username));
-            if (bytes == null || bytes.length == 0) return null;
-            return mapper.readValue(bytes, SubscriptionStatus.class);
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
-    private void writeStatus(String username, SubscriptionStatus status) throws Exception {
-        String json = mapper.writeValueAsString(status);
-        ByteArrayInputStream in = new ByteArrayInputStream(json.getBytes(StandardCharsets.UTF_8));
-        s3Service.uploadFile(subKey(username), in, json.length());
-    }
-
-    private SubscriptionStatus rollForward(SubscriptionStatus status) {
-        LocalDate today = LocalDate.now();
-        try {
-            // Lifetime stays lifetime
-            if ("lifetime".equalsIgnoreCase(status.getPlan())) return status;
-            // Cancelled stays cancelled
-            if (status.isCancelled()) return status;
-
-            // Grace handling
-            if ("grace".equalsIgnoreCase(status.getPlan()) && status.getGraceEndsAt() != null) {
-                LocalDate graceEnd = LocalDate.parse(status.getGraceEndsAt(), ISO);
-                if (today.isAfter(graceEnd)) {
-                    return new SubscriptionStatus(
-                            "needs-trial",
-                            5.0,
-                            null,
-                            false,
-                            "Your free month ended. Start your 30-day free trial to keep using PlotLine.",
-                            status.getGraceEndsAt(),
-                            false
-                    );
-                }
-                return status;
-            }
-
-            // Trial handling
-            if ("trial".equalsIgnoreCase(status.getPlan()) && status.getTrialEndsAt() != null) {
-                LocalDate trialEnd = LocalDate.parse(status.getTrialEndsAt(), ISO);
-                if (today.isAfter(trialEnd)) {
-                    return new SubscriptionStatus(
-                            "expired",
-                            5.0,
-                            status.getTrialEndsAt(),
-                            false,
-                            "Your free trial ended. Subscribe for $5/month to continue.",
-                            status.getGraceEndsAt(),
-                            false
-                    );
-                }
-                return status;
-            }
-            return status;
-        } catch (Exception e) {
-            return status;
-        }
+    private static ResponseEntity<?> error(HttpStatus status, String message) {
+        return ResponseEntity.status(status).body(Map.of("success", false, "error", message));
     }
 }

@@ -1,31 +1,5 @@
 import SwiftUI
 
-private enum BCColor {
-    static let surface = Color(.secondarySystemBackground)
-    static let border = Color.black.opacity(0.06)
-    static let accent = Color.blue
-    static let textSecondary = Color.secondary
-    static let danger = Color.red
-    static let success = Color.green
-}
-private enum BCSpacing {
-    static let sm: CGFloat = 10
-    static let md: CGFloat = 16
-    static let lg: CGFloat = 20
-}
-private enum BCRadius { static let md: CGFloat = 12 }
-
-private struct Card: ViewModifier {
-    func body(content: Content) -> some View {
-        content
-            .padding(BCSpacing.md)
-            .background(BCColor.surface)
-            .clipShape(RoundedRectangle(cornerRadius: BCRadius.md))
-            .overlay(RoundedRectangle(cornerRadius: BCRadius.md).stroke(BCColor.border))
-    }
-}
-private extension View { func bcCard() -> some View { modifier(Card()) } }
-
 struct BudgetCompareView: View {
     @State private var currentIncome: String = ""
     @State private var newIncome: String = ""
@@ -47,7 +21,6 @@ struct BudgetCompareView: View {
         proposedBudget.filter { !excludedCats.contains($0.key) }
     }
 
-
     
     private var username: String {
         UserDefaults.standard.string(forKey: "loggedInUsername") ?? "UnknownUser"
@@ -58,13 +31,13 @@ struct BudgetCompareView: View {
     
     var body: some View {
         ScrollView {
-            VStack(spacing: BCSpacing.lg) {
+            VStack(spacing: PLSpacing.lg) {
                 header
                 inputs
                 comparisonCard
                 applyCard
             }
-            .padding(BCSpacing.lg)
+            .padding(PLSpacing.lg)
         }
         .navigationTitle("Compare Budgets")
         .navigationBarTitleDisplayMode(.inline)
@@ -77,23 +50,23 @@ struct BudgetCompareView: View {
                 .font(.title3).bold()
             Text("Compare your current budget to a projected one with a new income and/or location.")
                 .font(.subheadline)
-                .foregroundColor(BCColor.textSecondary)
+                .foregroundColor(PLColor.textSecondary)
         }
     }
     
     private var inputs: some View {
-        VStack(alignment: .leading, spacing: BCSpacing.md) {
+        VStack(alignment: .leading, spacing: PLSpacing.md) {
             Text("Inputs").font(.headline)
             
             HStack {
                 VStack(alignment: .leading) {
-                    Text("Current Income").font(.caption).foregroundColor(BCColor.textSecondary)
+                    Text("Current Income").font(.caption).foregroundColor(PLColor.textSecondary)
                     TextField("e.g., 75000", text: $currentIncome)
                         .keyboardType(.decimalPad)
                         .textFieldStyle(.roundedBorder)
                 }
                 VStack(alignment: .leading) {
-                    Text("New Income").font(.caption).foregroundColor(BCColor.textSecondary)
+                    Text("New Income").font(.caption).foregroundColor(PLColor.textSecondary)
                     TextField("e.g., 90000", text: $newIncome)
                         .keyboardType(.decimalPad)
                         .textFieldStyle(.roundedBorder)
@@ -101,7 +74,7 @@ struct BudgetCompareView: View {
             }
             
             VStack(alignment: .leading, spacing: 6) {
-                Text("Location change (optional)").font(.caption).foregroundColor(BCColor.textSecondary)
+                Text("Location change (optional)").font(.caption).foregroundColor(PLColor.textSecondary)
                 TextField("City", text: $newCity)
                     .textFieldStyle(.roundedBorder)
                 TextField("State (e.g., CA)", text: $newState)
@@ -110,7 +83,7 @@ struct BudgetCompareView: View {
             
             if let err = error {
                 HStack(spacing: 6) {
-                    Image(systemName: "exclamationmark.triangle.fill").foregroundColor(BCColor.danger)
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundColor(PLColor.danger)
                     Text(err).foregroundColor(.primary)
                 }.font(.footnote)
             }
@@ -124,23 +97,23 @@ struct BudgetCompareView: View {
             .buttonStyle(.borderedProminent)
             .disabled(isLoading || currentBudget.isEmpty)
         }
-        .bcCard()
+        .plCard()
     }
     
     private var comparisonCard: some View {
-        VStack(alignment: .leading, spacing: BCSpacing.md) {
+        VStack(alignment: .leading, spacing: PLSpacing.md) {
             Text("Comparison").font(.headline)
             
             HStack {
                 VStack(alignment: .leading) {
-                    Text("Current").font(.caption).foregroundColor(BCColor.textSecondary)
+                    Text("Current").font(.caption).foregroundColor(PLColor.textSecondary)
                     Text(currency(totalCurrent)).font(.headline)
                 }
                 Spacer()
                 VStack(alignment: .trailing) {
-                    Text("Proposed").font(.caption).foregroundColor(BCColor.textSecondary)
+                    Text("Proposed").font(.caption).foregroundColor(PLColor.textSecondary)
                     Text(currency(totalProposed)).font(.headline)
-                        .foregroundColor(totalProposed > totalCurrent ? BCColor.danger : BCColor.success)
+                        .foregroundColor(totalProposed > totalCurrent ? PLColor.danger : PLColor.success)
                 }
             }
             
@@ -153,23 +126,23 @@ struct BudgetCompareView: View {
                     Text(cat)
                     Spacer()
                     VStack(alignment: .trailing) {
-                        Text(currency(cur)).font(.caption).foregroundColor(BCColor.textSecondary)
+                        Text(currency(cur)).font(.caption).foregroundColor(PLColor.textSecondary)
                         Text(currency(prop)).font(.headline)
                     }
                 }
             }
         }
-        .bcCard()
+        .plCard()
     }
     
     private var applyCard: some View {
-        VStack(alignment: .leading, spacing: BCSpacing.sm) {
+        VStack(alignment: .leading, spacing: PLSpacing.sm) {
             Text("Apply this budget?")
                 .font(.headline)
             if let successMessage {
                 Text(successMessage)
                     .font(.footnote)
-                    .foregroundColor(BCColor.success)
+                    .foregroundColor(PLColor.success)
             }
             Button {
                 Task { await applyBudget() }
@@ -181,7 +154,7 @@ struct BudgetCompareView: View {
             .tint(.green)
             .disabled(proposedBudget.isEmpty || isLoading)
         }
-        .bcCard()
+        .plCard()
     }
     
     // MARK: - Helpers
@@ -224,7 +197,11 @@ struct BudgetCompareView: View {
         req.httpBody = data
 
         do {
-            let (respData, _) = try await URLSession.shared.data(for: req)
+            let (respData, response) = try await URLSession.shared.data(for: req)
+            if let limit = AILimitError.from(respData, response) {
+                await MainActor.run { self.error = limit.message }
+                return
+            }
             if let decoded = try? JSONDecoder().decode([String: Double].self, from: respData) {
                 await MainActor.run {
                     self.proposedBudget = decoded.filter { !excludedCats.contains($0.key) }
@@ -238,8 +215,8 @@ struct BudgetCompareView: View {
     }
     
     private func loadInitialData() async {
-        async let current = loadCurrentBudget()
-        async let quiz = loadQuizData()
+        async let current: Void = loadCurrentBudget()
+        async let quiz: Void = loadQuizData()
         _ = await (current, quiz)
         await recomputeProposal()
     }

@@ -33,7 +33,8 @@ public class ApiKeyFilter extends OncePerRequestFilter {
         return path.startsWith("/invite")
             || path.startsWith("/.well-known/")
             || path.equals("/terms")     // opened in a browser and linked from App Store Connect
-            || path.equals("/privacy");
+            || path.equals("/privacy")
+            || path.equals("/api/payments/apple/notifications"); // sent by Apple, which can't add our key
     }
 
     @Override

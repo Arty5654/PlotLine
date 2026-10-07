@@ -27,19 +27,13 @@ struct PlotLineApp: App {
         }
         UINavigationBar.appearance().tintColor = adaptiveNavColor
 
-        // Tab bar: white background in dark mode so icons are visible; system default in light mode
+        // Tab bar: the system background (dark in dark mode), blue for the selected tab, gray for the rest
         let tabAppearance = UITabBarAppearance()
         tabAppearance.configureWithOpaqueBackground()
-        tabAppearance.backgroundColor = UIColor { traits in
-            traits.userInterfaceStyle == .dark ? .white : .systemBackground
-        }
+        tabAppearance.backgroundColor = .systemBackground
 
-        let selectedColor = UIColor { traits in
-            traits.userInterfaceStyle == .dark ? .systemBlue : .systemBlue
-        }
-        let normalColor = UIColor { traits in
-            traits.userInterfaceStyle == .dark ? .systemGray : .systemGray
-        }
+        let selectedColor = UIColor.systemBlue
+        let normalColor = UIColor.systemGray
 
         for layout in [tabAppearance.stackedLayoutAppearance,
                        tabAppearance.inlineLayoutAppearance,
@@ -56,30 +50,31 @@ struct PlotLineApp: App {
 
     var body: some Scene {
         WindowGroup {
-            NavigationStack {
-                RootView()
-                    .environmentObject(session)
-                    .environmentObject(calendarVM)
-                    .environmentObject(friendsVM)
-                    .environmentObject(chatVM)
-                    // keep the widgets' copy of the login token current (sign-in, refresh)
-                    .onChange(of: session.authToken) { token in
-                        if token != nil { WidgetDataWriter.writeCredentials() }
-                    }
-                    .onOpenURL { url in
-                        if url.scheme == "plotline" {
-                            var userInfo: [String: Any] = ["destination": url.host ?? ""]
-                            if let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems {
-                                for item in items { userInfo[item.name] = item.value ?? "" }
-                            }
-                            NotificationCenter.default.post(name: .plotlineDeepLink, object: nil, userInfo: userInfo)
-                        } else {
-                            GIDSignIn.sharedInstance.handle(url)
+            RootView()
+                .environmentObject(session)
+                .environmentObject(calendarVM)
+                .environmentObject(friendsVM)
+                .environmentObject(chatVM)
+                // keep the widgets' copy of the login token current (sign-in, refresh)
+                .onChange(of: session.authToken) { _, token in
+                    if token != nil { WidgetDataWriter.writeCredentials() }
+                }
+                .onReceive(NotificationCenter.default.publisher(for: .plotlineSessionRejected)) { _ in
+                    session.refreshSession()
+                }
+                .onOpenURL { url in
+                    if url.scheme == "plotline" {
+                        var userInfo: [String: Any] = ["destination": url.host ?? ""]
+                        if let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems {
+                            for item in items { userInfo[item.name] = item.value ?? "" }
                         }
+                        NotificationCenter.default.post(name: .plotlineDeepLink, object: nil, userInfo: userInfo)
+                    } else {
+                        GIDSignIn.sharedInstance.handle(url)
                     }
-            }
+                }
         }
-        .onChange(of: scenePhase) { phase in
+        .onChange(of: scenePhase) { _, phase in
             // the icon is visible again once the app is in the background: recount what's waiting
             if phase == .background {
                 BadgeManager.refreshInBackground()
@@ -87,12 +82,16 @@ struct PlotLineApp: App {
             }
             guard phase == .active else { return }
             session.refreshSession()
+            // a membership can end, renew or be refunded while the app is closed
+            if session.isLoggedIn && !session.needsTermsAcceptance && session.needVerification != true {
+                Task { await MembershipManager.shared.refresh() }
+            }
             let username = UserDefaults.standard.string(forKey: "loggedInUsername") ?? ""
             guard !username.isEmpty else { return }
             WidgetDataWriter.writeCredentials()
             WidgetDataWriter.refreshFinancialData()
             WidgetDataWriter.refreshGoalsData()
-            calendarVM.fetchEvents()
+            calendarVM.fetchEvents(quiet: true) // background refresh: errors show when they open the calendar
             Task { await friendsVM.loadFriends(for: username) }
         }
     }

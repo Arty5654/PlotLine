@@ -22,6 +22,7 @@ struct SignUpView: View {
         guard !username.isEmpty else { return nil }
         if !session.isValidUsername(trimmedUsername) { return "Use only letters and numbers." }
         if trimmedUsername.count < 3 { return "At least 3 characters." }
+        if trimmedUsername.count > 30 { return "At most 30 characters." }
         return nil
     }
 

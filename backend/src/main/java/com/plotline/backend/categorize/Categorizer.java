@@ -1,5 +1,8 @@
 package com.plotline.backend.categorize;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.plaid.client.model.PersonalFinanceCategory;
@@ -13,6 +16,8 @@ import java.util.concurrent.ConcurrentHashMap;
 
 @Component
 public class Categorizer {
+    private static final Logger log = LoggerFactory.getLogger(Categorizer.class);
+
   private final UserCategoryStore userStore;
   private final S3Service s3Service;
   private final ObjectMapper objectMapper = new ObjectMapper();
@@ -287,7 +292,7 @@ public class Categorizer {
     // 1. Check user's explicit merchant overrides first
     String userOverride = userStore.lookup(username, m);
     if (userOverride != null && !userOverride.isBlank()) {
-      System.out.println("  → User override for '" + m + "' = " + userOverride);
+      log.debug(" → User override for '{}' = {}", m, userOverride);
       return userOverride;
     }
 
@@ -299,7 +304,7 @@ public class Categorizer {
       if (m.contains(rule.pattern)) {
         String matched = findBestUserCategory(rule.type, userCategories);
         if (matched != null) {
-          System.out.println("  → Merchant '" + m + "' matched rule " + rule.pattern + " → " + matched);
+          log.debug(" → Merchant '{}' matched rule {} → {}", m, rule.pattern, matched);
           return matched;
         }
       }
@@ -314,7 +319,7 @@ public class Categorizer {
         if (type != null) {
           String matched = findBestUserCategory(type, userCategories);
           if (matched != null) {
-            System.out.println("  → Plaid detailed '" + detailed + "' → " + matched);
+            log.debug(" → Plaid detailed '{}' → {}", detailed, matched);
             return matched;
           }
         }
@@ -327,14 +332,14 @@ public class Categorizer {
         if (type != null) {
           String matched = findBestUserCategory(type, userCategories);
           if (matched != null) {
-            System.out.println("  → Plaid primary '" + primary + "' → " + matched);
+            log.debug(" → Plaid primary '{}' → {}", primary, matched);
             return matched;
           }
         }
       }
     }
 
-    System.out.println("  → No category match for '" + m + "', returning Uncategorized");
+    log.debug(" → No category match for '{}', returning Uncategorized", m);
     return "Uncategorized";
   }
 
@@ -435,7 +440,7 @@ public class Categorizer {
     categories.remove("type");
 
     userCategoriesCache.put(username, categories);
-    System.out.println("Loaded " + categories.size() + " categories for user " + username + ": " + categories);
+    log.debug("Loaded {} categories for user {}: {}", categories.size(), username, categories);
     return categories;
   }
 

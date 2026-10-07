@@ -238,7 +238,7 @@ struct TransactionsView: View {
     // MARK: - Edit Sheet
 
     private func editSheet(_ txn: SyncedTransaction) -> some View {
-        NavigationView {
+        NavigationStack {
             Form {
                 Section {
                     Text(txn.name)
@@ -330,9 +330,10 @@ struct TransactionsView: View {
         var req = URLRequest(url: url)
         BackendConfig.addApiKey(to: &req)
         URLSession.shared.dataTask(with: req) { data, response, error in
+            let failed = AppBanner.reportIfFailed("load your transactions", data, response, error)
             DispatchQueue.main.async {
                 isLoading = false
-                guard let data = data,
+                guard !failed, let data = data,
                       let arr = try? JSONDecoder().decode([SyncedTransaction].self, from: data) else {
                     return
                 }
@@ -431,8 +432,9 @@ struct TransactionsView: View {
         BackendConfig.addApiKey(to: &req)
         req.httpMethod = "POST"
 
-        URLSession.shared.dataTask(with: req) { data, response, _ in
+        URLSession.shared.dataTask(with: req) { data, response, error in
             let code = (response as? HTTPURLResponse)?.statusCode ?? -1
+            AppBanner.reportIfFailed("restore the original amount", data, response, error)
             DispatchQueue.main.async {
                 if (200...299).contains(code) {
                     if let idx = transactions.firstIndex(where: { $0.id == txn.id }),
@@ -452,8 +454,9 @@ struct TransactionsView: View {
         BackendConfig.addApiKey(to: &req)
         req.httpMethod = "DELETE"
 
-        URLSession.shared.dataTask(with: req) { _, response, _ in
+        URLSession.shared.dataTask(with: req) { data, response, error in
             let code = (response as? HTTPURLResponse)?.statusCode ?? -1
+            AppBanner.reportIfFailed("delete the transaction", data, response, error)
             DispatchQueue.main.async {
                 if (200...299).contains(code) {
                     transactions.removeAll { $0.id == txn.id }

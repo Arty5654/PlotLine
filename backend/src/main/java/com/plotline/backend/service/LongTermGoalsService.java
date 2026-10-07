@@ -1,5 +1,8 @@
 package com.plotline.backend.service;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -32,6 +35,8 @@ import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
 @Service
 public class LongTermGoalsService {
+    private static final Logger log = LoggerFactory.getLogger(LongTermGoalsService.class);
+
   private final S3Client s3Client;
   private final String bucketName = "plotline-database-bucket";
   private final UserProfileService userProfileService;
@@ -88,11 +93,11 @@ public class LongTermGoalsService {
         s3Client.putObject(putObjectRequest, RequestBody.fromString(newJson));
         return true;
       } catch (IOException ex) {
-        ex.printStackTrace();
+        log.error("addLongTermGoalToS3 failed", ex);
         return false;
       }
     } catch (Exception e) {
-      e.printStackTrace();
+      log.error("addLongTermGoalToS3 failed", e);
       return false;
     }
   }
@@ -102,7 +107,7 @@ public class LongTermGoalsService {
     try {
       String key = "users/" + username + "/long-term-goals.json";
 
-      System.out.println("📡 Fetching long-term goals from: " + key);
+      log.debug("📡 Fetching long-term goals from: {}", key);
 
       GetObjectRequest getObjectRequest = GetObjectRequest.builder()
           .bucket(bucketName)
@@ -116,7 +121,7 @@ public class LongTermGoalsService {
       return objectMapper.readValue(data, Map.class);
 
     } catch (NoSuchKeyException e) {
-      System.out.println("⚠️ No long-term goals file found, returning empty list.");
+      log.debug("⚠️ No long-term goals file found, returning empty list.");
 
       Map<String, Object> emptyData = new HashMap<>();
       emptyData.put("longTermGoals", new ArrayList<>());
@@ -191,7 +196,7 @@ public class LongTermGoalsService {
       return true;
 
     } catch (Exception e) {
-      e.printStackTrace();
+      log.error("updateStepCompletionInS3 failed", e);
       return false;
     }
   }
@@ -200,7 +205,7 @@ public class LongTermGoalsService {
     username = normalize(username);
     try {
       String key = "users/" + username + "/long-term-goals.json";
-      System.out.println("📡 Resetting long-term goals for: " + key);
+      log.debug("📡 Resetting long-term goals for: {}", key);
 
       Map<String, List<LongTermGoal>> emptyGoalData = Map.of("longTermGoals", new ArrayList<>());
 
@@ -216,10 +221,10 @@ public class LongTermGoalsService {
       return true;
 
     } catch (NoSuchKeyException e) {
-      System.out.println("⚠️ Long-term goals file not found, nothing to reset.");
+      log.debug("⚠️ Long-term goals file not found, nothing to reset.");
       return false;
     } catch (Exception e) {
-      e.printStackTrace();
+      log.error("resetLongTermGoalsInS3 failed", e);
       return false;
     }
   }
@@ -271,7 +276,7 @@ public class LongTermGoalsService {
         return false;
       }
     } catch (Exception e) {
-      e.printStackTrace();
+      log.error("archiveLongTermGoalInS3 failed", e);
       return false;
     }
   }
@@ -323,7 +328,7 @@ public class LongTermGoalsService {
         return false;
       }
     } catch (Exception e) {
-      e.printStackTrace();
+      log.error("unarchiveLongTermGoalInS3 failed", e);
       return false;
     }
   }

@@ -1,5 +1,8 @@
 package com.plotline.backend.controller;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -25,6 +28,8 @@ import java.util.stream.Collectors;
 @RestController
 @RequestMapping("/api/llm/budget")
 public class BudgetQuizController {
+    private static final Logger log = LoggerFactory.getLogger(BudgetQuizController.class);
+
 
     @Autowired
     private OpenAIService openAIService;
@@ -159,11 +164,11 @@ public class BudgetQuizController {
             double afterTaxYearly = taxableIncome - federalTax - stateTax - fica - localTax;
             double monthlyNet = afterTaxYearly / 12.0;
 
-            System.out.println("Taxable Income (After 401k): " + taxableIncome);
-            System.out.println("Monthly Net: " + monthlyNet);
+            log.debug("Taxable Income (After 401k): {}", taxableIncome);
+            log.debug("Monthly Net: {}", monthlyNet);
 
-            System.out.printf("[TAX] %s - Fed: %.2f  State(%s): %.2f  Local: %.2f fica %.2f, Net: %.2f%n",
-                    username, federalTax, state, stateTax, localTax, fica, afterTaxYearly);
+            log.debug(String.format("[TAX] %s - Fed: %.2f  State(%s): %.2f  Local: %.2f fica %.2f, Net: %.2f",
+                    username, federalTax, state, stateTax, localTax, fica, afterTaxYearly));
 
             double monthlyIncome = grossYearlyIncome / 12;
             double budgetCap;
@@ -252,7 +257,7 @@ public class BudgetQuizController {
 
             // Get LLM output
             String rawResponse = openAIService.generateBudget(prompt);
-            System.out.println("OpenAI response: " + rawResponse);
+            log.debug("OpenAI response: {}", rawResponse);
 
             // Extract clean JSON block from OpenAI response
             String jsonOnly = extractJsonBlock(rawResponse);
@@ -293,7 +298,7 @@ public class BudgetQuizController {
             saveQuizInput(username, quizData);
             return ResponseEntity.ok(monthly);
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("Debts failed", e);
             return ResponseEntity.internalServerError().body("Error generating budget: " + e.getMessage());
         }
     }
@@ -459,7 +464,7 @@ public class BudgetQuizController {
         and the taxable yearly income, $%.2f, to calcuate it. If there is no local/Municipal tax, then just return 0.0.
         """, city, state, taxableIncome);
         String localTax = openAIService.generateResponseLocalTaxes(prompt);
-        System.out.println("Local Tax: " + localTax);
+        log.debug("Local Tax: {}", localTax);
         return Double.parseDouble(localTax);
 
     }

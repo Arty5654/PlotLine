@@ -1,5 +1,8 @@
 package com.plotline.backend.controller;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.plaid.client.model.Transaction;
@@ -28,6 +31,8 @@ import static com.plotline.backend.util.UsernameUtils.normalize;
 @RestController
 @RequestMapping("/api/subscriptions/recurring")
 public class RecurringChargeController {
+    private static final Logger log = LoggerFactory.getLogger(RecurringChargeController.class);
+
 
     private final S3Service s3Service;
     private final PlaidApi plaid;
@@ -154,9 +159,9 @@ public class RecurringChargeController {
     ) {
         try {
             String normUser = normalize(username);
-            System.out.println("[RecurringCharge] Analyzing for user: " + normUser + " months=" + months);
+            log.debug("[RecurringCharge] Analyzing for user: {} months={}", normUser, months);
             List<RecurringChargeRequest.ChargeEvent> charges = fetchChargesFromPlaid(normUser, months);
-            System.out.println("[RecurringCharge] Fetched " + charges.size() + " charge events from Plaid");
+            log.debug("[RecurringCharge] Fetched {} charge events from Plaid", charges.size());
             RecurringChargeRequest req = new RecurringChargeRequest();
             req.setUsername(normUser);
             req.setRemindAfterMonths(remindAfter);

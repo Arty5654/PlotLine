@@ -1,5 +1,8 @@
 package com.plotline.backend.service;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 
 import com.openai.client.OpenAIClient;
 import com.openai.client.okhttp.OpenAIOkHttpClient;
@@ -27,6 +30,8 @@ import java.util.Map;
 
 @Service
 public class OpenAIService {
+    private static final Logger log = LoggerFactory.getLogger(OpenAIService.class);
+
 
   private final OpenAIClient openAIClient;
   private final ObjectMapper objectMapper = new ObjectMapper();
@@ -43,7 +48,7 @@ public class OpenAIService {
     String openaiApiKey = resolveEnv(dotenv, "OPENAI_API_KEY");
 
     if (openaiApiKey == null || openaiApiKey.isBlank()) {
-      System.err.println("OPENAI_API_KEY not configured; LLM features are disabled.");
+      log.warn("OPENAI_API_KEY not configured; LLM features are disabled.");
       this.openAIClient = null;
     } else {
       this.openAIClient = OpenAIOkHttpClient.builder()
@@ -99,7 +104,7 @@ public class OpenAIService {
     } catch (OpenAIException e) {
       // error handling and types of errors found in SDK readme
 
-      e.printStackTrace();
+      log.error("generateResponse failed", e);
       return "Service Error";
     }
 
@@ -151,11 +156,11 @@ public class OpenAIService {
       String responseBody = response.body();
 
       // Log response for debugging
-      System.out.println("OpenAI API response status: " + response.statusCode());
+      log.debug("OpenAI API response status: {}", response.statusCode());
 
       // Check HTTP status code
       if (response.statusCode() != 200) {
-        System.err.println("OpenAI API returned non-200 status: " + response.statusCode() + " - " + responseBody);
+        log.warn("OpenAI API returned non-200 status: {} - {}", response.statusCode(), responseBody);
       }
 
       // Parse response to extract content
@@ -164,14 +169,14 @@ public class OpenAIService {
       // Check for API error response
       if (root.has("error")) {
         String errorMsg = root.path("error").path("message").asText("Unknown OpenAI error");
-        System.err.println("OpenAI API error: " + errorMsg);
+        log.error("OpenAI API error: {}", errorMsg);
         return "{\"error\": \"OpenAI API error: " + errorMsg.replace("\"", "'") + "\"}";
       }
 
       // Check if choices exist
       com.fasterxml.jackson.databind.JsonNode choices = root.path("choices");
       if (choices.isMissingNode() || !choices.isArray() || choices.size() == 0) {
-        System.err.println("OpenAI returned unexpected response: " + responseBody);
+        log.warn("OpenAI returned unexpected response: {}", responseBody);
         return "{\"error\": \"Unexpected response from OpenAI\"}";
       }
 
@@ -191,7 +196,7 @@ public class OpenAIService {
 
       return content;
     } catch (Exception e) {
-      e.printStackTrace();
+      log.error("analyzeReceiptFromImage failed", e);
       return "{\"error\": \"" + e.getMessage().replace("\"", "'") + "\"}";
     }
   }
@@ -250,7 +255,7 @@ public class OpenAIService {
       java.net.http.HttpResponse<String> response = client.send(request, java.net.http.HttpResponse.BodyHandlers.ofString());
 
       if (response.statusCode() != 200) {
-        System.err.println("OpenAI food analysis error: " + response.statusCode() + " - " + response.body());
+        log.error("OpenAI food analysis error: {} - {}", response.statusCode(), response.body());
         return "[]";
       }
 
@@ -265,7 +270,7 @@ public class OpenAIService {
 
       return content.trim();
     } catch (Exception e) {
-      e.printStackTrace();
+      log.error("analyzeFoodFromImage failed", e);
       return "[]";
     }
   }
@@ -296,7 +301,7 @@ public class OpenAIService {
     } catch (OpenAIException e) {
       // error handling and types of errors found in SDK readme
 
-      e.printStackTrace();
+      log.error("generateResponseGC failed", e);
       return "Service Error";
     }
   }
@@ -367,7 +372,7 @@ public class OpenAIService {
     } catch (OpenAIException e) {
       // error handling and types of errors found in SDK readme
 
-      e.printStackTrace();
+      log.error("EXAMPLES failed", e);
       return "Service Error";
     }
   }
@@ -397,7 +402,7 @@ public class OpenAIService {
       } catch (OpenAIException e) {
         // error handling and types of errors found in SDK readme
   
-        e.printStackTrace();
+        log.error("assets failed", e);
         return "Service Error";
       }
   }
@@ -468,11 +473,11 @@ public class OpenAIService {
       ResponseOutputText rot = response.output().get(0).message().get().content().get(0).asOutputText();
       String output = rot.text();
 
-      System.out.println("OpenAI response: " + output);
+      log.debug("OpenAI response: {}", output);
       return output;
 
     } catch (OpenAIException e) {
-        e.printStackTrace();
+        log.error("generateBudget failed", e);
         return "Service Error";
     }
 
@@ -564,10 +569,10 @@ public class OpenAIService {
         return jsonResponse;
 
     } catch (OpenAIException e) {
-        e.printStackTrace();
+        log.error("generateGroceryListFromMeal failed", e);
         return "{\"incompatible\": true, \"reason\": \"Service Error: Unable to process the meal request\"}";
     } catch (Exception e) {
-        e.printStackTrace();
+        log.error("generateGroceryListFromMeal failed", e);
         return "{\"incompatible\": true, \"reason\": \"Service Error: " + e.getMessage() + "\"}";
     }
   }
@@ -589,7 +594,7 @@ public class OpenAIService {
         // Get raw JSON response from OpenAI with dietary restrictions
         return generateGroceryListFromMeal(mealName, dietaryRestrictions);
     } catch (Exception e) {
-        e.printStackTrace();
+        log.error("generateGroceryListFromMeal failed", e);
         throw new Exception("Failed to generate grocery list: " + e.getMessage(), e);
     }
   }
@@ -683,10 +688,10 @@ public class OpenAIService {
         return mealRecipe;
 
     } catch (OpenAIException e) {
-        e.printStackTrace();
+        log.error("generateMealFromGroceryList failed", e);
         return "{\"incompatible\": true, \"reason\": \"Service Error: Unable to process the meal request\"}";
     } catch (Exception e) {
-        e.printStackTrace();
+        log.error("generateMealFromGroceryList failed", e);
         return "{\"incompatible\": true, \"reason\": \"Service Error: " + e.getMessage() + "\"}";
     }
   }
@@ -733,8 +738,8 @@ public class OpenAIService {
 
       return output;
     } catch (Exception e) {
-      e.printStackTrace();
-      System.err.println("ratePortfolio failed: " + e.getClass().getName() + ": " + e.getMessage());
+      log.error("ratePortfolio failed", e);
+      log.error("ratePortfolio failed: {}: {}", e.getClass().getName(), e.getMessage());
       return "{\"error\": \"" + e.getClass().getSimpleName() + ": " + e.getMessage().replace("\"", "'") + "\"}";
     }
   }
@@ -831,10 +836,10 @@ public class OpenAIService {
             return rot.text();
 
         } catch (OpenAIException e) {
-            e.printStackTrace();
+            log.error("0 failed", e);
             return "{\"error\": true, \"message\": \"Service Error: Unable to generate grocery list from goal\"}";
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("0 failed", e);
             return "{\"error\": true, \"message\": \"Service Error: " + e.getMessage() + "\"}";
         }
     }

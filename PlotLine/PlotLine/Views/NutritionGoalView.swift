@@ -11,10 +11,6 @@ struct NutritionGoalView: View {
     @Environment(\.dismiss) var dismiss
     @Environment(\.colorScheme) var colorScheme
 
-    // Adaptive color: white in dark mode, blue in light mode
-    private var adaptiveTextColor: Color {
-        colorScheme == .dark ? .white : .blue
-    }
 
     // Quiz fields
     @State private var weightLbs = ""
@@ -40,7 +36,7 @@ struct NutritionGoalView: View {
     @State private var showRetakeQuiz = false
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             Group {
                 if let existing = goals, existing.calorieGoal > 0, !showRetakeQuiz {
                     // Has a goal — show it with edit capability
@@ -115,7 +111,7 @@ struct NutritionGoalView: View {
                     showRetakeQuiz = true
                 } label: {
                     Label("Retake Quiz", systemImage: "arrow.counterclockwise")
-                        .foregroundColor(adaptiveTextColor)
+                        .foregroundColor(PLColor.tint)
                 }
 
                 Button(role: .destructive) {
@@ -135,7 +131,7 @@ struct NutritionGoalView: View {
                 VStack(spacing: 16) {
                     Text("\(Int(existing.calorieGoal))")
                         .font(.system(size: 48, weight: .bold, design: .rounded))
-                        .foregroundColor(adaptiveTextColor)
+                        .foregroundColor(PLColor.tint)
                     Text("calories / day")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
@@ -169,7 +165,7 @@ struct NutritionGoalView: View {
                     isEditing = true
                 } label: {
                     Label("Edit Goal", systemImage: "pencil")
-                        .foregroundColor(adaptiveTextColor)
+                        .foregroundColor(PLColor.tint)
                 }
             }
         }
@@ -185,7 +181,7 @@ struct NutritionGoalView: View {
                         .keyboardType(.numberPad)
                         .multilineTextAlignment(.trailing)
                         .frame(width: 100)
-                        .accentColor(adaptiveTextColor)
+                        .accentColor(PLColor.tint)
                 }
             }
 
@@ -197,7 +193,7 @@ struct NutritionGoalView: View {
                         .keyboardType(.numberPad)
                         .multilineTextAlignment(.trailing)
                         .frame(width: 80)
-                        .accentColor(adaptiveTextColor)
+                        .accentColor(PLColor.tint)
                 }
                 HStack {
                     Text("Carbs")
@@ -206,7 +202,7 @@ struct NutritionGoalView: View {
                         .keyboardType(.numberPad)
                         .multilineTextAlignment(.trailing)
                         .frame(width: 80)
-                        .accentColor(adaptiveTextColor)
+                        .accentColor(PLColor.tint)
                 }
                 HStack {
                     Text("Fat")
@@ -215,7 +211,7 @@ struct NutritionGoalView: View {
                         .keyboardType(.numberPad)
                         .multilineTextAlignment(.trailing)
                         .frame(width: 80)
-                        .accentColor(adaptiveTextColor)
+                        .accentColor(PLColor.tint)
                 }
             }
 
@@ -279,7 +275,7 @@ struct NutritionGoalView: View {
                         .keyboardType(.numberPad)
                         .multilineTextAlignment(.trailing)
                         .frame(width: 80)
-                        .accentColor(adaptiveTextColor)
+                        .accentColor(PLColor.tint)
                 }
 
                 HStack {
@@ -289,7 +285,7 @@ struct NutritionGoalView: View {
                         .keyboardType(.decimalPad)
                         .multilineTextAlignment(.trailing)
                         .frame(width: 80)
-                        .accentColor(adaptiveTextColor)
+                        .accentColor(PLColor.tint)
                 }
 
                 HStack {
@@ -301,14 +297,16 @@ struct NutritionGoalView: View {
                         }
                     }
                     .pickerStyle(.menu)
-                    .accentColor(adaptiveTextColor)
+                    .labelsHidden()
+                    .accentColor(PLColor.tint)
                     Picker("in", selection: $heightInches) {
                         ForEach(0...11, id: \.self) { inch in
                             Text("\(inch) in").tag(inch)
                         }
                     }
                     .pickerStyle(.menu)
-                    .accentColor(adaptiveTextColor)
+                    .labelsHidden()
+                    .accentColor(PLColor.tint)
                 }
             }
 
@@ -329,7 +327,7 @@ struct NutritionGoalView: View {
                             Spacer()
                             if activityLevel == level {
                                 Image(systemName: "checkmark.circle.fill")
-                                    .foregroundColor(adaptiveTextColor)
+                                    .foregroundColor(PLColor.tint)
                             }
                         }
                     }
@@ -353,7 +351,7 @@ struct NutritionGoalView: View {
                             Spacer()
                             if weightGoal == goal {
                                 Image(systemName: "checkmark.circle.fill")
-                                    .foregroundColor(adaptiveTextColor)
+                                    .foregroundColor(PLColor.tint)
                             }
                         }
                     }
@@ -383,7 +381,7 @@ struct NutritionGoalView: View {
         let cal = data.targetCalories
         let macros = NutritionGoals.macrosFrom(calories: cal, weightGoal: data.weightGoal)
 
-        return NavigationView {
+        return NavigationStack {
             VStack(spacing: 24) {
                 Spacer()
 
@@ -393,7 +391,7 @@ struct NutritionGoalView: View {
 
                 Text("\(Int(cal))")
                     .font(.system(size: 56, weight: .bold, design: .rounded))
-                    .foregroundColor(adaptiveTextColor)
+                    .foregroundColor(PLColor.tint)
                 Text("calories / day")
                     .font(.subheadline)
                     .foregroundColor(.secondary)

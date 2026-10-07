@@ -54,13 +54,18 @@ class FriendsFeatureTest extends FeatureTestBase {
     }
 
     @Test
-    @DisplayName("Search: user-exists and the user list")
+    @DisplayName("Search: user-exists, and searching usernames (the app no longer gets every username)")
     void search() throws Exception {
         User me = newUser();
         User them = newUser();
         assertThat(ok(getAs(me, "/auth/user-exists").param("username", them.name())).asBoolean()).isTrue();
         assertThat(ok(getAs(me, "/auth/user-exists").param("username", "nobody" + UUID.randomUUID().toString().substring(0, 6))).asBoolean()).isFalse();
-        assertThat(ok(getAs(me, "/auth/get-users")).toString()).contains(them.name());
+
+        String middle = them.name().substring(3, 9);
+        assertThat(ok(getAs(me, "/auth/search-users").param("q", middle)).toString()).contains(them.name());
+        assertThat(ok(getAs(me, "/auth/search-users").param("q", me.name())).toString()).doesNotContain(me.name()); // not yourself
+        assertThat(ok(getAs(me, "/auth/search-users").param("q", "%_'")).size()).isZero();
+        call(getAs(me, "/auth/get-users"), 404);
     }
 
     @Test

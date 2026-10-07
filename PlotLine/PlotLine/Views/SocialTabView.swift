@@ -4,9 +4,6 @@ struct SocialTabView: View {
     @EnvironmentObject var friendsVM: FriendsViewModel
     @EnvironmentObject var chatVM: ChatViewModel
 
-    @Environment(\.colorScheme) var colorScheme
-    private var adaptiveTint: Color { colorScheme == .dark ? .white : .blue }
-
     @State private var selection: Tab = .friends
     enum Tab { case friends, chat, third }
 
@@ -19,7 +16,7 @@ struct SocialTabView: View {
                     .navigationTitle("My Friends")
                     .navigationBarTitleDisplayMode(.inline)
             }
-            .tabItem { Image(systemName: "person.2.fill") }
+            .tabItem { Label("Friends", systemImage: "person.2.fill") }
             .tag(Tab.friends)
 
             // — Chat tab —
@@ -30,7 +27,7 @@ struct SocialTabView: View {
                     .navigationBarTitleDisplayMode(.inline)
                     .environmentObject(friendsVM)
             }
-            .tabItem { Image(systemName: "bubble.left.and.bubble.right.fill") }
+            .tabItem { Label("Chat", systemImage: "bubble.left.and.bubble.right.fill") }
             .tag(Tab.chat)
 
             // — More tab —
@@ -39,10 +36,10 @@ struct SocialTabView: View {
                     .navigationTitle("Friends Feed")
                     .navigationBarTitleDisplayMode(.inline)
             }
-            .tabItem { Image(systemName: "newspaper.fill") }
+            .tabItem { Label("Feed", systemImage: "newspaper.fill") }
             .tag(Tab.third)
         }
-        .tint(adaptiveTint)
+        .tint(PLColor.accent)
     }
 }
 

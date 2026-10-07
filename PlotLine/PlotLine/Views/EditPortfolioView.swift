@@ -19,73 +19,88 @@ struct EditPortfolioView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 20) {
-                Text("Edit Your Portfolio")
-                    .font(.title2)
-                    .bold()
-
+            VStack(spacing: PLSpacing.lg) {
                 // Editable Pie Chart
                 PieChartView(assets: $assets, editable: true, selectedAssetID: $selectedAssetID)
-                    .frame(height: 300)
-                
-                // Asset List: Tap to select
-                ForEach(assets) { asset in
-                    HStack {
-                        Text(asset.name)
-                        Spacer()
-                        Text("\(asset.percentage, specifier: "%.0f")% - $\(asset.amount, specifier: "%.2f")")
+                    .frame(height: 280)
+                    .plCard()
+
+                VStack(spacing: PLSpacing.sm) {
+                    PLSectionHeader(title: "Holdings · tap one to edit")
+                    VStack(spacing: 0) {
+                        ForEach(Array(assets.enumerated()), id: \.element.id) { index, asset in
+                            if index > 0 { Divider() }
+                            HStack {
+                                Text(asset.name)
+                                    .font(.body.weight(.semibold))
+                                Spacer()
+                                Text("\(asset.percentage, specifier: "%.0f")%")
+                                    .foregroundColor(PLColor.textSecondary)
+                                Text("$\(asset.amount, specifier: "%.2f")")
+                                    .monospacedDigit()
+                                    .frame(minWidth: 90, alignment: .trailing)
+                            }
+                            .padding(.vertical, 10)
+                            .padding(.horizontal, 8)
+                            .background(selectedAssetID == asset.id ? PLColor.accent.opacity(0.12) : Color.clear)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                            .contentShape(Rectangle())
+                            .onTapGesture { selectedAssetID = asset.id }
+                        }
                     }
-                    .padding(.horizontal)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        selectedAssetID = asset.id
-                    }
-                    .background(selectedAssetID == asset.id ? Color.blue.opacity(0.1) : Color.clear)
-                    .cornerRadius(8)
+                    .plCard()
                 }
 
                 if let selectedIndex = assets.firstIndex(where: { $0.id == selectedAssetID }) {
-                    VStack(spacing: 12) {
-                        Text("Edit \(assets[selectedIndex].name)")
-                            .font(.headline)
-
-                        TextField("Stock Name", text: $assets[selectedIndex].name)
-
-                        HStack {
-                            Text("Allocation:")
-                            Slider(value: $assets[selectedIndex].percentage, in: 0...100, onEditingChanged: { _ in
-                                normalizePercentages(editedIndex: selectedIndex)
-                            })
-                            Text("\(assets[selectedIndex].percentage, specifier: "%.0f")%")
+                    VStack(spacing: PLSpacing.sm) {
+                        PLSectionHeader(title: "Edit \(assets[selectedIndex].name)")
+                        VStack(spacing: 12) {
+                            PLFieldRow(label: "Symbol", placeholder: "e.g. VTI", text: $assets[selectedIndex].name)
+                            Divider()
+                            HStack {
+                                Text("Allocation")
+                                Slider(value: $assets[selectedIndex].percentage, in: 0...100, onEditingChanged: { _ in
+                                    normalizePercentages(editedIndex: selectedIndex)
+                                })
+                                Text("\(assets[selectedIndex].percentage, specifier: "%.0f")%")
+                                    .monospacedDigit()
+                                    .frame(width: 44, alignment: .trailing)
+                            }
                         }
+                        .plCard()
                     }
-                    .padding()
-                    .background(Color(.systemGray6))
-                    .cornerRadius(10)
                 }
 
-                Divider()
-
-                VStack(spacing: 8) {
-                    TextField("Investment Frequency (e.g., Monthly)", text: $investmentFrequency)
-                    TextField("Total Investment Amount", value: $totalAmount, formatter: NumberFormatter.currency)
-                        .keyboardType(.decimalPad)
-                        .onChange(of: totalAmount) { _ in
-                            updateAmountsFromTotal()
+                VStack(spacing: PLSpacing.sm) {
+                    PLSectionHeader(title: "Investing plan")
+                    VStack(spacing: 0) {
+                        PLFieldRow(label: "How often", placeholder: "e.g. Monthly", text: $investmentFrequency)
+                        Divider()
+                        HStack(spacing: 12) {
+                            Text("Amount")
+                            TextField("Total amount", value: $totalAmount, formatter: NumberFormatter.currency)
+                                .keyboardType(.decimalPad)
+                                .multilineTextAlignment(.trailing)
+                                .foregroundColor(PLColor.textSecondary)
+                                .onChange(of: totalAmount) { _, _ in
+                                    updateAmountsFromTotal()
+                                }
                         }
+                        .padding(.vertical, 6)
+                    }
+                    .plCard()
                 }
-                .padding()
-                .background(Color(.systemGray6))
-                .cornerRadius(10)
 
                 Button("Save Portfolio") {
                     saveUpdatedPortfolio()
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(PrimaryButton())
             }
-            .padding()
+            .padding(.horizontal, PLSpacing.lg)
+            .padding(.vertical, PLSpacing.md)
         }
         .navigationTitle("Edit Portfolio")
+        .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             updateAmountsFromTotal()
         }

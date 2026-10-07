@@ -1,5 +1,8 @@
 package com.plotline.backend.controller;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import com.plaid.client.request.PlaidApi;
 import com.plaid.client.model.*;
 import com.plotline.backend.plaid.TokenStore;
@@ -13,6 +16,8 @@ import java.util.Map;
   @RestController
   @RequestMapping("/api/plaid")
   public class PlaidController {
+    private static final Logger log = LoggerFactory.getLogger(PlaidController.class);
+
     private final PlaidApi plaid;
     private final TokenStore tokenStore;
 
@@ -32,8 +37,8 @@ import java.util.Map;
         redirectUri = dotenv.get("PLAID_REDIRECT_URI");
       }
 
-      System.out.println("Creating link token for user: " + username);
-      System.out.println("Redirect URI: " + redirectUri);
+      log.debug("Creating link token for user: {}", username);
+      log.debug("Redirect URI: {}", redirectUri);
 
       var req = new LinkTokenCreateRequest()
           .user(user)
@@ -51,7 +56,7 @@ import java.util.Map;
 
       if (!response.isSuccessful()) {
         String errorBody = response.errorBody() != null ? response.errorBody().string() : "No error body";
-        System.err.println("Plaid error: " + response.code() + " - " + errorBody);
+        log.error("Plaid error: {} - {}", response.code(), errorBody);
         return ResponseEntity.status(response.code())
             .body(Map.of("error", "Plaid API error", "details", errorBody));
       }
@@ -59,8 +64,8 @@ import java.util.Map;
       var body = response.body();
       return ResponseEntity.ok(Map.of("link_token", body.getLinkToken()));
     } catch (Exception e) {
-      System.err.println("Exception creating link token: " + e.getMessage());
-      e.printStackTrace();
+      log.error("Exception creating link token: {}", e.getMessage());
+      log.error("createLinkToken failed", e);
       return ResponseEntity.status(500)
           .body(Map.of("error", "Failed to create link token", "message", e.getMessage()));
     }

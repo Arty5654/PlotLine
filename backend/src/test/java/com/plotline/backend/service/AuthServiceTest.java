@@ -1,5 +1,8 @@
 package com.plotline.backend.service;
 
+import com.plotline.backend.accounts.AccountDirectory;
+import com.plotline.backend.testsupport.TestDatabase;
+import org.springframework.jdbc.core.JdbcTemplate;
 import com.auth0.jwt.JWT;
 import com.auth0.jwt.algorithms.Algorithm;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -28,7 +31,8 @@ class AuthServiceTest {
     @BeforeEach
     void setUp() {
         s3 = new InMemoryS3Client();
-        authService = new AuthService(s3, null, "test-jwt-secret");
+        JdbcTemplate jdbc = new JdbcTemplate(TestDatabase.newDatabase());
+        authService = new AuthService(s3, null, "test-jwt-secret", new AccountDirectory(jdbc));
     }
 
     private S3UserRecord record(String username) throws Exception {
@@ -122,6 +126,87 @@ class AuthServiceTest {
         // once the password account verifies its phone, it's done too
         authService.updateUserRecord("plain", r -> r.setIsVerified(true));
         assertThat(authService.needsPhoneVerification("plain")).isFalse();
+    }
+
+    // ── Usernames ──────────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("Username rule: 3 to 30 letters or numbers")
+    void usernameRule() {
+        assertThat(AuthService.isValidUsername("alex2026")).isTrue();
+        assertThat(AuthService.isValidUsername("abc")).isTrue();
+        assertThat(AuthService.isValidUsername("a".repeat(30))).isTrue();
+        assertThat(AuthService.isValidUsername("ab")).isFalse();
+        assertThat(AuthService.isValidUsername("a".repeat(31))).isFalse();
+        assertThat(AuthService.isValidUsername("bob/grocery")).isFalse();
+        assertThat(AuthService.isValidUsername("john.smith")).isFalse();
+        assertThat(AuthService.isValidUsername("john smith")).isFalse();
+        assertThat(AuthService.isValidUsername("..")).isFalse();
+        assertThat(AuthService.isValidUsername(null)).isFalse();
+    }
+
+    @Test
+    @DisplayName("Accounts can't be created with a username that breaks the rule, on any path")
+    void createUserEnforcesRule() {
+        assertThat(authService.createUser("555", "a@mail.com", "bob/grocery", "bob/grocery", "Password1", false)).isFalse();
+        assertThat(authService.createGoogleUser("b@gmail.com", "john.smith", "john.smith", "sub")).isFalse();
+        assertThat(authService.createAppleUser("c@icloud.com", "ab", "ab", "001.x")).isFalse();
+        assertThat(s3.contains("users/bob/grocery/account.json")).isFalse();
+    }
+
+    @Test
+    @DisplayName("Username suggestions from an email are valid and untaken")
+    void suggestions() {
+        assertThat(authService.suggestUsername("John.Smith@gmail.com")).isEqualTo("JohnSmith");
+        assertThat(authService.suggestUsername("j_o@x.com")).isEqualTo("jo1");
+        assertThat(authService.suggestUsername("...@x.com")).isEqualTo("user");
+        assertThat(authService.suggestUsername("a".repeat(40) + "@x.com")).isEqualTo("a".repeat(30));
+
+        authService.createUser("555", "z@mail.com", "johnsmith", "johnsmith", "Password1", false);
+        assertThat(authService.suggestUsername("john.smith@gmail.com")).isEqualTo("johnsmith2");
+    }
+
+    // ── Password and email rules ───────────────────────────────────────────────
+
+    @Test
+    @DisplayName("Password rule: 8+ characters with an uppercase letter, a lowercase letter and a number")
+    void passwordRule() {
+        assertThat(AuthService.isValidPassword("Password1")).isTrue();
+        assertThat(AuthService.isValidPassword("password1")).isFalse();
+        assertThat(AuthService.isValidPassword("PASSWORD1")).isFalse();
+        assertThat(AuthService.isValidPassword("Password")).isFalse();
+        assertThat(AuthService.isValidPassword("Pass1")).isFalse();
+        assertThat(AuthService.isValidPassword(null)).isFalse();
+    }
+
+    @Test
+    @DisplayName("Email rule matches the app's check")
+    void emailRule() {
+        assertThat(AuthService.isValidEmail("me@example.com")).isTrue();
+        assertThat(AuthService.isValidEmail("First.Last+tag@school.edu")).isTrue();
+        assertThat(AuthService.isValidEmail("abc123@privaterelay.appleid.com")).isTrue();
+        assertThat(AuthService.isValidEmail("me@example")).isFalse();
+        assertThat(AuthService.isValidEmail("not an email")).isFalse();
+        assertThat(AuthService.isValidEmail("")).isFalse();
+        assertThat(AuthService.isValidEmail(null)).isFalse();
+    }
+
+    @Test
+    @DisplayName("Accounts can't be created with a malformed email, on any path")
+    void createUserEnforcesEmail() {
+        assertThat(authService.createUser("555", "not-an-email", "plain", "plain", "Password1", false)).isFalse();
+        assertThat(authService.createGoogleUser("nope", "googler", "googler", "sub")).isFalse();
+        assertThat(authService.userExists("plain")).isFalse();
+    }
+
+    @Test
+    @DisplayName("A new password (change or reset) must follow the rules; the old one keeps working")
+    void weakNewPasswordRefused() {
+        authService.createUser("555", "me@mail.com", "plain", "plain", "Password1", false);
+
+        assertThat(authService.changeUserPassword("plain", "Password1", "short", "")).isEqualTo(AuthService.PASSWORD_RULES);
+        assertThat(authService.changeUserPassword("plain", "", "alllowercase1", "123456")).isEqualTo(AuthService.PASSWORD_RULES);
+        assertThat(authService.userLogin("plain", "Password1")).isEqualTo("Needs Verification");
     }
 
     // ── Password changes ───────────────────────────────────────────────────────

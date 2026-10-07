@@ -28,6 +28,7 @@ struct AuthAPI {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
         let (data, response) = try await URLSession.shared.data(for: request)
+        if let limited = rateLimited(data, response) { throw limited }
         guard let httpResponse = response as? HTTPURLResponse,
               (200...299).contains(httpResponse.statusCode) else {
             throw AuthError.serverError
@@ -58,6 +59,7 @@ struct AuthAPI {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
         let (data, response) = try await URLSession.shared.data(for: request)
+        if let limited = rateLimited(data, response) { throw limited }
         guard let httpResponse = response as? HTTPURLResponse,
               (200...299).contains(httpResponse.statusCode) else {
             throw AuthError.serverError
@@ -72,7 +74,7 @@ struct AuthAPI {
         return authResponse
     }
 
-    static func googleSignIn(idToken: String, username: String, email: String) async throws -> AuthResponse {
+    static func googleSignIn(idToken: String, username: String?, email: String) async throws -> AuthResponse {
         guard let url = URL(string: "\(baseURL)/auth/google-signin") else {
             throw AuthError.invalidURL
         }
@@ -87,13 +89,15 @@ struct AuthAPI {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
         let (data, response) = try await URLSession.shared.data(for: request)
+        if let limited = rateLimited(data, response) { throw limited }
 
         guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
             throw AuthError.serverError
         }
 
         let authResponse = try JSONDecoder().decode(AuthResponse.self, from: data)
-        if !authResponse.success {
+        // new Google users are asked to choose a username first
+        if !authResponse.success && authResponse.error != appleUsernameRequired {
             throw AuthError.custom(authResponse.error ?? "Google authentication failed")
         }
 
@@ -119,6 +123,7 @@ struct AuthAPI {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
         let (data, response) = try await URLSession.shared.data(for: request)
+        if let limited = rateLimited(data, response) { throw limited }
 
         guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
             throw AuthError.serverError
@@ -234,6 +239,7 @@ struct AuthAPI {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
         let (data, response) = try await URLSession.shared.data(for: request)
+        if let limited = rateLimited(data, response) { throw limited }
         
         guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
             throw AuthError.serverError
@@ -264,6 +270,7 @@ struct AuthAPI {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
         let (data, response) = try await URLSession.shared.data(for: request)
+        if let limited = rateLimited(data, response) { throw limited }
         
         guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
             throw AuthError.serverError
@@ -292,6 +299,7 @@ struct AuthAPI {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
         let (data, response) = try await URLSession.shared.data(for: request)
+        if let limited = rateLimited(data, response) { throw limited }
         guard let httpResponse = response as? HTTPURLResponse,
               (200...299).contains(httpResponse.statusCode) else {
             throw AuthError.serverError
@@ -321,6 +329,7 @@ struct AuthAPI {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
         let (data, response) = try await URLSession.shared.data(for: request)
+        if let limited = rateLimited(data, response) { throw limited }
         guard let httpResponse = response as? HTTPURLResponse,
               (200...299).contains(httpResponse.statusCode) else {
             throw AuthError.serverError
@@ -340,6 +349,17 @@ struct AuthAPI {
     
     
     
+}
+
+extension AuthAPI {
+    /// The server answers 429 when there have been too many attempts (sign-in, sign-up, texts, codes,
+    /// password changes). Its message says how long to wait, so show it as-is.
+    static func rateLimited(_ data: Data, _ response: URLResponse) -> AuthError? {
+        guard let http = response as? HTTPURLResponse, http.statusCode == 429 else { return nil }
+        struct Body: Decodable { let error: String? }
+        let message = (try? JSONDecoder().decode(Body.self, from: data))?.error
+        return .custom(message ?? "Too many attempts. Please try again later.")
+    }
 }
 
 // types of authentication errors

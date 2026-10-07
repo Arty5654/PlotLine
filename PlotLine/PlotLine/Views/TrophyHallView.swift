@@ -14,83 +14,74 @@ struct TrophyHallView: View {
         GridItem(.flexible())
     ]
     
+    @Environment(\.dismiss) private var dismiss
+
     var body: some View {
         NavigationStack {
             ZStack {
-                Color(.systemGroupedBackground)
-                    .ignoresSafeArea()
-                
-                VStack(spacing: 16) {
-                    Text("Trophy Hall")
-                        .font(.custom("AvenirNext-Bold", size: 28))
-                        .foregroundColor(.gold)
-                        .padding(.top, 8)
-                    
+                ScrollView {
                     if trophies.isEmpty {
-                        VStack {
-                            Spacer()
-                            Text("Keep using PlotLine to earn more!")
-                                .font(.custom("AvenirNext-Bold", size: 24))
-                                .foregroundColor(.blue)
+                        VStack(spacing: 8) {
+                            Image(systemName: "trophy")
+                                .font(.largeTitle)
+                                .foregroundColor(.gold)
+                            Text("No trophies yet")
+                                .font(.headline)
+                            Text("Keep using PlotLine (budget, log meals, reach goals) to earn them.")
+                                .font(.subheadline)
+                                .foregroundColor(PLColor.textSecondary)
                                 .multilineTextAlignment(.center)
-                                .padding()
-                            Spacer()
                         }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, PLSpacing.lg)
+                        .plCard()
+                        .padding(PLSpacing.lg)
                     } else {
-                        ScrollView {
-                            LazyVGrid(columns: columns, spacing: 20) {
-                                ForEach(trophies) { trophy in
-                                    VStack(spacing: 8) {
-                                        Image(trophyImageName(for: trophy))
-                                            .resizable()
-                                            .scaledToFit()
-                                            .frame(width: 80, height: 80)
-                                        Text(trophy.name)
-                                            .font(.caption)
-                                            .fontWeight(.bold)
-                                            .foregroundColor(trophyColor(for: trophy.level))
-                                            .multilineTextAlignment(.center)
-                                    }
-                                    .padding()
-                                    .background(Color(.systemBackground))
-                                    .cornerRadius(12)
-                                    .shadow(color: Color.black.opacity(0.1), radius: 5, x: 0, y: 2)
-                                    .onTapGesture {
-                                        withAnimation {
-                                            selectedTrophy = trophy
-                                        }
-                                    }
+                        LazyVGrid(columns: columns, spacing: PLSpacing.md) {
+                            ForEach(trophies) { trophy in
+                                VStack(spacing: 8) {
+                                    Image(trophyImageName(for: trophy))
+                                        .resizable()
+                                        .scaledToFit()
+                                        .frame(width: 72, height: 72)
+                                    Text(trophy.name)
+                                        .font(.footnote.weight(.semibold))
+                                        .foregroundColor(trophyColor(for: trophy.level))
+                                        .multilineTextAlignment(.center)
+                                        .frame(maxWidth: .infinity)
+                                }
+                                .plCard()
+                                .onTapGesture {
+                                    withAnimation { selectedTrophy = trophy }
                                 }
                             }
-                            .padding(.horizontal)
                         }
+                        .padding(PLSpacing.lg)
                     }
-
                 }
-                
+
                 if let trophy = selectedTrophy {
-                    // lighter dim layer
-                    Color.black.opacity(0.2)
+                    Color.black.opacity(0.3)
                         .ignoresSafeArea()
                         .transition(.opacity)
                         .onTapGesture {
-                            withAnimation(.easeOut(duration: 0.2)) {
-                                selectedTrophy = nil
-                            }
+                            withAnimation(.easeOut(duration: 0.2)) { selectedTrophy = nil }
                         }
-                    
-                    // smaller popup
+
                     TrophyDetailPopup(trophy: trophy) {
-                        withAnimation(.easeOut(duration: 0.2)) {
-                            selectedTrophy = nil
-                        }
+                        withAnimation(.easeOut(duration: 0.2)) { selectedTrophy = nil }
                     }
                     .transition(.scale.combined(with: .opacity))
                     .zIndex(1)
                 }
             }
-            .navigationBarHidden(true)
+            .navigationTitle("Trophy Hall")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
             .task { await loadTrophies() }
         }
     }
@@ -100,7 +91,7 @@ struct TrophyHallView: View {
             let data = try await ProfileAPI.fetchTrophies(username: username)
             trophies = data.filter { $0.level > 0 }
         } catch {
-            print("Failed to load trophies:", error)
+            AppBanner.report("load your trophies", error)
         }
     }
     

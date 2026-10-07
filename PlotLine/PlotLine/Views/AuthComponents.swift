@@ -298,6 +298,11 @@ struct SocialSignInButtons: View {
         }
         .disabled(session.isAuthenticating)
         .opacity(session.isAuthenticating ? 0.6 : 1)
+        // new Apple or Google users pick a username here
+        .sheet(item: $session.accountSetupStep, onDismiss: { session.cancelAccountSetup() }) { step in
+            AccountSetupView(step: step)
+                .environmentObject(session)
+        }
     }
 }
 

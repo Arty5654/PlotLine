@@ -98,6 +98,7 @@ class NutritionAPI {
         request.httpBody = body
 
         let (data, response) = try await URLSession.shared.data(for: request)
+        if let limit = AILimitError.from(data, response) { throw limit }
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
             throw URLError(.badServerResponse)
         }
@@ -152,20 +153,25 @@ class NutritionAPI {
     }
 
     // MARK: - Food search via USDA FoodData Central
-    // Covers whole foods, raw/cooked meats, produce, and branded products.
+    // Covers whole foods, raw/cooked meats, produce, and branded products. The server makes the
+    // USDA request (its key never ships in the app) and passes USDA's answer through.
 
     func searchFoods(_ query: String) async throws -> [FoodItem] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty,
-              let encoded = trimmed.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let url = URL(string: "https://api.nal.usda.gov/fdc/v1/foods/search?query=\(encoded)&api_key=\(BackendConfig.usdaFdcApiKey)&pageSize=25") else {
+        var components = URLComponents(string: "\(BackendConfig.baseURLString)/api/nutrition/food-search")
+        components?.queryItems = [URLQueryItem(name: "q", value: trimmed)]
+        guard !trimmed.isEmpty, let url = components?.url else {
             return []
         }
 
         var request = URLRequest(url: url)
-        request.timeoutInterval = 10
+        BackendConfig.addApiKey(to: &request)
+        request.timeoutInterval = 15
 
-        let (data, _) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
         let result = try JSONDecoder().decode(USDASearchResponse.self, from: data)
 
         let lowerQuery = trimmed.lowercased()

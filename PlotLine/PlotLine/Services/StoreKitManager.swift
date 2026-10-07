@@ -4,6 +4,9 @@
 //
 //  Created by Arteom Avetissian on 12/5/25.
 //
+//  Buying PlotLine Plus through the App Store. Every purchase, restore and renewal is sent to
+//  the server, which checks Apple's signature and unlocks the account (see MembershipManager).
+//
 
 import StoreKit
 import Combine
@@ -12,122 +15,89 @@ import Combine
 final class StoreKitManager: ObservableObject {
     static let shared = StoreKitManager()
 
-    private let monthlyProductID  = "plus_monthly"
-    private let lifetimeProductID = "plus_lifetime" // optional
+    static let monthlyProductID = "plus_monthly"
 
-    @Published var monthlyProduct: Product?
-    @Published var isEntitled = false
-    @Published var plan: String? = nil            // "trial", "monthly", "lifetime"
-    @Published var trialEndsAt: Date? = nil
+    @Published private(set) var monthlyProduct: Product?
+    /// Apple allows one free trial per Apple ID
+    @Published private(set) var isEligibleForTrial = false
 
     private var updatesTask: Task<Void, Never>?
 
-    init() {
-
-        updatesTask = Task<Void, Never> { await self.observeTransactions() }
+    private init() {
+        updatesTask = Task { await self.observeTransactions() }
     }
 
     deinit { updatesTask?.cancel() }
 
-    func loadProducts() async throws {
-        let productIDs: Set<String> = [monthlyProductID, lifetimeProductID]
-        let products = try await Product.products(for: productIDs)
-        self.monthlyProduct = products.first(where: { $0.id == monthlyProductID })
-        try? await refreshEntitlements()
-    }
-
-    func refreshEntitlements() async throws {
-        var foundEntitlement = false
-        var currentPlan: String? = nil
-        var trialEnd: Date? = nil
-
-        for await result in Transaction.currentEntitlements {
-            if case .verified(let t) = result {
-                if t.productType == .autoRenewable && t.productID == monthlyProductID {
-                    foundEntitlement = true
-                    currentPlan = try? await classifyMonthlyPlan()
-
-                    // Best-effort trial end from current transaction
-                    if monthlyProduct?.subscription?.introductoryOffer != nil {
-                        if let exp = t.expirationDate {
-                            trialEnd = exp
-                        }
-                    }
-                } else if t.productType == .nonConsumable && t.productID == lifetimeProductID {
-                    foundEntitlement = true
-                    currentPlan = "lifetime"
-                    trialEnd = nil
-                }
+    func loadProducts() async {
+        if monthlyProduct == nil {
+            do {
+                monthlyProduct = try await Product.products(for: [Self.monthlyProductID]).first
+            } catch {
+                print("Couldn't load App Store products: \(error)")
             }
         }
-
-        // Server-granted lifetime comps
-        if let server = try? await PaymentAPI.fetchStatus(username: currentUsername()),
-           server.plan == "lifetime" {
-            foundEntitlement = true
-            currentPlan = "lifetime"
-            trialEnd = nil
+        if let subscription = monthlyProduct?.subscription, subscription.introductoryOffer != nil {
+            isEligibleForTrial = await subscription.isEligibleForIntroOffer
+        } else {
+            isEligibleForTrial = false
         }
-
-        self.isEntitled = foundEntitlement
-        self.plan = currentPlan
-        self.trialEndsAt = trialEnd
     }
 
-    private func classifyMonthlyPlan() async throws -> String {
-        guard let m = monthlyProduct else { return "monthly" }
-        if m.subscription?.introductoryOffer?.paymentMode == .freeTrial {
-            return "trial"
+    /// Buy the membership. Returns the server's status, or nil if the person cancelled or the
+    /// purchase is waiting for approval (Ask to Buy).
+    func purchase() async throws -> MembershipStatus? {
+        guard let product = monthlyProduct else {
+            throw PaymentAPIError.custom("The App Store isn't available right now. Please try again.")
         }
-        return "monthly"
-    }
-
-    func purchaseMonthly() async throws {
-        guard let product = monthlyProduct else { throw PurchaseError.missingProduct }
-        let result = try await product.purchase()
-        switch result {
+        switch try await product.purchase() {
         case .success(let verification):
-            let transaction: Transaction = try checkVerified(verification)
-            await transaction.finish()
-
-            try? await refreshEntitlements()
-
-            try? await PaymentAPI.syncAppleEntitlement(
-                username: currentUsername(),
-                originalTransactionID: transaction.originalID,
-                appAccountToken: transaction.appAccountToken
-            )
-
-        case .pending: break
-        case .userCancelled: throw PurchaseError.userCancelled
-        @unknown default: throw PurchaseError.unknown
+            return try await deliver(verification)
+        case .pending, .userCancelled:
+            return nil
+        @unknown default:
+            return nil
         }
     }
 
-    func restore() async {
-        try? await AppStore.sync()
-        try? await refreshEntitlements()
+    /// Restore Purchases: refresh this Apple ID's purchases from the App Store and send them to the server.
+    func restore() async throws -> MembershipStatus? {
+        try await AppStore.sync()
+        return try await syncCurrentEntitlements()
     }
 
+    /// Sends the subscription active on this Apple ID (if any) to the server.
+    @discardableResult
+    func syncCurrentEntitlements() async throws -> MembershipStatus? {
+        var latest: MembershipStatus?
+        for await result in Transaction.currentEntitlements where result.unsafePayloadValue.productID == Self.monthlyProductID {
+            latest = try await deliver(result)
+        }
+        return latest
+    }
+
+    // renewals, Ask to Buy approvals and purchases made on other devices
     private func observeTransactions() async {
         for await update in Transaction.updates {
-            if case .verified(let t) = update {
-                await t.finish()
-                try? await refreshEntitlements()
-            }
+            guard KeychainManager.loadToken() != nil else { continue } // sent after the next sign-in instead
+            _ = try? await deliver(update)
         }
     }
 
-    private func checkVerified<T>(_ result: VerificationResult<T>) throws -> T {
-        switch result {
-        case .unverified: throw PurchaseError.unverified
-        case .verified(let safe): return safe
+    /// Hands a purchase to the server. It's only marked finished once the server has it (or has
+    /// refused it), so a purchase made offline is retried on the next launch.
+    private func deliver(_ result: VerificationResult<Transaction>) async throws -> MembershipStatus {
+        guard case .verified(let transaction) = result else {
+            throw PaymentAPIError.custom("This purchase couldn't be verified with the App Store.")
+        }
+        do {
+            let status = try await PaymentAPI.syncApplePurchase(signedTransaction: result.jwsRepresentation)
+            await transaction.finish()
+            MembershipManager.shared.update(status)
+            return status
+        } catch PaymentAPIError.custom(let message) {
+            await transaction.finish()
+            throw PaymentAPIError.custom(message)
         }
     }
-
-    private func currentUsername() -> String {
-        UserDefaults.standard.string(forKey: "loggedInUsername") ?? "UnknownUser"
-    }
-
-    enum PurchaseError: Error { case missingProduct, unverified, userCancelled, unknown }
 }

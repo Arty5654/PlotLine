@@ -1,5 +1,8 @@
 package com.plotline.backend.service;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.math.BigInteger;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -40,6 +43,8 @@ import io.github.cdimascio.dotenv.Dotenv;
  */
 @Component
 public class AppleIdTokenVerifier {
+    private static final Logger log = LoggerFactory.getLogger(AppleIdTokenVerifier.class);
+
 
     public record AppleIdentity(String subject, String email) { }
 
@@ -134,7 +139,7 @@ public class AppleIdTokenVerifier {
             try {
                 cachedKeys = fetchAppleKeys();
             } catch (Exception e) {
-                System.out.println("Failed to fetch Apple public keys: " + e.getMessage());
+                log.warn("Failed to fetch Apple public keys: {}", e.getMessage());
             }
             key = cachedKeys.get(keyId);
         }

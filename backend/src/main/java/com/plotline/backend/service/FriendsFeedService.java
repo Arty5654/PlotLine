@@ -1,270 +1,184 @@
 package com.plotline.backend.service;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.plotline.backend.dto.FriendList;
 import com.plotline.backend.dto.FriendPost;
+import com.plotline.backend.dto.LongTermGoal;
 import static com.plotline.backend.util.UsernameUtils.normalize;
 
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DuplicateKeyException;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Service;
-import io.github.cdimascio.dotenv.Dotenv;
-import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
-import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.core.ResponseBytes;
-import software.amazon.awssdk.core.sync.RequestBody;
-import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
-import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
+import java.sql.Array;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
 
+/**
+ * The friends feed: goals people share, with likes and comments. Posts live in Postgres
+ * (feed_posts), one row each, so likes and comments are single updates that can't erase each
+ * other, and a feed only reads its friends' posts. Friend lists are still in S3.
+ */
 @Service
 public class FriendsFeedService {
-  private final S3Client s3Client;
-  private final String bucketName = "plotline-database-bucket";
+    private static final Logger log = LoggerFactory.getLogger(FriendsFeedService.class);
 
-  public FriendsFeedService(S3Client s3Client) {
+  private final S3Client s3Client;
+  private final JdbcTemplate jdbc;
+  private final String bucketName = "plotline-database-bucket";
+  private final ObjectMapper objectMapper = new ObjectMapper();
+
+  public FriendsFeedService(S3Client s3Client, JdbcTemplate jdbc) {
     this.s3Client = s3Client; // shared client from AWSConfig
+    this.jdbc = jdbc;
   }
 
   public boolean addPostToFeed(FriendPost post) {
     try {
-      String key = "friends-feed/posts.json";
-
-      List<FriendPost> posts;
-
-      try {
-        GetObjectRequest getObjectRequest = GetObjectRequest.builder()
-            .bucket(bucketName)
-            .key(key)
-            .build();
-
-        ResponseBytes<?> objectBytes = s3Client.getObjectAsBytes(getObjectRequest);
-        String jsonData = new String(objectBytes.asByteArray(), StandardCharsets.UTF_8);
-
-        ObjectMapper objectMapper = new ObjectMapper();
-
-        posts = objectMapper.readValue(jsonData, new TypeReference<>() {
-        });
-      } catch (NoSuchKeyException e) {
-        posts = new ArrayList<>();
-      }
-
-      posts.add(post);
-
-      ObjectMapper objectMapper = new ObjectMapper();
-
-      String updatedJson = objectMapper.writeValueAsString(posts);
-
-      PutObjectRequest putObjectRequest = PutObjectRequest.builder()
-          .bucket(bucketName)
-          .key(key)
-          .build();
-
-      s3Client.putObject(putObjectRequest, RequestBody.fromString(updatedJson));
-
+      insert(post);
       return true;
+    } catch (DuplicateKeyException e) {
+      return false;
     } catch (Exception e) {
-      e.printStackTrace();
+      log.error("addPostToFeed failed", e);
       return false;
     }
   }
 
+  /** also used to copy the old feed file into the database (S3DataImport) */
+  public void insert(FriendPost post) throws Exception {
+    UUID id = post.getId() != null ? post.getId() : UUID.randomUUID();
+    String goal = post.getGoal() != null ? objectMapper.writeValueAsString(post.getGoal()) : null;
+    String comments = objectMapper.writeValueAsString(post.getComments() != null ? post.getComments() : List.of());
+    String[] likedBy = post.getLikedBy() != null ? post.getLikedBy().toArray(new String[0]) : new String[0];
+    jdbc.update(con -> {
+      var statement = con.prepareStatement("""
+          insert into feed_posts (id, username, author, goal, comment, liked_by, comments)
+          values (?, ?, ?, ?::jsonb, ?, ?, ?::jsonb)
+          """);
+      statement.setObject(1, id);
+      statement.setString(2, post.getUsername());
+      statement.setString(3, normalize(post.getUsername()));
+      statement.setString(4, goal);
+      statement.setString(5, post.getComment());
+      statement.setArray(6, con.createArrayOf("text", likedBy));
+      statement.setString(7, comments);
+      return statement;
+    });
+  }
+
+  /** posts by the user and their friends, oldest first */
   public List<FriendPost> getFriendsFeed(String username) {
     try {
-      String postsKey = "friends-feed/posts.json";
-      String friendsKey = "users/" + normalize(username) + "/friends.json";
+      List<String> authors = new ArrayList<>();
+      for (String friend : friendsOf(username)) authors.add(normalize(friend));
+      authors.add(normalize(username)); // always see your own posts
 
-      ObjectMapper objectMapper = new ObjectMapper();
-
-      // 1. Load all posts
-      GetObjectRequest postsRequest = GetObjectRequest.builder()
-          .bucket(bucketName)
-          .key(postsKey)
-          .build();
-
-      ResponseBytes<?> postsBytes = s3Client.getObjectAsBytes(postsRequest);
-      List<FriendPost> allPosts = objectMapper.readValue(
-          postsBytes.asByteArray(), new TypeReference<List<FriendPost>>() {
-          });
-
-      // 2. Load user's friends
-      List<String> friendsList;
-      try {
-        GetObjectRequest friendsRequest = GetObjectRequest.builder()
-            .bucket(bucketName)
-            .key(friendsKey)
-            .build();
-
-        ResponseBytes<?> friendsBytes = s3Client.getObjectAsBytes(friendsRequest);
-
-        FriendList friendData = objectMapper.readValue(friendsBytes.asByteArray(), FriendList.class);
-        friendsList = friendData.getFriends();
-      } catch (NoSuchKeyException e) {
-        // If user has no friends list file yet, assume empty
-        friendsList = new ArrayList<>();
-      }
-
-      // Temporary hardcoded friends list
-      // List<String> friendsList = new ArrayList<>();
-      // friendsList.add(username); // Always see your own posts
-
-      // 3. Always include the user themself
-      friendsList.add(normalize(username));
-
-      // 4. Filter posts — normalize both sides so casing never breaks the match
-      List<FriendPost> filteredPosts = new ArrayList<>();
-      for (FriendPost post : allPosts) {
-        if (friendsList.contains(normalize(post.getUsername()))) {
-          filteredPosts.add(post);
-        }
-      }
-
-      return filteredPosts;
-
+      return jdbc.query(con -> {
+        var statement = con.prepareStatement(
+            "select id, username, goal, comment, liked_by, comments from feed_posts where author = any(?) order by seq");
+        statement.setArray(1, con.createArrayOf("text", authors.toArray()));
+        return statement;
+      }, postMapper);
     } catch (Exception e) {
-      e.printStackTrace();
+      log.error("getFriendsFeed failed", e);
       return new ArrayList<>();
     }
   }
 
+  private List<String> friendsOf(String username) throws Exception {
+    try {
+      GetObjectRequest friendsRequest = GetObjectRequest.builder()
+          .bucket(bucketName)
+          .key("users/" + normalize(username) + "/friends.json")
+          .build();
+      ResponseBytes<?> friendsBytes = s3Client.getObjectAsBytes(friendsRequest);
+      List<String> friends = objectMapper.readValue(friendsBytes.asByteArray(), FriendList.class).getFriends();
+      return friends != null ? friends : List.of();
+    } catch (NoSuchKeyException e) {
+      return List.of(); // no friends list file yet
+    }
+  }
+
+  private final RowMapper<FriendPost> postMapper = (row, i) -> {
+    try {
+      FriendPost post = new FriendPost();
+      post.setId(row.getObject("id", UUID.class));
+      post.setUsername(row.getString("username"));
+      String goal = row.getString("goal");
+      post.setGoal(goal != null ? objectMapper.readValue(goal, LongTermGoal.class) : null);
+      post.setComment(row.getString("comment"));
+      Array likedBy = row.getArray("liked_by");
+      post.setLikedBy(new LinkedHashSet<>(Arrays.asList((String[]) likedBy.getArray())));
+      post.setComments(objectMapper.readValue(row.getString("comments"), new TypeReference<List<String>>() { }));
+      return post;
+    } catch (Exception e) {
+      throw new IllegalStateException("Couldn't read feed post", e);
+    }
+  };
+
+  /** only your own posts can be deleted */
   public boolean deletePostById(String username, UUID postId) {
     try {
-      String key = "friends-feed/posts.json";
-
-      GetObjectRequest getRequest = GetObjectRequest.builder()
-          .bucket(bucketName)
-          .key(key)
-          .build();
-
-      ResponseBytes<?> bytes = s3Client.getObjectAsBytes(getRequest);
-      ObjectMapper mapper = new ObjectMapper();
-      List<FriendPost> allPosts = mapper.readValue(bytes.asByteArray(), new TypeReference<>() {
-      });
-
-      // Only allow deleting your own posts
-      List<FriendPost> updatedPosts = allPosts.stream()
-          .filter(post -> !(post.getId().equals(postId) && post.getUsername().equals(username)))
-          .toList();
-
-      // Save updated list
-      String updatedJson = mapper.writeValueAsString(updatedPosts);
-      PutObjectRequest putRequest = PutObjectRequest.builder()
-          .bucket(bucketName)
-          .key(key)
-          .build();
-
-      s3Client.putObject(putRequest, RequestBody.fromString(updatedJson));
+      jdbc.update("delete from feed_posts where id = ? and author = ?", postId, normalize(username));
       return true;
     } catch (Exception e) {
-      e.printStackTrace();
+      log.error("deletePostById failed", e);
       return false;
     }
   }
 
   public boolean toggleLike(String username, UUID postId) {
     try {
-      List<FriendPost> posts = loadPosts();
-      for (FriendPost post : posts) {
-        if (post.getId().equals(postId)) {
-          if (post.getLikedBy() == null) post.setLikedBy(new java.util.HashSet<>());
-          Set<String> likedBy = post.getLikedBy();
-          if (likedBy.contains(username)) {
-            likedBy.remove(username);
-          } else {
-            likedBy.add(username);
-          }
-          break;
-        }
-      }
-      savePosts(posts);
+      jdbc.update("""
+          update feed_posts set liked_by = case
+              when ? = any(liked_by) then array_remove(liked_by, ?)
+              else array_append(liked_by, ?) end
+          where id = ?
+          """, username, username, username, postId);
       return true;
     } catch (Exception e) {
-      e.printStackTrace();
+      log.error("toggleLike failed", e);
       return false;
     }
   }
 
   public boolean addComment(String username, UUID postId, String comment) {
     try {
-      List<FriendPost> posts = loadPosts();
-      for (FriendPost post : posts) {
-        if (post.getId().equals(postId)) {
-          if (post.getComments() == null) post.setComments(new java.util.ArrayList<>());
-          post.getComments().add(username + ": " + comment);
-          break;
-        }
-      }
-      savePosts(posts);
+      jdbc.update("update feed_posts set comments = comments || jsonb_build_array(?::text) where id = ?",
+          username + ": " + comment, postId);
       return true;
     } catch (Exception e) {
-      e.printStackTrace();
+      log.error("addComment failed", e);
       return false;
     }
   }
 
-  // account deletion: drop the user's posts, likes and comments from the shared feed
-  public void removeUser(String username) throws IOException {
-    List<FriendPost> posts;
-    try {
-      posts = new ArrayList<>(loadPosts());
-    } catch (NoSuchKeyException e) {
-      return; // no feed yet
-    }
-    String commentPrefix = username.toLowerCase() + ": ";
-    posts.removeIf(post -> post.getUsername() != null && post.getUsername().equalsIgnoreCase(username));
-    for (FriendPost post : posts) {
-      if (post.getLikedBy() != null) {
-        post.getLikedBy().removeIf(liker -> liker.equalsIgnoreCase(username));
-      }
-      if (post.getComments() != null) {
-        post.getComments().removeIf(comment -> comment.toLowerCase().startsWith(commentPrefix));
-      }
-    }
-    savePosts(posts);
+  // account deletion: drop the user's posts, likes and comments from the feed
+  public void removeUser(String username) {
+    String user = normalize(username);
+    jdbc.update("delete from feed_posts where author = ?", user);
+    jdbc.update("""
+        update feed_posts set liked_by = array(select liker from unnest(liked_by) liker where lower(liker) <> ?)
+        where exists (select 1 from unnest(liked_by) liker where lower(liker) = ?)
+        """, user, user);
+    jdbc.update("""
+        update feed_posts set comments = coalesce(
+            (select jsonb_agg(c) from jsonb_array_elements(comments) c where not starts_with(lower(c #>> '{}'), ?)),
+            '[]'::jsonb)
+        where exists (select 1 from jsonb_array_elements(comments) c where starts_with(lower(c #>> '{}'), ?))
+        """, user + ": ", user + ": ");
   }
-
-  private List<FriendPost> loadPosts() throws IOException {
-    String key = "friends-feed/posts.json";
-
-    GetObjectRequest getRequest = GetObjectRequest.builder()
-        .bucket(bucketName)
-        .key(key)
-        .build();
-
-    ResponseBytes<?> objectBytes = s3Client.getObjectAsBytes(getRequest);
-    ObjectMapper mapper = new ObjectMapper();
-    mapper.registerModule(new JavaTimeModule());
-
-    return mapper.readValue(objectBytes.asByteArray(), new TypeReference<>() {
-    });
-  }
-
-  private void savePosts(List<FriendPost> posts) throws IOException {
-    String key = "friends-feed/posts.json";
-
-    ObjectMapper mapper = new ObjectMapper();
-    mapper.registerModule(new JavaTimeModule());
-    mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
-
-    String updatedJson = mapper.writeValueAsString(posts);
-
-    PutObjectRequest putRequest = PutObjectRequest.builder()
-        .bucket(bucketName)
-        .key(key)
-        .build();
-
-    s3Client.putObject(putRequest, RequestBody.fromString(updatedJson));
-  }
-
 }

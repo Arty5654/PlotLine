@@ -1,5 +1,8 @@
 package com.plotline.backend.service;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.plotline.backend.dto.GroceryItem;
@@ -31,6 +34,8 @@ import java.util.UUID;
 
 @Service
 public class GroceryListService {
+    private static final Logger log = LoggerFactory.getLogger(GroceryListService.class);
+
 
     private final S3Client s3Client;
     private final String BUCKET_NAME = "plotline-database-bucket";
@@ -216,7 +221,7 @@ public class GroceryListService {
                 writeListAtPath(s3Path, list);
                 return true;
             } catch (Exception e) {
-                e.printStackTrace();
+                log.error("mutateCanonical failed", e);
                 return false;
             }
         }
@@ -241,7 +246,7 @@ public class GroceryListService {
             return objectMapper.readValue(response, GroceryList.class);
 
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("getGroceryList failed", e);
             return null;  // Return null if the list doesn't exist or an error occurs
         }
     }
@@ -411,7 +416,7 @@ public class GroceryListService {
         // Return the items from the grocery list
         return groceryList.getItems();
     } catch (Exception e) {
-        e.printStackTrace();
+        log.error("getItems failed", e);
         return new ArrayList<>(); // Return empty list on error
     }
 }
@@ -498,7 +503,7 @@ public class GroceryListService {
 
             return false;
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("deleteGroceryList failed", e);
             return false;
         }
     }
@@ -573,7 +578,7 @@ public class GroceryListService {
 
             return destinationKey;  // Return the new S3 path of the archived list
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("archiveGroceryList failed", e);
             throw new IOException("Failed to archive the grocery list", e);
         }
     }
@@ -671,7 +676,7 @@ public class GroceryListService {
 
             return destinationKey;  // Return the new S3 path of the restored list
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("restoreArchivedGroceryList failed", e);
             throw new IOException("Failed to restore the grocery list", e);
         }
     }

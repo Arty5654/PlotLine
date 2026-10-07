@@ -24,6 +24,28 @@ class PublicEndpointsTest {
         assertThat(isPublic("GET", "/invite")).isTrue();
         assertThat(isPublic("GET", "/.well-known/apple-app-site-association")).isTrue();
         assertThat(isPublic("POST", "/auth/signin/")).isTrue();
+        assertThat(isPublic("POST", "/api/payments/apple/notifications")).isTrue(); // Apple's servers, signature-checked
+    }
+
+    private static boolean withoutMembership(String method, String path) {
+        return PublicEndpoints.isAllowedWithoutMembership(new MockHttpServletRequest(method, path));
+    }
+
+    @Test
+    @DisplayName("Without a membership, only the paywall's endpoints and account setup/deletion work")
+    void withoutMembershipList() {
+        assertThat(withoutMembership("GET", "/api/payments/status/alice")).isTrue();
+        assertThat(withoutMembership("POST", "/api/payments/apple/sync")).isTrue();
+        assertThat(withoutMembership("POST", "/auth/refresh")).isTrue();
+        assertThat(withoutMembership("POST", "/auth/accept-terms")).isTrue();
+        assertThat(withoutMembership("POST", "/auth/delete-account")).isTrue();
+        assertThat(withoutMembership("POST", "/sms/verify-code")).isTrue();
+
+        assertThat(withoutMembership("GET", "/api/payments/status/alice/extra")).isFalse();
+        assertThat(withoutMembership("POST", "/api/payments/status/alice")).isFalse();
+        assertThat(withoutMembership("GET", "/api/payments/apple/sync")).isFalse();
+        assertThat(withoutMembership("GET", "/friends/get-friends")).isFalse();
+        assertThat(withoutMembership("POST", "/api/llm/budget")).isFalse();
     }
 
     @Test

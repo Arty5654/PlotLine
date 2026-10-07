@@ -1,5 +1,8 @@
 package com.plotline.backend.controller;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -18,6 +21,8 @@ import static com.plotline.backend.util.UsernameUtils.normalize;
 @RestController
 @RequestMapping("/friends")
 public class FriendsController {
+    private static final Logger log = LoggerFactory.getLogger(FriendsController.class);
+
 
     @Autowired
     private final FriendsService friendsService;
@@ -53,7 +58,7 @@ public class FriendsController {
             String response = friendsService.createOrUpdateFriendRequest(friendRequest);
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("createOrUpdateFriendRequest failed", e);
             return ResponseEntity.status(500).body("Error processing friend request");
         }
     }
@@ -64,7 +69,7 @@ public class FriendsController {
             FriendList friendList = friendsService.getFriendList(username);
             return ResponseEntity.ok(friendList);
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("getFriendList failed", e);
             return ResponseEntity.status(500).body(null);
         }
     }
@@ -82,7 +87,7 @@ public class FriendsController {
             }
             return ResponseEntity.ok(requestList);
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("getFriendRequests failed", e);
             return ResponseEntity.status(500).body(null);
         }
     }
@@ -98,7 +103,7 @@ public class FriendsController {
             friendsService.removeFriend(friendRequest.getSenderUsername(), friendRequest.getReceiverUsername());
             return ResponseEntity.ok("Removed friend");
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("removeFriend failed", e);
             return ResponseEntity.status(500).body("Error removing friend");
         }
     }

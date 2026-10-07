@@ -1,5 +1,8 @@
 package com.plotline.backend.controller;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.plotline.backend.service.NutritionService;
 import com.plotline.backend.service.OpenAIService;
@@ -16,6 +19,8 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/nutrition")
 public class NutritionController {
+    private static final Logger log = LoggerFactory.getLogger(NutritionController.class);
+
 
     @Autowired
     private NutritionService nutritionService;
@@ -40,7 +45,7 @@ public class NutritionController {
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(jsonError(e.getMessage()));
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("getEntry failed", e);
             return ResponseEntity.internalServerError().body(jsonError("Server error reading entry"));
         }
     }
@@ -57,7 +62,7 @@ public class NutritionController {
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(jsonError(e.getMessage()));
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("saveEntry failed", e);
             return ResponseEntity.internalServerError().body(jsonError("Server error saving entry"));
         }
     }
@@ -72,7 +77,7 @@ public class NutritionController {
             }
             return ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON).body(data);
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("getUserData failed", e);
             return ResponseEntity.internalServerError().body(jsonError("Server error reading user data"));
         }
     }
@@ -86,7 +91,7 @@ public class NutritionController {
             nutritionService.saveUserData(username, body);
             return ResponseEntity.ok("{\"success\": true}");
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("saveUserData failed", e);
             return ResponseEntity.internalServerError().body(jsonError("Server error saving user data"));
         }
     }
@@ -108,13 +113,13 @@ public class NutritionController {
                 try {
                     userProfileService.incrementTrophy(username, "nutrition-photo", 1);
                 } catch (Exception te) {
-                    te.printStackTrace();
+                    log.error("analyzeFoodPhoto failed", te);
                 }
             }
 
             return ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON).body(result);
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("analyzeFoodPhoto failed", e);
             return ResponseEntity.internalServerError().body("[]");
         }
     }

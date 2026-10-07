@@ -1,4 +1,7 @@
 package com.plotline.backend.controller;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.JsonNode;
 
@@ -18,6 +21,8 @@ import org.springframework.http.ResponseEntity;
 @RestController
 @RequestMapping("/sms")
 public class SmsController {
+    private static final Logger log = LoggerFactory.getLogger(SmsController.class);
+
 
   @Autowired
   private final SmsService smsService;
@@ -37,7 +42,7 @@ public class SmsController {
         
 
         if (!jsonNode.has("toNumber") || jsonNode.get("toNumber").asText().isEmpty()) {
-            System.out.println("Error: Phone number is missing");
+            log.warn("Error: Phone number is missing");
             return ResponseEntity.badRequest().body(new SmsResponse(" Error: Phone number is missing", false));
         }
 
@@ -47,7 +52,7 @@ public class SmsController {
         return ResponseEntity.ok(new SmsResponse("Verification code sent", true));
 
     } catch (Exception e) {
-        System.out.println("Error parsing JSON or sending message");
+        log.warn("Error parsing JSON or sending message");
         return ResponseEntity.badRequest().body(new SmsResponse("Error parsing JSON", false));
     }
 

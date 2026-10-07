@@ -11,79 +11,8 @@ import CoreLocation
 import UIKit
 #endif
 
-// ---------- Design tokens to match other screens ----------
-private enum PLColor {
-    static let surface        = Color(.secondarySystemBackground)
-    static let cardBorder     = Color.black.opacity(0.06)
-    static let textPrimary    = Color.primary
-    static let textSecondary  = Color.secondary
-    static let accent         = Color.blue
-    static let danger         = Color.red
-    static let warning        = Color.orange
-}
-
 extension Notification.Name {
     static let budgetQuizCompleted = Notification.Name("budgetQuizCompleted")
-}
-private enum PLSpacing {
-    static let xs: CGFloat = 6
-    static let sm: CGFloat = 10
-    static let md: CGFloat = 16
-    static let lg: CGFloat = 20
-}
-private enum PLRadius {
-    static let md: CGFloat = 12
-}
-private struct CardModifier: ViewModifier {
-    func body(content: Content) -> some View {
-        content
-            .padding(PLSpacing.md)
-            .background(PLColor.surface)
-            .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
-            .overlay(
-                RoundedRectangle(cornerRadius: PLRadius.md)
-                    .stroke(PLColor.cardBorder)
-            )
-    }
-}
-private extension View { func plCard() -> some View { modifier(CardModifier()) } }
-
-private struct PrimaryButton: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.headline)
-            .foregroundColor(.white)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .background(PLColor.accent.opacity(configuration.isPressed ? 0.85 : 1))
-            .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
-    }
-}
-private struct DestructiveButton: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.headline)
-            .foregroundColor(.white)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .background(PLColor.danger.opacity(configuration.isPressed ? 0.85 : 1))
-            .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
-    }
-}
-private struct OutlineButton: ButtonStyle {
-    let tint: Color
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.headline)
-            .foregroundColor(tint)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .overlay(
-                RoundedRectangle(cornerRadius: PLRadius.md)
-                    .stroke(tint.opacity(configuration.isPressed ? 0.6 : 1))
-            )
-            .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
-    }
 }
 
 private let quizCommonCategories = [
@@ -181,6 +110,7 @@ struct BudgetQuizView: View {
     // Loading / errors
     @State private var isLoading = false
     @State private var showError = false
+    @State private var errorMessage: String?
     @State private var showLoadingSheet = false
     
     // 401K dups, dont need to show it since the budet already accounts for it
@@ -231,13 +161,13 @@ struct BudgetQuizView: View {
                     TextField("Yearly Income ($)", text: $yearlyIncome)
                         .keyboardType(.decimalPad)
                         .textFieldStyle(.roundedBorder)
-                        .onChange(of: yearlyIncome) { v in yearlyIncome = v.filter { "0123456789.".contains($0) } }
+                        .onChange(of: yearlyIncome) { _, v in yearlyIncome = v.filter { "0123456789.".contains($0) } }
                     
                     HStack(spacing: PLSpacing.sm) {
                         TextField("401(k) Contribution (%)", text: $retirement)
                             .keyboardType(.decimalPad)
                             .textFieldStyle(.roundedBorder)
-                            .onChange(of: retirement) { v in retirement = v.filter { "0123456789.".contains($0) } }
+                            .onChange(of: retirement) { _, v in retirement = v.filter { "0123456789.".contains($0) } }
                         Button {
                             retirementTip = true
                         } label: {
@@ -260,7 +190,7 @@ struct BudgetQuizView: View {
                     TextField("Number of Dependents", text: $numberOfDependents)
                         .keyboardType(.numberPad)
                         .textFieldStyle(.roundedBorder)
-                        .onChange(of: numberOfDependents) { v in numberOfDependents = v.filter { "0123456789".contains($0) } }
+                        .onChange(of: numberOfDependents) { _, v in numberOfDependents = v.filter { "0123456789".contains($0) } }
                 }
                 .plCard()
                 
@@ -269,7 +199,7 @@ struct BudgetQuizView: View {
                     Text("Debt")
                         .font(.headline)
                     Toggle("I have debt to payoff", isOn: $hasDebt)
-                        .onChange(of: hasDebt) { on in if !on { debts.removeAll() } }
+                        .onChange(of: hasDebt) { _, on in if !on { debts.removeAll() } }
                     
                     if hasDebt {
                         LazyVStack(spacing: PLSpacing.sm) {
@@ -323,7 +253,7 @@ struct BudgetQuizView: View {
                         }
                         Image(systemName: "chevron.right")
                             .font(.footnote.weight(.semibold))
-                            .foregroundColor(PLColor.accent)
+                            .foregroundColor(PLColor.tint)
                     }
                     .pickerStyle(.navigationLink)
 
@@ -348,7 +278,7 @@ struct BudgetQuizView: View {
                     Text("Location")
                         .font(.headline)
                     Toggle("Use My Location", isOn: $useDeviceLocation)
-                        .onChange(of: useDeviceLocation) { enabled in
+                        .onChange(of: useDeviceLocation) { _, enabled in
                             if enabled { getLocation() }
                         }
                     
@@ -390,7 +320,7 @@ struct BudgetQuizView: View {
                         }
                         Image(systemName: "chevron.right")
                             .font(.footnote.weight(.semibold))
-                            .foregroundColor(PLColor.accent)
+                            .foregroundColor(PLColor.tint)
                     }
                     .pickerStyle(.navigationLink)
                         
@@ -409,7 +339,7 @@ struct BudgetQuizView: View {
                         }
                         Image(systemName: "chevron.right")
                             .font(.footnote.weight(.semibold))
-                            .foregroundColor(PLColor.accent)
+                            .foregroundColor(PLColor.tint)
                     }
                     .pickerStyle(.navigationLink)
 
@@ -427,7 +357,7 @@ struct BudgetQuizView: View {
                         }
                         Image(systemName: "chevron.right")
                             .font(.footnote.weight(.semibold))
-                            .foregroundColor(PLColor.accent)
+                            .foregroundColor(PLColor.tint)
                     }
                     .pickerStyle(.navigationLink)
                     
@@ -541,8 +471,10 @@ struct BudgetQuizView: View {
 //            }
         }
         .tint(PLColor.accent)
-        .alert("Something went wrong", isPresented: $showError) {
-            Button("OK", role: .cancel) { }
+        .alert(errorMessage == nil ? "Something went wrong" : "Daily AI limit reached", isPresented: $showError) {
+            Button("OK", role: .cancel) { errorMessage = nil }
+        } message: {
+            if let errorMessage { Text(errorMessage) }
         }
         // Loading bottom-sheet (same behavior, just declared at root)
         .sheet(isPresented: $showLoadingSheet) {
@@ -624,7 +556,8 @@ struct BudgetQuizView: View {
         request.httpBody = jsonData
 
         do {
-            let (data, _) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await URLSession.shared.data(for: request)
+            if let limit = AILimitError.from(data, response) { throw limit }
             if let decoded = try? JSONDecoder().decode([String: Double].self, from: data) {
                 await saveBudgetToBackend(decoded)
             } else {
@@ -633,6 +566,7 @@ struct BudgetQuizView: View {
         } catch {
             print("Error generating budget: \(error)")
             DispatchQueue.main.async {
+                errorMessage = (error as? AILimitError)?.message
                 showError = true
                 isLoading = false
                 showLoadingSheet = false
@@ -789,7 +723,7 @@ struct BudgetQuizView: View {
         do {
             try await postCosts(username: username, type: "monthly", costs: zeros)
             print("Costs reset to zeros for selected categories.")
-        } catch { print("Failed to reset costs: \(error)") }
+        } catch { AppBanner.report("set up your spending categories", error) }
     }
     
     func getLocation() {
@@ -811,16 +745,16 @@ private struct DebtRow: View {
                 TextField("Remaining Balance ($)", text: $debt.principal)
                     .keyboardType(.decimalPad)
                     .textFieldStyle(.roundedBorder)
-                    .onChange(of: debt.principal) { v in debt.principal = v.filter { "0123456789.".contains($0) } }
+                    .onChange(of: debt.principal) { _, v in debt.principal = v.filter { "0123456789.".contains($0) } }
                 TextField("APR (%)", text: $debt.apr)
                     .keyboardType(.decimalPad)
                     .textFieldStyle(.roundedBorder)
-                    .onChange(of: debt.apr) { v in debt.apr = v.filter { "0123456789.".contains($0) } }
+                    .onChange(of: debt.apr) { _, v in debt.apr = v.filter { "0123456789.".contains($0) } }
             }
             TextField("Minimum Monthly Payment ($)", text: $debt.minPayment)
                 .keyboardType(.decimalPad)
                 .textFieldStyle(.roundedBorder)
-                .onChange(of: debt.minPayment) { v in debt.minPayment = v.filter { "0123456789.".contains($0) } }
+                .onChange(of: debt.minPayment) { _, v in debt.minPayment = v.filter { "0123456789.".contains($0) } }
             DatePicker("Next Payment Due", selection: $debt.dueDate, displayedComponents: .date)
         }
     }

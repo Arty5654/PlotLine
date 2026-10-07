@@ -1,6 +1,7 @@
 //
-//  PlaidView.swift
+//  PlaidLink.swift
 //  PlotLine
+//  Opening Plaid Link to connect a bank (used by Budget), and the "Plaid synced" notification.
 //
 //  Created by Arteom Avetissian on 10/11/25.
 //
@@ -12,67 +13,6 @@ import UIKit
 // Keep a strong ref to the Link handler for the lifetime of the flow
 final class PlaidLinkCoordinator: ObservableObject {
     @Published var handler: Handler?
-}
-
-struct PlaidView: View {
-    @StateObject private var linkCoordinator = PlaidLinkCoordinator()
-
-    var body: some View {
-        Button {
-            Task { await link() }
-        } label: {
-            Label("Link a card or bank", systemImage: "link")
-        }
-        .buttonStyle(.borderedProminent)
-    }
-
-    private func link() async {
-        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/plaid/link_token?username=\(currentUsername())") else {
-            print("Failed to fetch link_token - invalid URL"); return
-        }
-        var request = URLRequest(url: url)
-        BackendConfig.addApiKey(to: &request)
-        request.httpMethod = "GET"
-        guard let (data, _) = try? await URLSession.shared.data(for: request),
-              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let linkToken = obj["link_token"] as? String
-        else { print("Failed to fetch link_token"); return }
-
-        await presentPlaidLink(linkToken: linkToken, coordinator: linkCoordinator) { publicToken, accountIds in
-            Task { await exchange(publicToken: publicToken, selectedAccountIds: accountIds) }
-        }
-    }
-
-    private func syncPlaid() async {
-        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/plaid/sync?username=\(currentUsername())") else { return }
-        var req = URLRequest(url: url)
-        BackendConfig.addApiKey(to: &req)
-        req.httpMethod = "POST"
-        _ = try? await URLSession.shared.data(for: req)
-    }
-
-    private func exchange(publicToken: String, selectedAccountIds: [String]) async {
-        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/plaid/exchange") else { return }
-        var req = URLRequest(url: url)
-        BackendConfig.addApiKey(to: &req)
-        req.httpMethod = "POST"
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-
-        let payload: [String: Any] = [
-            "username": currentUsername(),
-            "public_token": publicToken,
-            "account_ids": selectedAccountIds
-        ]
-        req.httpBody = try? JSONSerialization.data(withJSONObject: payload)
-        _ = try? await URLSession.shared.data(for: req)
-
-        await MainActor.run { linkCoordinator.handler = nil }
-    }
-
-
-    private func currentUsername() -> String {
-        UserDefaults.standard.string(forKey: "loggedInUsername") ?? "UnknownUser"
-    }
 }
 
 // MARK: - Presentation helpers
@@ -99,7 +39,6 @@ func presentPlaidLink(
         handler.open(presentUsing: .viewController(host))
     }
 }
-
 
 // Find a host UIViewController for presentation
 private func topViewController(_ root: UIViewController? = nil) -> UIViewController? {
@@ -129,4 +68,3 @@ extension Notification.Name {
     static let plaidSynced = Notification.Name("PlaidSynced")
 }
 
-#Preview { PlaidView() }

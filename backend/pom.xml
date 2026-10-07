@@ -21,7 +21,24 @@
 
     <properties>
         <java.version>21</java.version>
+        <!-- newer driver: understands every option in Neon's connection string -->
+        <postgresql.version>42.7.13</postgresql.version>
+        <!-- the test database needs 3.18+ (3.18 also fixes CVE-2025-48924); Boot 3.2 pins 3.13 -->
+        <commons-lang3.version>3.20.0</commons-lang3.version>
     </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- Postgres 17 for tests, the same major version as Neon -->
+            <dependency>
+                <groupId>io.zonky.test.postgres</groupId>
+                <artifactId>embedded-postgres-binaries-bom</artifactId>
+                <version>17.11.0</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 
     <!-- <repositories>
         <repository>
@@ -39,6 +56,47 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
             <version>3.2.2</version>
+        </dependency>
+
+        <!-- Rate limiting (sign-in, sign-up, SMS codes, AI features). Bucket4j can move its
+             counts to Redis later if the backend runs on more than one machine. -->
+        <dependency>
+            <groupId>com.bucket4j</groupId>
+            <artifactId>bucket4j_jdk17-core</artifactId>
+            <version>8.21.0</version>
+        </dependency>
+        <dependency>
+            <groupId>com.github.ben-manes.caffeine</groupId>
+            <artifactId>caffeine</artifactId>
+        </dependency>
+
+        <!-- Postgres (Neon): shared data that can't live in per-user S3 files.
+             Flyway applies src/main/resources/db/migration on startup. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-jdbc</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+        </dependency>
+        <!-- a real Postgres started inside the tests (no Docker needed) -->
+        <dependency>
+            <groupId>io.zonky.test</groupId>
+            <artifactId>embedded-postgres</artifactId>
+            <version>2.2.2</version>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- Apple's library for checking signed App Store purchases and server notifications -->
+        <dependency>
+            <groupId>com.apple.itunes.storekit</groupId>
+            <artifactId>app-store-server-library</artifactId>
+            <version>5.2.0</version>
         </dependency>
 
         <!-- AWS SDK for S3 -->
@@ -146,12 +204,6 @@
             <groupId>com.openai</groupId>
             <artifactId>openai-java</artifactId>
             <version>0.37.0</version>
-        </dependency>
-
-        <dependency>
-            <groupId>net.sourceforge.tess4j</groupId>
-            <artifactId>tess4j</artifactId>
-            <version>5.4.0</version>
         </dependency>
 
         <dependency>

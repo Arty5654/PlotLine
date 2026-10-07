@@ -74,6 +74,48 @@ struct AuthTests {
         #expect(body["phone"] as? String == "5555550123")
     }
 
+    @Test("Username message matches the server's wording, so the setup sheet can show it inline")
+    func usernameRulesWording() {
+        #expect(AuthViewModel.usernameRules == "Usernames must be 3 to 30 letters or numbers.")
+    }
+
+    @Test("Google sign-in sends no username until a new user picks one")
+    func googleRequest() throws {
+        let first = try TestJSON.object(GoogleSignInRequest(idToken: "t", username: nil, email: "a@gmail.com"))
+        #expect(first["username"] == nil)
+        let chosen = try TestJSON.object(GoogleSignInRequest(idToken: "t", username: "johnny", email: "a@gmail.com"))
+        #expect(chosen["username"] as? String == "johnny")
+    }
+
+    @Test("Too many attempts: the server's try-again message is shown as-is")
+    func rateLimitMessage() throws {
+        let url = URL(string: "https://example.com/auth/signin")!
+        let limited = HTTPURLResponse(url: url, statusCode: 429, httpVersion: nil, headerFields: ["Retry-After": "420"])!
+        let body = Data(#"{"success":false,"error":"Too many attempts. Try again in 7 minutes."}"#.utf8)
+        let error = try #require(AuthAPI.rateLimited(body, limited))
+        #expect(AuthViewModel.message(for: error) == "Too many attempts. Try again in 7 minutes.")
+
+        let ok = HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!
+        #expect(AuthAPI.rateLimited(body, ok) == nil)
+    }
+
+    @Test("Daily AI limit shows the server's message")
+    func aiLimitMessage() throws {
+        let url = URL(string: "https://example.com/api/llm/budget")!
+        let limited = HTTPURLResponse(url: url, statusCode: 429, httpVersion: nil, headerFields: nil)!
+        let body = Data(#"{"success":false,"error":"You've reached today's limit for AI features. Try again in 3 hours."}"#.utf8)
+        let error = try #require(AILimitError.from(body, limited))
+        #expect(error.localizedDescription == "You've reached today's limit for AI features. Try again in 3 hours.")
+
+        // a 429 without a readable body still explains itself
+        #expect(AILimitError.from(nil, limited)?.message.contains("today's limit") == true)
+
+        let ok = HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!
+        #expect(AILimitError.from(body, ok) == nil)
+        let serverError = HTTPURLResponse(url: url, statusCode: 500, httpVersion: nil, headerFields: nil)!
+        #expect(AILimitError.from(body, serverError) == nil)
+    }
+
     @Test("Error messages shown to users")
     func errorMessages() {
         #expect(AuthViewModel.message(for: AuthError.custom("Incorrect Password")) == "Incorrect Password")

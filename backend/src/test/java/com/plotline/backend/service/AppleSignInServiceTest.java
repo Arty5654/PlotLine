@@ -1,5 +1,8 @@
 package com.plotline.backend.service;
 
+import com.plotline.backend.accounts.AccountDirectory;
+import com.plotline.backend.testsupport.TestDatabase;
+import org.springframework.jdbc.core.JdbcTemplate;
 import com.auth0.jwt.JWT;
 import com.auth0.jwt.JWTCreator;
 import com.auth0.jwt.algorithms.Algorithm;
@@ -51,7 +54,8 @@ class AppleSignInServiceTest {
             otherKeys = generator.generateKeyPair();
         }
         s3 = new InMemoryS3Client();
-        authService = new AuthService(s3, null, "test-jwt-secret");
+        JdbcTemplate jdbc = new JdbcTemplate(TestDatabase.newDatabase());
+        authService = new AuthService(s3, null, "test-jwt-secret", new AccountDirectory(jdbc));
         AppleIdTokenVerifier verifier = new AppleIdTokenVerifier(AUDIENCE,
                 kid -> KEY_ID.equals(kid) ? (RSAPublicKey) appleKeys.getPublic() : null);
         service = new AppleSignInService(authService, verifier, s3);
@@ -153,7 +157,7 @@ class AppleSignInServiceTest {
         AuthResponse response = signIn(token("new@icloud.com"), "bad name!", null);
 
         assertThat(response.isSuccess()).isFalse();
-        assertThat(response.getError()).isEqualTo("Username can only contain letters and numbers.");
+        assertThat(response.getError()).isEqualTo(AuthService.USERNAME_RULES);
     }
 
     // ── Returning Apple users ──────────────────────────────────────────────────

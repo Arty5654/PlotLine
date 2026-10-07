@@ -22,10 +22,6 @@ struct InvestmentHomeView: View {
                 .tabItem {
                     Label("AI Rating", systemImage: "star.fill")
                 }
-            // WatchlistView()
-            //     .tabItem {
-            //         Label("Watchlist", systemImage: "eye.fill")
-            //     }
             StockNewsView()
                 .tabItem {
                     Label("Stock News", systemImage: "newspaper.fill")

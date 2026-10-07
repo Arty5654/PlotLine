@@ -11,52 +11,6 @@ import Foundation
 import UIKit
 #endif
 
-private enum PLColor {
-    static let surface        = Color(.secondarySystemBackground)
-    static let cardBorder     = Color.black.opacity(0.06)
-    static let textPrimary    = Color.primary
-    static let textSecondary  = Color.secondary
-    static let accent         = Color.blue
-    static let danger         = Color.red
-    static let warning        = Color.orange
-}
-private enum PLSpacing {
-    static let xs: CGFloat = 6
-    static let sm: CGFloat = 10
-    static let md: CGFloat = 16
-    static let lg: CGFloat = 20
-}
-private enum PLRadius {
-    static let md: CGFloat = 12
-}
-private struct CardModifier: ViewModifier {
-    func body(content: Content) -> some View {
-        content
-            .padding(PLSpacing.md)
-            .background(PLColor.surface)
-            .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
-            .overlay(
-                RoundedRectangle(cornerRadius: PLRadius.md)
-                    .stroke(PLColor.cardBorder)
-            )
-    }
-}
-private extension View { func plCard() -> some View { modifier(CardModifier()) } }
-
-private struct PrimaryButton: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.headline)
-            .foregroundColor(.white)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .background(PLColor.accent.opacity(configuration.isPressed ? 0.85 : 1))
-            .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
-    }
-}
-
-
-
 struct InvestmentQuizView: View {
     enum InvestmentAccount: String, CaseIterable, Identifiable {
         case brokerage = "Brokerage"
@@ -81,11 +35,11 @@ struct InvestmentQuizView: View {
     
     // Check for Missing Budget
     @State private var showBudgetMissingAlert = false
+    @State private var aiLimitMessage: String?
     @State private var budgetMissingMessage = ""
     
     // Sometimes pie chart wont refresh
     var onFinish: (() -> Void)? = nil
-
 
     private var username: String {
         return UserDefaults.standard.string(forKey: "loggedInUsername") ?? "UnknownUser"
@@ -115,7 +69,7 @@ struct InvestmentQuizView: View {
             
             Image(systemName: "chevron.right")
                 .font(.footnote.weight(.semibold))
-                .foregroundColor(PLColor.accent)
+                .foregroundColor(PLColor.tint)
         }
     }
 
@@ -182,7 +136,7 @@ struct InvestmentQuizView: View {
                                 }
                                 Image(systemName: "chevron.right")
                                     .font(.footnote.weight(.semibold))
-                                    .foregroundColor(PLColor.accent)
+                                    .foregroundColor(PLColor.tint)
                             }
                             .pickerStyle(.navigationLink)
                         }
@@ -259,7 +213,7 @@ struct InvestmentQuizView: View {
                                 }
                                 Image(systemName: "chevron.right")
                                     .font(.footnote.weight(.semibold))
-                                    .foregroundColor(PLColor.accent)
+                                    .foregroundColor(PLColor.tint)
                             }
                             .pickerStyle(.navigationLink)
                         }
@@ -284,7 +238,7 @@ struct InvestmentQuizView: View {
                                 }
                                 Image(systemName: "chevron.right")
                                     .font(.footnote.weight(.semibold))
-                                    .foregroundColor(PLColor.accent)
+                                    .foregroundColor(PLColor.tint)
                             }
                             .pickerStyle(.navigationLink)
                             
@@ -342,6 +296,14 @@ struct InvestmentQuizView: View {
             //}
         }
         .tint(PLColor.accent)
+        .alert("Daily AI limit reached", isPresented: Binding(
+            get: { aiLimitMessage != nil },
+            set: { if !$0 { aiLimitMessage = nil } })) {
+            // back to the quiz instead of the "Generating..." spinner
+            Button("OK", role: .cancel) { quizCompleted = false }
+        } message: {
+            Text(aiLimitMessage ?? "")
+        }
         .alert("Add to Budget First", isPresented: $showBudgetMissingAlert) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -427,9 +389,19 @@ struct InvestmentQuizView: View {
         request.httpBody = jsonData
 
         do {
-            let (data, _) = try await URLSession.shared.data(for: request)
-            if let response = String(data: data, encoding: .utf8) {
-                savePortfolioToBackend(response)
+            let (data, response) = try await URLSession.shared.data(for: request)
+            if let limit = AILimitError.from(data, response) {
+                aiLimitMessage = limit.message
+                return
+            }
+            // only a successful answer is a portfolio (an error body must not be saved as one)
+            guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+                print("Portfolio generation failed")
+                dismiss()
+                return
+            }
+            if let recommendation = String(data: data, encoding: .utf8) {
+                savePortfolioToBackend(recommendation)
             }
         } catch {
             print("Error generating portfolio from LLM.")

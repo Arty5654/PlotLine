@@ -18,7 +18,15 @@ struct StockView: View {
     }
     
     @State private var viewAccount: ViewAccount = .brokerage
-    @State private var savedPortfolio: SavedPortfolio? = nil
+    @State private var savedPortfolio: SavedPortfolio?
+
+    private let isPreview: Bool
+
+    /// a portfolio to show instead of loading one (Xcode previews)
+    init(previewPortfolio: SavedPortfolio? = nil) {
+        _savedPortfolio = State(initialValue: previewPortfolio)
+        isPreview = previewPortfolio != nil
+    }
     
     // For watchlists
     @State private var watchlist: [String] = []
@@ -35,7 +43,7 @@ struct StockView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 20) {
+            VStack(spacing: PLSpacing.lg) {
                 
             // Account switcher
                Picker("Account", selection: $viewAccount) {
@@ -44,98 +52,123 @@ struct StockView: View {
                    }
                }
                .pickerStyle(.segmented)
-               .onChange(of: viewAccount) { newVal in
+               .onChange(of: viewAccount) { _, newVal in
                    // Clear old data when switching accounts to avoid showing stale charts
                    savedPortfolio = nil
                    fetchSavedPortfolio(for: newVal)
                }
                 
-                NavigationLink(destination: InvestmentQuizView(onFinish: {
-                    fetchSavedPortfolio(for: viewAccount)
-                })
-                .environmentObject(calendarViewModel)
-                //.environmentObject(friendVM)
-                ) {
-                    Label("Take Investing Quiz", systemImage: "questionmark.circle.fill")
-                        .padding()
-                        .frame(maxWidth: .infinity)
-                        .background(Color.green)
-                        .cornerRadius(8)
-                        .foregroundColor(.white)
-                }
-
                 if let portfolio = savedPortfolio {
-                    Divider()
-                    Text("Your Portfolio Allocation")
-                        .font(.headline)
-                    
-                    // Read only
-                    PieChartView(assets: .constant(portfolio.parsedAssets.map {
-                        EditableAsset(name: $0.name, percentage: $0.percentage, amount: $0.amount)
-                    }), editable: false, selectedAssetID: .constant(nil))
-                    .frame(height: 300)
-
-
-                    Text("Investment Breakdown (\(portfolio.investmentFrequency))")
-                        .font(.subheadline)
-                        .padding(.top, 10)
-
-                    ForEach(portfolio.parsedAssets) { asset in
-                        HStack {
-                            Text(asset.name)
-                            Spacer()
-                            Text("\(asset.percentage, specifier: "%.0f")% - $\(asset.amount, specifier: "%.2f")")
-                        }
-                        .padding(.horizontal)
+                    VStack(spacing: PLSpacing.sm) {
+                        PLSectionHeader(title: "Your allocation")
+                        // Read only
+                        PieChartView(assets: .constant(portfolio.parsedAssets.map {
+                            EditableAsset(name: $0.name, percentage: $0.percentage, amount: $0.amount)
+                        }), editable: false, selectedAssetID: .constant(nil))
+                        .frame(height: 280)
+                        .plCard()
                     }
 
-                    Text("Total: \(portfolio.totalMonthlyAmountDouble, specifier: "%.2f")")
-                        .bold()
-                        .padding(.top, 5)
-
-                    NavigationLink(destination: PortfolioExplanationView(portfolioText: portfolio.portfolio)) {
-                        Text("Why These Investments?")
-                            .foregroundColor(.blue)
-                            .padding()
-                            .background(Color(.systemGray6))
-                            .cornerRadius(8)
-                    }
-                    
-                    if let portfolio = savedPortfolio {
-                        HStack {
-                            NavigationLink(destination:
-                            EditPortfolioView(
-                                assets: portfolio.parsedAssets.map {
-                                    EditableAsset(name: $0.name, percentage: $0.percentage, amount: $0.amount)
-                                },
-                                investmentFrequency: portfolio.investmentFrequency,
-                                totalAmount: Double(portfolio.totalMonthlyAmountDouble)
-                            )
-                            ) {
-                                Text("Edit Portfolio")
-                                    .foregroundColor(.white)
-                                    .padding()
-                                    .background(Color.blue)
-                                    .cornerRadius(8)
+                    VStack(spacing: PLSpacing.sm) {
+                        PLSectionHeader(title: "Breakdown · \(portfolio.investmentFrequency)")
+                        VStack(spacing: 0) {
+                            ForEach(Array(portfolio.parsedAssets.enumerated()), id: \.element.id) { index, asset in
+                                if index > 0 { Divider() }
+                                HStack {
+                                    Text(asset.name).font(.body.weight(.semibold))
+                                    Spacer()
+                                    Text("\(asset.percentage, specifier: "%.0f")%")
+                                        .foregroundColor(PLColor.textSecondary)
+                                    Text("$\(asset.amount, specifier: "%.2f")")
+                                        .monospacedDigit()
+                                        .frame(minWidth: 90, alignment: .trailing)
+                                }
+                                .padding(.vertical, 10)
                             }
-
-                            Button("Revert to LLM Portfolio") {
-                                revertToLLMGeneratedPortfolio(for: viewAccount)
+                            Divider()
+                            HStack {
+                                Text("Total").font(.body.weight(.semibold))
+                                Spacer()
+                                Text("$\(portfolio.totalMonthlyAmountDouble, specifier: "%.2f")")
+                                    .font(.body.weight(.semibold))
+                                    .monospacedDigit()
                             }
-                            .foregroundColor(.red)
-                            .padding()
+                            .padding(.vertical, 10)
                         }
-                        Text("Disclaimer: The information provided is NOT financial advice. We are not financial advisers, accountants or the like.")
-                            .font(.system(size: 10))
+                        .plCard()
+
+                        NavigationLink(destination: PortfolioExplanationView(portfolioText: portfolio.portfolio)) {
+                            PLRow(icon: "lightbulb.fill", tint: .orange, title: "Why these investments?")
+                        }
+                        .buttonStyle(.plain)
+                        .plCard()
                     }
 
+                    VStack(spacing: PLSpacing.sm) {
+                        NavigationLink(destination:
+                        EditPortfolioView(
+                            assets: portfolio.parsedAssets.map {
+                                EditableAsset(name: $0.name, percentage: $0.percentage, amount: $0.amount)
+                            },
+                            investmentFrequency: portfolio.investmentFrequency,
+                            totalAmount: Double(portfolio.totalMonthlyAmountDouble)
+                        )
+                        ) {
+                            Label("Edit Portfolio", systemImage: "slider.horizontal.3")
+                        }
+                        .buttonStyle(PrimaryButton())
 
+                        Button("Revert to AI Portfolio") {
+                            revertToLLMGeneratedPortfolio(for: viewAccount)
+                        }
+                        .buttonStyle(OutlineButton(tint: PLColor.danger))
+                    }
+
+                    NavigationLink(destination: InvestmentQuizView(onFinish: {
+                        fetchSavedPortfolio(for: viewAccount)
+                    })
+                    .environmentObject(calendarViewModel)
+                    ) {
+                        Label("Retake Investing Quiz", systemImage: "arrow.clockwise")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundColor(PLColor.tint)
+                    }
+
+                    Text("Disclaimer: The information provided is NOT financial advice. We are not financial advisers, accountants or the like.")
+                        .font(.caption)
+                        .foregroundColor(PLColor.textSecondary)
+                        .multilineTextAlignment(.center)
+                } else {
+                    VStack(spacing: 10) {
+                        Image(systemName: "chart.pie")
+                            .font(.largeTitle)
+                            .foregroundColor(PLColor.textSecondary)
+                        Text("No portfolio yet")
+                            .font(.headline)
+                        Text("Answer a few questions and get a suggested portfolio for this account.")
+                            .font(.subheadline)
+                            .foregroundColor(PLColor.textSecondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, PLSpacing.sm)
+                    .plCard()
+
+                    NavigationLink(destination: InvestmentQuizView(onFinish: {
+                        fetchSavedPortfolio(for: viewAccount)
+                    })
+                    .environmentObject(calendarViewModel)
+                    ) {
+                        Label("Take Investing Quiz", systemImage: "questionmark.circle.fill")
+                    }
+                    .buttonStyle(PrimaryButton(color: PLColor.success))
                 }
             }
-            .padding()
+            .padding(.horizontal, PLSpacing.lg)
+            .padding(.vertical, PLSpacing.md)
         }
         .onAppear {
-            fetchSavedPortfolio(for: viewAccount)
+            if !isPreview { fetchSavedPortfolio(for: viewAccount) }
         }
 
     }

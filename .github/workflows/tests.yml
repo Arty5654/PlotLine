@@ -84,10 +84,7 @@ jobs:
           GID_CLIENT_ID = 000000000000-ci.apps.googleusercontent.com
           GID_CLIENT_ID_REVERSED = com.googleusercontent.apps.000000000000-ci
           GID_SERVER_CLIENT_ID = 000000000001-ci.apps.googleusercontent.com
-          NEWS_KEY = ci
-          STOCK_KEY = ci
           PLOTLINE_API_KEY = ci
-          USDA_FDC_API_KEY = DEMO_KEY
           CONFIG
 
       - name: Cache Swift packages

@@ -6,7 +6,6 @@ struct GoogleCalendarImportView: View {
     @Environment(\.colorScheme) var colorScheme
     @EnvironmentObject var calendarVM: CalendarViewModel
 
-    private var adaptiveTextColor: Color { colorScheme == .dark ? .white : .blue }
 
     @State private var state: ImportState = .idle
     @State private var fetchedEvents: [GoogleCalendarEvent] = []
@@ -36,7 +35,7 @@ struct GoogleCalendarImportView: View {
     }
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             Group {
                 switch state {
                 case .idle:
@@ -67,14 +66,14 @@ struct GoogleCalendarImportView: View {
                 }
             }
         }
-        .tint(adaptiveTextColor)
+        .tint(PLColor.accent)
     }
 
     // MARK: - Subviews
 
     private var idleView: some View {
         Form {
-            Section(header: Text("Date Range").foregroundColor(adaptiveTextColor)) {
+            Section(header: Text("Date Range")) {
                 Picker("Import range", selection: $rangeOption) {
                     ForEach(RangeOption.allCases) { opt in
                         Text(opt.rawValue).tag(opt)
@@ -130,7 +129,7 @@ struct GoogleCalendarImportView: View {
                 .padding(.vertical, 4)
             }
 
-            Section(header: Text("Preview").foregroundColor(adaptiveTextColor)) {
+            Section(header: Text("Preview")) {
                 ForEach(fetchedEvents.prefix(20), id: \.id) { event in
                     VStack(alignment: .leading, spacing: 2) {
                         Text(event.title)
@@ -284,7 +283,7 @@ struct GoogleCalendarImportView: View {
                 }
                 // One request: backend replaces all gcal_ events atomically
                 _ = try await CalendarAPI.batchSyncGcal(gcalEvents, username: calendarVM.username)
-                await calendarVM.fetchEvents()
+                await calendarVM.reloadEvents()
                 await MainActor.run {
                     importedCount = fetchedEvents.count
                     state = .connected

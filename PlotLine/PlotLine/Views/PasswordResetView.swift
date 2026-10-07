@@ -143,10 +143,12 @@ struct PasswordResetView: View {
         Task {
             defer { isWorking = false }
             do {
-                try await AuthAPI.sendCode(phone: rawPhone)
+                _ = try await AuthAPI.sendCode(phone: rawPhone)
                 isCodeSent = true
                 errorMessage = nil
                 focusedField = .code
+            } catch AuthError.custom(let message) where message.hasPrefix("Too many") {
+                errorMessage = message
             } catch {
                 errorMessage = "Couldn't send a code. Check your details and try again."
             }

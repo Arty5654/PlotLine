@@ -1,30 +1,5 @@
 import SwiftUI
 
-private enum PLColor {
-    static let surface       = Color(.secondarySystemBackground)
-    static let cardBorder    = Color.black.opacity(0.06)
-    static let textPrimary   = Color.primary
-    static let textSecondary = Color.secondary
-}
-private enum PLSpacing {
-    static let xs: CGFloat = 6
-    static let sm: CGFloat = 10
-    static let md: CGFloat = 16
-    static let lg: CGFloat = 20
-}
-private enum PLRadius { static let md: CGFloat = 12 }
-
-private struct CardModifier: ViewModifier {
-    func body(content: Content) -> some View {
-        content
-            .padding(PLSpacing.md)
-            .background(PLColor.surface)
-            .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
-            .overlay(RoundedRectangle(cornerRadius: PLRadius.md).stroke(PLColor.cardBorder))
-    }
-}
-private extension View { func plCard() -> some View { modifier(CardModifier()) } }
-
 struct ArchivedGoalsView: View {
     @Binding var archivedGoals: [LongTermGoal]
     @Environment(\.dismiss) var dismiss
@@ -37,9 +12,6 @@ struct ArchivedGoalsView: View {
         UserDefaults.standard.string(forKey: "loggedInUsername") ?? "Guest"
     }
 
-    private var adaptiveTextColor: Color {
-        colorScheme == .dark ? .white : .blue
-    }
 
     var body: some View {
         NavigationStack {
@@ -83,7 +55,7 @@ struct ArchivedGoalsView: View {
                                         } label: {
                                             Image(systemName: "ellipsis.circle")
                                                 .font(.title2)
-                                                .foregroundColor(adaptiveTextColor)
+                                                .foregroundColor(PLColor.tint)
                                         }
                                     }
 
@@ -129,9 +101,9 @@ struct ArchivedGoalsView: View {
 
         var request = URLRequest(url: url)
         BackendConfig.addApiKey(to: &request)
-        URLSession.shared.dataTask(with: request) { data, _, error in
-            if error != nil { return }
-            guard let data = data,
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            guard !AppBanner.reportIfFailed("load your archived goals", data, response, error, retry: { fetchArchivedGoals() }),
+                  let data = data,
                   let decoded = try? JSONDecoder().decode(LongTermGoalsResponse.self, from: data) else { return }
             DispatchQueue.main.async {
                 self.archivedGoals = decoded.archivedGoals ?? []

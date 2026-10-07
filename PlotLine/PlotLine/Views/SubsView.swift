@@ -12,6 +12,7 @@ struct SubsView: View {
     @EnvironmentObject var calendarVM: CalendarViewModel
 
     @State private var subscriptions: [SubscriptionItem] = []
+    @State private var subscriptionsLoaded = false
     @State private var newName: String = ""
     @State private var newCost: String = ""
     @State private var newDueDate: Date = Date()
@@ -43,16 +44,12 @@ struct SubsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 16) {
+            VStack(spacing: PLSpacing.md) {
                 // Header
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Subscriptions")
-                        .font(.headline)
-                    Text("Add reminders for recurring bills. We'll notify you the day before they're due.")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                Text("Add reminders for recurring bills. We'll notify you the day before they're due.")
+                    .font(.subheadline)
+                    .foregroundColor(PLColor.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
                 // Budget Summary Card
                 if inputtedSubscriptionsCost > 0 || !subscriptions.isEmpty {
@@ -70,14 +67,15 @@ struct SubsView: View {
                 // Your Subscriptions List
                 subscriptionsListCard
             }
-            .padding()
+            .padding(.horizontal, PLSpacing.lg)
+            .padding(.vertical, PLSpacing.md)
         }
         .navigationTitle("Subscriptions")
         .onAppear {
             requestNotificationPermission()
             loadDismissedPrompts()
             Task {
-                await calendarVM.fetchEvents()
+                await calendarVM.reloadEvents() // subscriptions are matched against these
                 fetchSubscriptions()
                 fetchInputtedMonthlyCosts()
                 await fetchRecurringPrompts()
@@ -112,7 +110,7 @@ struct SubsView: View {
         } message: {
             Text("We detected \(newRecurringCount) potential subscription\(newRecurringCount == 1 ? "" : "s") from your transactions. Review them below to add to your tracking.")
         }
-        .onChange(of: calendarVM.events.count) { _ in
+        .onChange(of: calendarVM.events.count) { _, _ in
             mergeFromCalendar()
         }
     }
@@ -164,9 +162,7 @@ struct SubsView: View {
                 .padding(.top, 4)
             }
         }
-        .padding()
-        .background(Color(.secondarySystemBackground))
-        .cornerRadius(12)
+        .plCard()
     }
 
     // MARK: - Plaid Suggestions Card
@@ -270,15 +266,16 @@ struct SubsView: View {
 
             DatePicker("Due date", selection: $newDueDate, displayedComponents: .date)
 
-            Button("Add") {
+            Button {
                 addSubscription()
+            } label: {
+                Label("Add Subscription", systemImage: "plus")
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(PrimaryButton())
             .disabled(newName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            .opacity(newName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.5 : 1)
         }
-        .padding()
-        .background(Color(.secondarySystemBackground))
-        .cornerRadius(12)
+        .plCard()
     }
 
     // MARK: - Subscriptions List
@@ -302,8 +299,8 @@ struct SubsView: View {
                             HStack(spacing: 8) {
                                 if let cost = Double(sub.cost), cost > 0 {
                                     Text("$\(String(format: "%.2f", cost))/mo")
-                                        .font(.footnote)
-                                        .foregroundColor(.blue)
+                                        .font(.footnote.weight(.semibold))
+                                        .foregroundColor(PLColor.textPrimary)
                                 }
                                 Text("Due: \(sub.dueDate.formatted(date: .abbreviated, time: .omitted))")
                                     .font(.footnote)
@@ -325,9 +322,7 @@ struct SubsView: View {
                 }
             }
         }
-        .padding()
-        .background(Color(.secondarySystemBackground))
-        .cornerRadius(12)
+        .plCard()
     }
 
     // MARK: - Actions
@@ -398,9 +393,19 @@ struct SubsView: View {
         var request = URLRequest(url: url)
         BackendConfig.addApiKey(to: &request)
         request.httpMethod = "GET"
-        URLSession.shared.dataTask(with: request) { data, _, _ in
-            guard let data = data, !data.isEmpty,
-                  let decoded = try? JSONDecoder().decode(SubscriptionMapResponse.self, from: data) else {
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            if AppBanner.reportIfFailed("load your subscriptions", data, response, error, retry: { fetchSubscriptions() }) { return }
+            guard let data = data else { return }
+            // the server answers {} when there are none yet
+            if (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?.isEmpty == true {
+                DispatchQueue.main.async {
+                    self.subscriptionsLoaded = true
+                    self.mergeFromCalendar()
+                }
+                return
+            }
+            guard let decoded = try? JSONDecoder().decode(SubscriptionMapResponse.self, from: data) else {
+                AppBanner.report("load your subscriptions", URLError(.cannotParseResponse), retry: { fetchSubscriptions() })
                 return
             }
             let list = decoded.subscriptions.map { (name, subData) in
@@ -408,6 +413,7 @@ struct SubsView: View {
             }
             DispatchQueue.main.async {
                 self.subscriptions = list
+                self.subscriptionsLoaded = true
                 for sub in list {
                     self.ensureCalendarEvent(for: sub)
                     self.scheduleMonthlyReminder(for: sub)
@@ -484,7 +490,12 @@ struct SubsView: View {
         ]
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
-        _ = try? await URLSession.shared.data(for: request)
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            AppBanner.reportIfFailed("snooze the reminder", data, response, nil)
+        } catch {
+            AppBanner.report("snooze the reminder", error)
+        }
     }
 
     private func adjustInputtedCostToMatchTotal() {
@@ -511,7 +522,8 @@ struct SubsView: View {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = body
 
-        URLSession.shared.dataTask(with: request) { _, _, _ in
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            if AppBanner.reportIfFailed("update your subscriptions spending", data, response, error) { return }
             DispatchQueue.main.async {
                 self.inputtedSubscriptionsCost = self.totalSubscriptionsCost
                 self.fullMonthlyCosts["Subscriptions"] = self.totalSubscriptionsCost
@@ -543,6 +555,11 @@ struct SubsView: View {
     }
 
     private func saveSubscriptions() {
+        // saving replaces the whole list, so it waits until the real one has loaded
+        guard subscriptionsLoaded else {
+            AppBanner.shared.show("Your subscriptions didn't load, so saving now could erase them.", retry: { fetchSubscriptions() })
+            return
+        }
         var dict: [String: SubscriptionData] = [:]
         for sub in subscriptions {
             dict[sub.name] = SubscriptionData(name: sub.name, cost: sub.cost, dueDate: sub.dueDate)
@@ -558,9 +575,9 @@ struct SubsView: View {
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = body
-        URLSession.shared.dataTask(with: req) { _, response, _ in
-            let ok = (response as? HTTPURLResponse).map { (200...299).contains($0.statusCode) } ?? false
-            DispatchQueue.main.async { if ok { self.showSavedAlert = true } }
+        URLSession.shared.dataTask(with: req) { data, response, error in
+            if AppBanner.reportIfFailed("save your subscriptions", data, response, error, retry: { saveSubscriptions() }) { return }
+            DispatchQueue.main.async { self.showSavedAlert = true }
         }.resume()
     }
 

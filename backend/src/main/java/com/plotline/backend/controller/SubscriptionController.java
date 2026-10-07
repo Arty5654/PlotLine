@@ -77,7 +77,12 @@ public class SubscriptionController {
           
             return ResponseEntity.ok(request);  // Returns the same structure
         } catch (Exception e) {
-            return ResponseEntity.ok("{}"); // Return empty JSON if none
+            // {} only when nothing is saved yet. Any other failure must not look like "no subscriptions",
+            // or the app would save its list over the real one (BUGS.md #5).
+            if (e.getCause() instanceof software.amazon.awssdk.services.s3.model.NoSuchKeyException) {
+                return ResponseEntity.ok("{}");
+            }
+            return ResponseEntity.status(500).body(java.util.Map.of("success", false, "error", "Couldn't load subscriptions."));
         }
     }
 

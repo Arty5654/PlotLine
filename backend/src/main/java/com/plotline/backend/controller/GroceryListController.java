@@ -1,4 +1,7 @@
 package com.plotline.backend.controller;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import com.plotline.backend.security.ActingUser;
 import com.plotline.backend.service.OpenAIService;
 
@@ -25,6 +28,8 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/groceryLists")
 public class GroceryListController {
+    private static final Logger log = LoggerFactory.getLogger(GroceryListController.class);
+
 
     @Autowired
     private GroceryListService groceryListService;
@@ -46,7 +51,7 @@ public class GroceryListController {
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body("Error: " + e.getMessage());
         } catch (IOException e) {
-            e.printStackTrace();
+            log.error("createGroceryList failed", e);
             return ResponseEntity.status(500).body("Error saving grocery list: " + e.getMessage());
         }
     }
@@ -58,7 +63,7 @@ public class GroceryListController {
             List<GroceryList> groceryLists = groceryListService.getGroceryListsForUser(username);
             return ResponseEntity.ok(groceryLists);
         } catch (IOException e) {
-            e.printStackTrace();
+            log.error("getGroceryLists failed", e);
             return ResponseEntity.status(500).body(null);
         }
     }
@@ -311,7 +316,7 @@ public class GroceryListController {
             return ResponseEntity.ok(listId);
 
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("generateListFromMeal failed", e);
             return ResponseEntity.status(500).body("Error generating grocery list from meal: " + e.getMessage());
         }
     }
@@ -320,7 +325,7 @@ public class GroceryListController {
     public ResponseEntity<String> generateMealFromList(@RequestBody Map<String, Object> request) {
         try {
             if (request == null) {
-                System.out.println("Received a null request.");
+                log.debug("Received a null request.");
             }
 
             // Extract the grocery items list and username from the request
@@ -346,7 +351,7 @@ public class GroceryListController {
             return ResponseEntity.ok(mealRecipe);
 
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("generateMealFromList failed", e);
             return ResponseEntity.status(500).body("Error generating meal from list: " + e.getMessage());
         }
     }
@@ -358,7 +363,7 @@ public class GroceryListController {
             double cost = openAIService.estimateGroceryCost(request);
             return ResponseEntity.ok(cost);
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("estimateGroceryCost2 failed", e);
             return ResponseEntity
                 .status(HttpStatus.SC_INTERNAL_SERVER_ERROR)
                 .body(-1.0);
@@ -381,7 +386,7 @@ public class GroceryListController {
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(e.getMessage());
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("shareGroceryList failed", e);
             return ResponseEntity.status(500).body("Error sharing grocery list: " + e.getMessage());
         }
     }
@@ -393,7 +398,7 @@ public class GroceryListController {
             List<GroceryListInvite> invites = groceryListService.getPendingGroceryInvites(username);
             return ResponseEntity.ok(invites);
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("getPendingGroceryInvites failed", e);
             return ResponseEntity.status(500).body("Error fetching invites: " + e.getMessage());
         }
     }
@@ -414,7 +419,7 @@ public class GroceryListController {
                 ? ResponseEntity.ok("Member removed from shared list.")
                 : ResponseEntity.badRequest().body("Only the list owner can remove members.");
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("unshareGroceryList failed", e);
             return ResponseEntity.status(500).body("Error removing member: " + e.getMessage());
         }
     }
@@ -433,7 +438,7 @@ public class GroceryListController {
             groceryListService.respondToGroceryShare(recipientUsername, inviteId, accept);
             return ResponseEntity.ok(accept ? "List added to your active lists." : "Invite declined.");
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("respondToGroceryShare failed", e);
             return ResponseEntity.status(500).body("Error responding to invite: " + e.getMessage());
         }
     }
@@ -476,7 +481,7 @@ public class GroceryListController {
             
             return ResponseEntity.ok(mapper.writeValueAsString(response));
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("generateListFromGoal failed", e);
             return ResponseEntity.status(500).body("Error generating grocery list from goal: " + e.getMessage());
         }
     }

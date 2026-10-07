@@ -113,9 +113,11 @@ struct FriendsAPI {
         return exists
     }
     
-    static func getAllUsers() async throws -> [String] {
-
-        guard let url = URL(string: "\(baseURL)/auth/get-users") else {
+    /// usernames containing the text (up to 20, names that start with it first, never yourself)
+    static func searchUsers(_ text: String) async throws -> [String] {
+        var components = URLComponents(string: "\(baseURL)/auth/search-users")
+        components?.queryItems = [URLQueryItem(name: "q", value: text)]
+        guard let url = components?.url else {
             throw URLError(.badURL)
         }
         var request = URLRequest(url: url)

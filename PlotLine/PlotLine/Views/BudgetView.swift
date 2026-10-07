@@ -11,63 +11,19 @@ import Foundation
 import LinkKit
 import Combine
 
-// MARK: - Local tokens (scoped to this file)
-private enum PLColor {
-    static let surface        = Color(.secondarySystemBackground)
-    static let cardBorder     = Color.black.opacity(0.06)
-    static let textPrimary    = Color.primary
-    static let textSecondary  = Color.secondary
-    static let accent         = Color.blue
-    static let danger         = Color.red
-}
-private enum PLSpacing {
-    static let xs: CGFloat = 6
-    static let sm: CGFloat = 10
-    static let md: CGFloat = 16
-    static let lg: CGFloat = 20
-}
-private enum PLRadius { static let md: CGFloat = 12 }
-
-private struct CardModifier: ViewModifier {
-    func body(content: Content) -> some View {
-        content
-            .padding(PLSpacing.md)
-            .background(PLColor.surface)
-            .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
-            .overlay(RoundedRectangle(cornerRadius: PLRadius.md).stroke(PLColor.cardBorder))
-    }
-}
-private extension View { func plCard() -> some View { modifier(CardModifier()) } }
-
-private struct PrimaryButton: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.headline)
-            .foregroundColor(.white)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .background(PLColor.accent.opacity(configuration.isPressed ? 0.85 : 1))
-            .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
-    }
-}
-
-
 // Light vs Dark Mode
 struct AdaptivePrimaryButton: ButtonStyle {
     @SwiftUI.Environment(\.colorScheme) private var colorScheme
 
     func makeBody(configuration: Configuration) -> some View {
-        let isDark = (colorScheme == .dark)
-
         return configuration.label
             .font(.headline)
-            .foregroundColor(isDark ? .white : PLColor.accent)
+            .foregroundColor(PLColor.tint)
             //.frame(maxWidth: .infinity)
             //.padding(.vertical, 12)
             .opacity(configuration.isPressed ? 0.7 : 1.0)
     }
 }
-
 
 // MARK: - Root
 struct BudgetView: View {
@@ -76,35 +32,33 @@ struct BudgetView: View {
     @EnvironmentObject var friendVM: FriendsViewModel
 
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                Picker("View", selection: $selectedTab) {
-                    Text("Budgeting").tag("Budgeting")
-                    Text("Stocks").tag("Stocks")
-                }
-                .pickerStyle(.segmented)
-                .padding(.horizontal, PLSpacing.lg)
-                .padding(.vertical, PLSpacing.sm)
-
-                Divider()
-
-                Group {
-                    if selectedTab == "Budgeting" {
-                        ScrollView {
-                            BudgetSection()
-                                .environmentObject(viewModel)
-                                .padding(.horizontal, PLSpacing.lg)
-                                .padding(.vertical, PLSpacing.lg)
-                        }
-                    } else {
-                        InvestmentHomeView()
-                    }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        VStack(spacing: 0) {
+            Picker("View", selection: $selectedTab) {
+                Text("Budgeting").tag("Budgeting")
+                Text("Stocks").tag("Stocks")
             }
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .principal) { Text("Dashboard").font(.headline) } }
+            .pickerStyle(.segmented)
+            .padding(.horizontal, PLSpacing.lg)
+            .padding(.vertical, PLSpacing.sm)
+
+            Divider()
+
+            Group {
+                if selectedTab == "Budgeting" {
+                    ScrollView {
+                        BudgetSection()
+                            .environmentObject(viewModel)
+                            .padding(.horizontal, PLSpacing.lg)
+                            .padding(.vertical, PLSpacing.lg)
+                    }
+                } else {
+                    InvestmentHomeView()
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar { ToolbarItem(placement: .principal) { Text("Dashboard").font(.headline) } }
     }
 }
 
@@ -252,13 +206,16 @@ struct BudgetSection: View {
             }
             guard let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let linkToken = obj["link_token"] as? String
-            else { print("Failed to parse link_token from response"); return }
+            else {
+                AppBanner.report("start connecting your bank", AILimitError.from(data, response) ?? URLError(.badServerResponse))
+                return
+            }
 
             await presentPlaidLink(linkToken: linkToken, coordinator: plaidCoordinator) { publicToken, accountIds in
                 Task { await exchange(publicToken: publicToken, selectedAccountIds: accountIds) }
             }
         } catch {
-            print("Failed to fetch link_token: \(error)")
+            AppBanner.report("start connecting your bank", error)
         }
     }
 
@@ -275,7 +232,12 @@ struct BudgetSection: View {
             "account_ids": selectedAccountIds
         ]
         req.httpBody = try? JSONSerialization.data(withJSONObject: payload)
-        _ = try? await URLSession.shared.data(for: req)
+        do {
+            let (data, response) = try await URLSession.shared.data(for: req)
+            AppBanner.reportIfFailed("finish connecting your bank", data, response, nil)
+        } catch {
+            AppBanner.report("finish connecting your bank", error)
+        }
 
         await MainActor.run { plaidCoordinator.handler = nil }
     }

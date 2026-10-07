@@ -44,7 +44,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * Filters (API key, login token) are disabled; requests carry an already signed-in user, so the
  * ownership checks still run. Full auth is covered by SecurityIntegrationTest.
  */
-@WebMvcTest(controllers = GroceryListController.class)
+@WebMvcTest(controllers = GroceryListController.class,
+        excludeFilters = @org.springframework.context.annotation.ComponentScan.Filter(
+                type = org.springframework.context.annotation.FilterType.ASSIGNABLE_TYPE,
+                classes = {com.plotline.backend.ratelimit.AuthRateLimitFilter.class, com.plotline.backend.ratelimit.AiRateLimitFilter.class,
+                        com.plotline.backend.membership.MembershipFilter.class}))
 @AutoConfigureMockMvc(addFilters = false)
 class GroceryListControllerTest {
 

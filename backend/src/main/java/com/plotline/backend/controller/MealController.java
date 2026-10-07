@@ -1,5 +1,8 @@
 package com.plotline.backend.controller;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import com.plotline.backend.service.MealService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -12,6 +15,8 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/meals")
 public class MealController {
+    private static final Logger log = LoggerFactory.getLogger(MealController.class);
+
 
     @Autowired
     private MealService mealService;
@@ -23,7 +28,7 @@ public class MealController {
             // Fetch all meals data for the user from S3
             return mealService.getAllMealsFromS3(username);
         } catch (IOException e) {
-            e.printStackTrace();
+            log.error("getAllMeals failed", e);
             return List.of(Map.of("error", "Error retrieving meals: " + e.getMessage()));
         }
     }
@@ -35,7 +40,7 @@ public class MealController {
             Map<String, Object> meal = mealService.getMealFromS3(username, mealID);
             return ResponseEntity.ok(meal);
         } catch (IOException e) {
-            e.printStackTrace();
+            log.error("getMealDetails failed", e);
             return ResponseEntity.status(500).body(Map.of("error", "Error retrieving meal: " + e.getMessage()));
         }
     }
@@ -47,7 +52,7 @@ public class MealController {
             mealService.deleteMeal(username, mealID);
             return ResponseEntity.ok("Meal deleted successfully.");
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("deleteMeal failed", e);
             return ResponseEntity.status(500).body("Error deleting meal: " + e.getMessage());
         }
     }

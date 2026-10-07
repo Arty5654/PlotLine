@@ -27,10 +27,6 @@ struct AddEventSheet: View {
     @State private var selectedFriends: [Friend] = []
     @State private var showDuplicateAlert = false
 
-    // Adaptive color: white in dark mode, blue in light mode
-    private var adaptiveTextColor: Color {
-        colorScheme == .dark ? .white : .blue
-    }
 
     // Reminder selections — id is secondsBefore (stable across sessions)
     struct ReminderOption: Identifiable {
@@ -141,12 +137,12 @@ struct AddEventSheet: View {
     }
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             Form {
                 // Event type
-                Section(header: Text("Event Type").foregroundColor(adaptiveTextColor)) {
+                Section(header: Text("Event Type")) {
                     Toggle("Subscription", isOn: $isSubscription)
-                        .onChange(of: isSubscription) { on in
+                        .onChange(of: isSubscription) { _, on in
                             if on {
                                 isRecurring = true
                                 recurrence = "monthly"
@@ -158,37 +154,32 @@ struct AddEventSheet: View {
                                 .foregroundColor(.secondary)
                             TextField("Monthly cost", text: $monthlyCost)
                                 .keyboardType(.decimalPad)
-                                .accentColor(adaptiveTextColor)
                         }
                     }
                 }
 
                 // Event detail fields
-                Section(header: Text("Event Details").foregroundColor(adaptiveTextColor)) {
+                Section(header: Text("Event Details")) {
                     TextField("Title", text: $title)
-                        .accentColor(adaptiveTextColor)
                     if !isSubscription {
                         TextField("Description", text: $description)
-                            .accentColor(adaptiveTextColor)
                     }
                 }
 
                 // Date selection fields
-                Section(header: Text("Dates & Times").foregroundColor(adaptiveTextColor)) {
+                Section(header: Text("Dates & Times")) {
                     Toggle("Multiple Days?", isOn: $isRange)
                     DatePicker("Start", selection: $startDate, displayedComponents: [.date, .hourAndMinute])
-                        .accentColor(adaptiveTextColor)
 
                     if isRange {
                         DatePicker("End", selection: $endDate, in: startDate..., displayedComponents: [.date, .hourAndMinute])
-                            .accentColor(adaptiveTextColor)
                     }
                 }
 
                 // Recurrence options
-                Section(header: Text("Repeat").foregroundColor(adaptiveTextColor)) {
+                Section(header: Text("Repeat")) {
                     Toggle("Recurring Event?", isOn: $isRecurring)
-                        .onChange(of: isRecurring) { on in
+                        .onChange(of: isRecurring) { _, on in
                             if !on { recurrence = "none" }
                             else if recurrence == "none" {
                                 recurrence = "weekly" // sensible default when turning on
@@ -201,12 +192,11 @@ struct AddEventSheet: View {
                             Text("Every Month").tag("monthly")
                             Text("Every Year").tag("yearly")
                         }
-                        .accentColor(adaptiveTextColor)
                     }
                 }
 
 
-                Section(header: Text("Invite Friends").foregroundColor(adaptiveTextColor)) {
+                Section(header: Text("Invite Friends")) {
                     // Button to toggle the friend dropdown
                     Button(action: {
                         withAnimation {
@@ -250,7 +240,7 @@ struct AddEventSheet: View {
                                                         .foregroundColor(.primary)
                                                     Spacer()
                                                     Image(systemName: "plus.circle.fill")
-                                                        .foregroundColor(adaptiveTextColor)
+                                                        .foregroundColor(PLColor.tint)
                                                 }
                                                 .padding(.vertical, 8)
                                                 .padding(.horizontal, 12)
@@ -299,13 +289,13 @@ struct AddEventSheet: View {
                 }
 
                 // Friends visibility
-                Section(header: Text("Visibility").foregroundColor(adaptiveTextColor)) {
+                Section(header: Text("Visibility")) {
                     Toggle("Friends can see this event", isOn: $friendsCanSee)
                 }
 
                 // Publish to friend calendars (only for new events, only when access exists)
                 if editingEventId == nil && !publishableFriendCalendars.isEmpty {
-                    Section(header: Text("Also Publish To").foregroundColor(adaptiveTextColor)) {
+                    Section(header: Text("Also Publish To")) {
                         ForEach(publishableFriendCalendars, id: \.self) { friend in
                             Toggle(friend, isOn: Binding<Bool>(
                                 get: { selectedPublishCalendars.contains(friend) },
@@ -319,7 +309,7 @@ struct AddEventSheet: View {
                 }
 
                 // Notifications
-                Section(header: Text("Reminders").foregroundColor(adaptiveTextColor)) {
+                Section(header: Text("Reminders")) {
                     ForEach(reminderOptions) { opt in
                         Toggle(isOn: Binding<Bool>(
                             get: { selectedReminders.contains(opt.secondsBefore) },
@@ -380,7 +370,7 @@ struct AddEventSheet: View {
                 Text("An event with this name already exists on this day. Please choose a different name.")
             }
         }
-        .tint(adaptiveTextColor)
+        .tint(PLColor.accent)
     }
 }
 

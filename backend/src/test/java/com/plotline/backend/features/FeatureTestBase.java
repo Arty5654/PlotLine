@@ -41,7 +41,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  * All feature test classes share one Spring context, so each test creates its own users
  * with unique names instead of relying on a clean store.
  */
-@SpringBootTest
+// many sign-ups from one test IP, and test users haven't subscribed: limits and membership have their own tests
+@SpringBootTest(properties = {"plotline.ratelimit.enabled=false", "plotline.membership.required=false"})
 @AutoConfigureMockMvc
 @Import(FeatureTestBase.InMemoryStorage.class)
 abstract class FeatureTestBase {

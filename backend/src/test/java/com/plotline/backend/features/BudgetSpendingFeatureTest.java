@@ -1,7 +1,6 @@
 package com.plotline.backend.features;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -34,7 +33,6 @@ class BudgetSpendingFeatureTest extends FeatureTestBase {
     }
 
     @Test
-    @Disabled("Known bug: BUGS.md #1 (uploads cut off accents/emoji)")
     @DisplayName("Budget categories with accents or emoji survive saving")
     void nonAsciiCategories() throws Exception {
         User me = newUser();
@@ -209,5 +207,15 @@ class BudgetSpendingFeatureTest extends FeatureTestBase {
         User me = newUser();
         assertThat(ok(getAs(me, "/api/plaid/accounts").param("username", me.name()))).isEmpty();
     }
-}
 
+    @Test
+    @DisplayName("Subscriptions: none saved gives {}, but an unreadable file is an error, not \"none\" (BUGS.md #5)")
+    void subscriptionsErrorIsNotEmpty() throws Exception {
+        User me = newUser();
+        assertThat(ok(getAs(me, "/api/subscriptions/{u}", me.name())).toString()).isEqualTo("{}");
+
+        s3.putObject(b -> b.bucket("plotline-database-bucket").key("users/" + me.name() + "/subscriptions.json"),
+                software.amazon.awssdk.core.sync.RequestBody.fromString("not json"));
+        call(getAs(me, "/api/subscriptions/{u}", me.name()), 500);
+    }
+}
