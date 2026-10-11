@@ -76,8 +76,9 @@ class FriendsFeatureTest extends FeatureTestBase {
         User stranger = newUser();
         befriend(me, friend);
         String postId = UUID.randomUUID().toString();
+        Map<String, Object> goal = Map.of("id", UUID.randomUUID().toString(), "title", "Run a 5k", "steps", List.of());
         ok(postJson(me, "/api/goals/friends-feed/" + me.name() + "/post", Map.of("id", postId, "username", me.name(),
-                "comment", "Ran my first 5k!", "likedBy", List.of(), "comments", List.of())));
+                "goal", goal, "comment", "Ran my first 5k!", "likedBy", List.of(), "comments", List.of())));
 
         JsonNode friendFeed = ok(getAs(friend, "/api/goals/friends-feed/{u}", friend.name()));
         assertThat(friendFeed.toString()).contains("Ran my first 5k!");
@@ -90,6 +91,53 @@ class FriendsFeatureTest extends FeatureTestBase {
 
         ok(deleteAs(me, "/api/goals/friends-feed/{u}/post/{p}", me.name(), postId));
         assertThat(ok(getAs(friend, "/api/goals/friends-feed/{u}", friend.name())).toString()).doesNotContain("Ran my first 5k!");
+    }
+
+    @Test
+    @DisplayName("Goal feed: a weekly goal can be shared with a note; a post without a goal is refused")
+    void shareWeeklyGoal() throws Exception {
+        User me = newUser();
+        User friend = newUser();
+        befriend(me, friend);
+        Map<String, Object> weekly = Map.of("name", "Gym 3x", "priority", "High", "dueDate", "2026-10-12", "completed", true);
+        ok(postJson(me, "/api/goals/friends-feed/" + me.name() + "/post", Map.of("id", UUID.randomUUID().toString(),
+                "username", me.name(), "weeklyGoal", weekly, "comment", "Done early!")));
+
+        JsonNode post = null;
+        for (JsonNode p : ok(getAs(friend, "/api/goals/friends-feed/{u}", friend.name()))) {
+            if (p.path("weeklyGoal").path("name").asText().equals("Gym 3x")) post = p;
+        }
+        assertThat(post).isNotNull();
+        assertThat(post.get("comment").asText()).isEqualTo("Done early!");
+        assertThat(post.get("weeklyGoal").get("completed").asBoolean()).isTrue();
+        assertThat(post.get("weeklyGoal").get("dueDate").asText()).isEqualTo("2026-10-12");
+        assertThat(post.get("goal").get("title").asText()).isEqualTo("Gym 3x"); // for older app versions
+        assertThat(post.get("goal").get("steps")).isEmpty();
+
+        call(postJson(me, "/api/goals/friends-feed/" + me.name() + "/post", Map.of("id", UUID.randomUUID().toString(),
+                "username", me.name(), "comment", "nothing to show")), 400);
+    }
+
+    @Test
+    @DisplayName("Goal feed: a post shared with chosen friends is seen only by them; only the author sees who it went to")
+    void shareWithChosenFriends() throws Exception {
+        User me = newUser();
+        User chosen = newUser();
+        User other = newUser();
+        befriend(me, chosen);
+        befriend(me, other);
+        Map<String, Object> goal = Map.of("id", UUID.randomUUID().toString(), "title", "Secret plan", "steps", List.of());
+        ok(postJson(me, "/api/goals/friends-feed/" + me.name() + "/post", Map.of("id", UUID.randomUUID().toString(),
+                "username", me.name(), "goal", goal, "audience", List.of(chosen.name().toUpperCase()))));
+
+        JsonNode chosenFeed = ok(getAs(chosen, "/api/goals/friends-feed/{u}", chosen.name()));
+        assertThat(chosenFeed.toString()).contains("Secret plan");
+        for (JsonNode p : chosenFeed) assertThat(p.get("audience").isNull()).isTrue();
+        assertThat(ok(getAs(other, "/api/goals/friends-feed/{u}", other.name())).toString()).doesNotContain("Secret plan");
+
+        JsonNode mine = ok(getAs(me, "/api/goals/friends-feed/{u}", me.name()));
+        assertThat(mine.toString()).contains("Secret plan");
+        assertThat(mine.get(0).get("audience").get(0).asText()).isEqualTo(chosen.name());
     }
 
     @Test

@@ -132,6 +132,17 @@ public class CalendarController {
         }
     }
 
+    // Apple Calendar is read on the phone; the app sends the events from the calendars the user picked
+    @PostMapping("/batch-sync-apple")
+    public ResponseEntity<EventsResponse> batchSyncApple(@RequestBody BatchSyncGcalRequest request) {
+        try {
+            List<EventDto> result = calendarService.replaceImportedEvents(request.getUsername(), "apple_", request.getEvents());
+            return ResponseEntity.ok(new EventsResponse(true, null, result));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(new EventsResponse(false, e.getMessage(), null));
+        }
+    }
+
     @DeleteMapping("/delete-by-type")
     public ResponseEntity<String> deleteEventsByType(@RequestParam String username, @RequestParam String type) {
         try {

@@ -6,7 +6,7 @@ struct ArchivedGoalsView: View {
     @Environment(\.colorScheme) var colorScheme
 
     var unarchiveGoal: (LongTermGoal) -> Void
-    var shareGoalToFriends: (LongTermGoal) -> Void
+    @State private var sharing: LongTermGoal?
 
     private var username: String {
         UserDefaults.standard.string(forKey: "loggedInUsername") ?? "Guest"
@@ -48,7 +48,7 @@ struct ArchivedGoalsView: View {
                                                 Label("Unarchive", systemImage: "arrow.uturn.left")
                                             }
                                             Button {
-                                                shareGoalToFriends(goal)
+                                                sharing = goal
                                             } label: {
                                                 Label("Share to Friends", systemImage: "person.3.fill")
                                             }
@@ -89,6 +89,9 @@ struct ArchivedGoalsView: View {
                     Button("Done") { dismiss() }
                 }
             }
+        }
+        .sheet(item: $sharing) { goal in
+            ShareGoalSheet(goal: .longTerm(goal), username: username)
         }
         .onAppear { fetchArchivedGoals() }
     }

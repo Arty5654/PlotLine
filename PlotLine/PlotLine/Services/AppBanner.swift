@@ -36,6 +36,8 @@ final class AppBanner: ObservableObject {
 
     /// Report a failure from anywhere (any thread). `action` finishes "Couldn't …", e.g. "save your meal".
     nonisolated static func report(_ action: String, _ error: Error? = nil, retry: (@MainActor () -> Void)? = nil) {
+        // leaving a page cancels its requests; that's not something to warn about
+        guard !isCancellation(error) else { return }
         let text = text(for: action, error)
         print("⚠️ Couldn't \(action): \(error.map { "\($0)" } ?? "no details")")
         Task { @MainActor in shared.show(text, retry: retry) }
@@ -60,6 +62,12 @@ final class AppBanner: ObservableObject {
             }
             return true
         }
+        return false
+    }
+
+    nonisolated static func isCancellation(_ error: Error?) -> Bool {
+        if error is CancellationError { return true }
+        if let urlError = error as? URLError, urlError.code == .cancelled { return true }
         return false
     }
 

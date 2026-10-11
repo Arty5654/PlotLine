@@ -135,6 +135,12 @@ public class LongTermGoalsService {
     }
   }
 
+  // every step checked off (a goal with no steps isn't "done")
+  private static boolean isDone(LongTermGoal goal) {
+    return goal.getSteps() != null && !goal.getSteps().isEmpty()
+        && goal.getSteps().stream().allMatch(LongTermStep::isCompleted);
+  }
+
   public boolean updateStepCompletionInS3(String username, UUID goalId, UUID stepId, boolean isCompleted) {
     username = normalize(username);
     try {
@@ -158,7 +164,7 @@ public class LongTermGoalsService {
 
       for (LongTermGoal goal : longTermGoals) {
         if (goal.getId().equals(goalId)) {
-
+          boolean wasDone = isDone(goal);
 
           for (LongTermStep step : goal.getSteps()) {
             if (step.getId().equals(stepId)) {
@@ -167,18 +173,14 @@ public class LongTermGoalsService {
             }
           }
 
-          // post to chat if all steps are completed
-          boolean allCompleted = goal.getSteps().stream()
-          .allMatch(LongTermStep::isCompleted);
-          if (allCompleted) {
-              String goalName = goal.getTitle();
-
-              ChatMessage msg = new ChatMessage();
-              msg.setCreator(username);
-              msg.setContent("Has completed the long-term goal \"" + goalName + "\"!");
-              chatMessageService.postMessage(username, msg);
-
+          // tell friends in Chat when the last step is checked off; take it back if one is unchecked
+          String message = "Has completed the long-term goal \"" + goal.getTitle() + "\"!";
+          boolean done = isDone(goal);
+          if (done && !wasDone) {
+              chatMessageService.postOnce(username, message);
               userProfileService.incrementTrophy(username, "long-term-goals", 1);
+          } else if (!done && wasDone) {
+              chatMessageService.retract(username, message);
           }
           break;
         }
@@ -333,4 +335,83 @@ public class LongTermGoalsService {
     }
   }
 
+
+  // ── Editing and weekly-goal links ────────────────────────────────────────────
+
+  @FunctionalInterface
+  private interface Change {
+    /** changes the goals file in place; returns false if nothing matched (nothing is saved) */
+    boolean apply(List<LongTermGoal> active, List<LongTermGoal> archived);
+  }
+
+  private boolean modify(String username, Change change) {
+    String key = "users/" + normalize(username) + "/long-term-goals.json";
+    try {
+      ObjectMapper objectMapper = new ObjectMapper();
+      byte[] data = s3Client.getObjectAsBytes(GetObjectRequest.builder().bucket(bucketName).key(key).build()).asByteArray();
+      Map<String, List<LongTermGoal>> goalsData = objectMapper.readValue(data, new TypeReference<>() {
+      });
+      List<LongTermGoal> active = goalsData.computeIfAbsent("longTermGoals", k -> new ArrayList<>());
+      List<LongTermGoal> archived = goalsData.computeIfAbsent("archivedGoals", k -> new ArrayList<>());
+      if (!change.apply(active, archived)) return false;
+      s3Client.putObject(PutObjectRequest.builder().bucket(bucketName).key(key).build(),
+          RequestBody.fromString(objectMapper.writeValueAsString(goalsData)));
+      return true;
+    } catch (NoSuchKeyException e) {
+      return false;
+    } catch (Exception e) {
+      log.error("Updating long-term goals failed", e);
+      return false;
+    }
+  }
+
+  /** replaces a goal's title, target date, reminders and steps (active or archived) */
+  public boolean updateLongTermGoal(String username, UUID goalId, LongTermGoal updated) {
+    return modify(username, (active, archived) -> {
+      for (List<LongTermGoal> list : List.of(active, archived)) {
+        for (int i = 0; i < list.size(); i++) {
+          if (list.get(i).getId().equals(goalId)) {
+            updated.setId(goalId);
+            if (updated.getSteps() == null) updated.setSteps(new ArrayList<>());
+            list.set(i, updated);
+            return true;
+          }
+        }
+      }
+      return false;
+    });
+  }
+
+  /** the step, or null if the goal or step no longer exists */
+  public LongTermStep findStep(String username, UUID goalId, UUID stepId) {
+    LongTermStep[] found = new LongTermStep[1];
+    modify(username, (active, archived) -> {
+      found[0] = stepIn(active, goalId, stepId);
+      if (found[0] == null) found[0] = stepIn(archived, goalId, stepId);
+      return false; // read only
+    });
+    return found[0];
+  }
+
+  /** links a step to a weekly goal, or unlinks it (null) */
+  public boolean setStepWeeklyGoal(String username, UUID goalId, UUID stepId, Integer weeklyGoalId) {
+    return modify(username, (active, archived) -> {
+      LongTermStep step = stepIn(active, goalId, stepId);
+      if (step == null) step = stepIn(archived, goalId, stepId);
+      if (step == null) return false;
+      step.setWeeklyGoalId(weeklyGoalId);
+      return true;
+    });
+  }
+
+  private static LongTermStep stepIn(List<LongTermGoal> goals, UUID goalId, UUID stepId) {
+    for (LongTermGoal goal : goals) {
+      if (goal.getId().equals(goalId) && goal.getSteps() != null) {
+        for (LongTermStep step : goal.getSteps()) {
+          if (step.getId().equals(stepId)) return step;
+        }
+      }
+    }
+    return null;
+  }
 }

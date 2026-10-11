@@ -134,12 +134,17 @@ struct ContentView: View {
                 }
                 navigateToCalendar = true
             }
+            // a goal reminder was tapped (also when it launched the app): GoalsView opens the goal
+            .onReceive(GoalsRouter.shared.$request) { request in
+                if request != nil { navigateToGoals = true }
+            }
             .onReceive(NotificationCenter.default.publisher(for: .plotlineDeepLink)) { notification in
                 guard let destination = notification.userInfo?["destination"] as? String else { return }
                 switch destination {
                 case "nutrition":   navigateToNutrition = true
                 case "budget":      navigateToBudget = true
                 case "goals":       navigateToGoals = true
+                case "friends":     isFriendsPresented = true
                 case "add-friend":
                     if let sender = notification.userInfo?["from"] as? String, !sender.isEmpty {
                         friendInviteSender = sender

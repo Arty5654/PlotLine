@@ -7,6 +7,7 @@
 
 import Testing
 import Foundation
+import EventKit
 @testable import PlotLine
 
 struct CalendarTests {
@@ -57,5 +58,33 @@ struct CalendarTests {
         let sunday = TestJSON.day(2026, 10, 4, calendar: calendar)
         #expect(calendar.startOfWeek(for: wednesday) == sunday)
         #expect(calendar.startOfWeek(for: sunday) == sunday)
+    }
+}
+
+// Apple Calendar import: which calendars are remembered, and which are ticked the first time
+struct AppleCalendarTests {
+
+    @Test("Chosen calendars are remembered per PlotLine account, so another account on the phone starts unlinked")
+    func selectionPerAccount() {
+        let a = "applecaltest\(UUID().uuidString.prefix(8))"
+        let b = "applecaltest\(UUID().uuidString.prefix(8))"
+        defer {
+            AppleCalendar.setSelectedCalendarIDs([], for: a)
+            AppleCalendar.setSelectedCalendarIDs([], for: b)
+        }
+        AppleCalendar.setSelectedCalendarIDs(["home", "work"], for: a)
+        #expect(AppleCalendar.selectedCalendarIDs(for: a) == ["home", "work"])
+        #expect(AppleCalendar.selectedCalendarIDs(for: a.uppercased()) == ["home", "work"]) // usernames ignore case
+        #expect(AppleCalendar.selectedCalendarIDs(for: b).isEmpty)
+
+        AppleCalendar.setSelectedCalendarIDs([], for: a) // disconnect
+        #expect(AppleCalendar.selectedCalendarIDs(for: a).isEmpty)
+    }
+
+    @Test("The person's own calendars are ticked by default")
+    func ownCalendarIsOnByDefault() {
+        let calendar = EKCalendar(for: .event, eventStore: AppleCalendar.store) // a local calendar
+        #expect(AppleCalendar.isOnByDefault(calendar, googleLinked: false))
+        #expect(AppleCalendar.isOnByDefault(calendar, googleLinked: true)) // not a Google account
     }
 }

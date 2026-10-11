@@ -188,7 +188,16 @@ struct CalendarAPI {
 
     // Sends all gcal events in one request; backend replaces gcal_ entries atomically
     static func batchSyncGcal(_ events: [Event], username: String) async throws -> [Event] {
-        guard let url = URL(string: "\(baseURL)/calendar/batch-sync-gcal") else {
+        try await batchSync(events, username: username, path: "batch-sync-gcal")
+    }
+
+    // Same for Apple Calendar (apple_ entries). An empty list removes them all (disconnect).
+    static func batchSyncApple(_ events: [Event], username: String) async throws -> [Event] {
+        try await batchSync(events, username: username, path: "batch-sync-apple")
+    }
+
+    private static func batchSync(_ events: [Event], username: String, path: String) async throws -> [Event] {
+        guard let url = URL(string: "\(baseURL)/calendar/\(path)") else {
             throw CalendarError.invalidURL
         }
 

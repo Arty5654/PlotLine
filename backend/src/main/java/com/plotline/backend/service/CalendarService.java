@@ -445,21 +445,27 @@ public class CalendarService {
 
     // Replace all gcal_ events in one S3 read + write — used by Google Calendar batch sync
     public List<EventDto> batchSyncGcalEvents(String username, List<EventDto> incomingGcalEvents) throws Exception {
-        String normUser = normalize(username);
-        List<EventDto> existing = getEvents(normUser);
+        return replaceImportedEvents(username, "gcal_", incomingGcalEvents);
+    }
 
-        // Keep all non-gcal events untouched
-        List<EventDto> nonGcal = new java.util.ArrayList<>();
-        for (EventDto e : existing) {
-            if (!e.getId().startsWith("gcal_")) {
-                nonGcal.add(e);
+    /**
+     * Replaces every event whose id starts with `prefix` (one imported calendar) with `incoming`,
+     * in one S3 read + write. Other events are untouched; incoming events without the prefix are
+     * ignored, so a sync can only ever change that calendar's events.
+     */
+    public List<EventDto> replaceImportedEvents(String username, String prefix, List<EventDto> incoming) throws Exception {
+        String normUser = normalize(username);
+        List<EventDto> result = new java.util.ArrayList<>();
+        for (EventDto e : getEvents(normUser)) {
+            if (!e.getId().startsWith(prefix)) result.add(e);
+        }
+        if (incoming != null) {
+            for (EventDto e : incoming) {
+                if (e.getId() != null && e.getId().startsWith(prefix)) result.add(e);
             }
         }
-
-        // Merge: non-gcal events + fresh gcal events
-        nonGcal.addAll(incomingGcalEvents);
-        saveEventsToS3(normUser, nonGcal);
-        return nonGcal;
+        saveEventsToS3(normUser, result);
+        return result;
     }
 
     public void deleteEventsByType(String username, String type) throws Exception {

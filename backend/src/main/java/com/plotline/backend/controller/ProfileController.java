@@ -4,6 +4,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 
+import java.io.IOException;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -55,13 +56,8 @@ public class ProfileController {
     // name, birthday and city are only shown to the user and their friends
     @GetMapping("/get-user")
     @ActingUser(value = {}, others = {"username"})
-    public ResponseEntity<UserProfile> getProfile(@RequestParam String username) {
+    public ResponseEntity<UserProfile> getProfile(@RequestParam String username) throws IOException {
         UserProfile profile = userProfileService.getProfile(username);
-
-        if (profile == null) {
-            log.debug("Profile not found");
-            return ResponseEntity.badRequest().body(null);
-        }
 
         if (!CurrentUser.is(username) && !isFriend(username)) {
             UserProfile limited = new UserProfile();

@@ -1,11 +1,15 @@
 package com.plotline.backend.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+
 import java.util.UUID;
 
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class LongTermStep {
   private UUID id;
   private String name;
   private boolean isCompleted;
+  private Integer weeklyGoalId; // set while this step is also a weekly goal (they're checked off together)
 
   public LongTermStep() {
   }
@@ -38,5 +42,13 @@ public class LongTermStep {
 
   public void setCompleted(boolean completed) {
     isCompleted = completed;
+  }
+
+  public Integer getWeeklyGoalId() {
+    return weeklyGoalId;
+  }
+
+  public void setWeeklyGoalId(Integer weeklyGoalId) {
+    this.weeklyGoalId = weeklyGoalId;
   }
 }

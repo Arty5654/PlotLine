@@ -5,19 +5,10 @@ struct GoalsView: View {
     @State private var tasks: [TaskItem] = []
     @State private var longTermGoals: [LongTermGoal] = []
 
-    @State private var newTask: String = ""
-    @State private var newTaskPriority: Priority = .medium
-    @State private var newTaskDueDate = Date()
     @State private var selectedPriorityFilter: Priority? = nil
-    @State private var notificationsEnabled = false
-    @State private var notificationType: String = "dueDate"
-    @State private var notificationTime: Date = Date()
-
-    @State private var newLongTermTitle: String = ""
-    @State private var newStep: String = ""
-    @State private var newLongTermSteps: [String] = []
 
     @EnvironmentObject var calendarVM: CalendarViewModel
+    @ObservedObject private var router = GoalsRouter.shared
 
     private var username: String {
         UserDefaults.standard.string(forKey: "loggedInUsername") ?? "Guest"
@@ -36,24 +27,17 @@ struct GoalsView: View {
             if selectedView == .weekly {
                 WeeklyGoalsView(
                     tasks: $tasks,
-                    newTask: $newTask,
-                    newTaskPriority: $newTaskPriority,
-                    newTaskDueDate: $newTaskDueDate,
+                    longTermGoals: $longTermGoals,
                     selectedPriorityFilter: $selectedPriorityFilter,
-                    notificationsEnabled: $notificationsEnabled,
-                    notificationType: $notificationType,
-                    notificationTime: $notificationTime,
                     username: username,
-                    calendarVM: calendarVM,
-                    fetchGoals: fetchGoals
+                    calendarVM: calendarVM
                 )
             } else {
                 LongTermGoalsView(
                     longTermGoals: $longTermGoals,
-                    newLongTermTitle: $newLongTermTitle,
-                    newStep: $newStep,
-                    newLongTermSteps: $newLongTermSteps,
-                    username: username
+                    weeklyGoals: $tasks,
+                    username: username,
+                    calendarVM: calendarVM
                 )
             }
         }
@@ -61,6 +45,11 @@ struct GoalsView: View {
         .onAppear {
             fetchGoals()
             fetchLongTermGoals()
+            if let tab = router.request?.tab { selectedView = tab }
+        }
+        // a tapped reminder: switch to its tab (the tab then opens the goal)
+        .onChange(of: router.request) { _, request in
+            if let tab = request?.tab { selectedView = tab }
         }
     }
 
@@ -85,6 +74,8 @@ struct GoalsView: View {
                     self.tasks = decodedResponse.weeklyGoals
                     WidgetDataWriter.writeGoals(decodedResponse.weeklyGoals)
                     WidgetDataWriter.reloadWidgets()
+                    // e.g. on a new phone: put this account's saved reminders back on it
+                    GoalReminders.sync(decodedResponse.weeklyGoals)
                 }
             } catch {
                 AppBanner.report("load your goals", error, retry: { fetchGoals() })
@@ -103,7 +94,10 @@ struct GoalsView: View {
             guard let data = data else { return }
             do {
                 let decodedResponse = try JSONDecoder().decode(LongTermGoalsResponse.self, from: data)
-                DispatchQueue.main.async { self.longTermGoals = decodedResponse.longTermGoals }
+                DispatchQueue.main.async {
+                    self.longTermGoals = decodedResponse.longTermGoals
+                    GoalReminders.syncLongTerm(decodedResponse.longTermGoals) // e.g. on a new phone
+                }
             } catch {
                 AppBanner.report("load your long-term goals", error, retry: { fetchLongTermGoals() })
             }

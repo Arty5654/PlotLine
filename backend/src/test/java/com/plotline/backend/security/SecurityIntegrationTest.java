@@ -315,7 +315,7 @@ class SecurityIntegrationTest {
     @DisplayName("Profiles")
     class Profiles {
         @BeforeEach
-        void profiles() {
+        void profiles() throws Exception {
             for (String name : List.of("bob", "carol")) {
                 UserProfile profile = new UserProfile();
                 profile.setUsername(name);

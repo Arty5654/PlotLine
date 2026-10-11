@@ -33,6 +33,7 @@ import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
+import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.ObjectCannedACL;
 
 @Service
@@ -178,27 +179,20 @@ public class UserProfileService {
       }
   }
 
-  public UserProfile getProfile(String username) {
-      
+  /** The saved profile, or an empty one if the user hasn't saved theirs yet (new accounts). */
+  public UserProfile getProfile(String username) throws IOException {
+      String key = "users/" + normalize(username) + "/profile.json";
+      GetObjectRequest getRequest = GetObjectRequest.builder()
+        .bucket(bucketName)
+        .key(key)
+        .build();
+
       try {
-
-        log.debug("{}", username);
-        String key = "users/" + normalize(username) + "/profile.json";
-
-        GetObjectRequest getRequest = GetObjectRequest.builder()
-          .bucket(bucketName)
-          .key(key)
-          .build();
-
         ResponseBytes<GetObjectResponse> objectBytes = s3Client.getObjectAsBytes(getRequest);
         String userJson = new String(objectBytes.asByteArray(), StandardCharsets.UTF_8);
-
-
-        UserProfile profile = objectMapper.readValue(userJson, UserProfile.class);
-        return profile;
-
-      } catch (Exception e) {
-          return null;
+        return objectMapper.readValue(userJson, UserProfile.class);
+      } catch (NoSuchKeyException e) {
+        return new UserProfile(username, null, null, null);
       }
   }
 

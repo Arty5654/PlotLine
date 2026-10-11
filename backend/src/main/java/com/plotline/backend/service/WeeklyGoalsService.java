@@ -68,6 +68,31 @@ public class WeeklyGoalsService {
     }
   }
 
+  static String completedMessage(TaskItem task) {
+    return "Has completed \"" + task.getName() + "\" from their weekly goals!";
+  }
+
+  /** one weekly goal, or null */
+  public TaskItem findGoal(String username, int taskId) {
+    try {
+      byte[] data = s3Client.getObjectAsBytes(GetObjectRequest.builder()
+          .bucket(bucketName).key("users/" + normalize(username) + "/weekly-goals.json").build()).asByteArray();
+      ObjectMapper objectMapper = new ObjectMapper();
+      objectMapper.registerModule(new JavaTimeModule());
+      Map<String, List<TaskItem>> goalsData = objectMapper.readValue(data, new TypeReference<>() {
+      });
+      for (TaskItem task : goalsData.getOrDefault("weeklyGoals", List.of())) {
+        if (task.getId() == taskId) return task;
+      }
+      return null;
+    } catch (NoSuchKeyException e) {
+      return null;
+    } catch (Exception e) {
+      log.error("findGoal failed", e);
+      return null;
+    }
+  }
+
   public boolean addGoalToS3(String username, TaskItem newTask) {
     try {
       String key = "users/" + normalize(username) + "/weekly-goals.json";
@@ -283,9 +308,7 @@ public class WeeklyGoalsService {
       Map<String, List<TaskItem>> goalsData = objectMapper.readValue(jsonData, new TypeReference<>() {
       });
       List<TaskItem> updatedGoals = goalsData.get("weeklyGoals").stream()
-          .map(task -> task.getId() == taskId
-              ? new TaskItem(task.getId(), task.getName(), isCompleted, task.getPriority(), task.getDueDate())
-              : task)
+          .peek(task -> { if (task.getId() == taskId) task.setCompleted(isCompleted); }) // keeps its reminders
           .toList();
 
       goalsData.put("weeklyGoals", updatedGoals);
@@ -293,13 +316,10 @@ public class WeeklyGoalsService {
 
       for (TaskItem task : goalsData.get("weeklyGoals")) {
           if (task.getId() == taskId) {
-              // post to chat when goal is completed
-              if (isCompleted) {
-                  ChatMessage msg = new ChatMessage();
-                  msg.setCreator(username);
-                  msg.setContent("Has completed \"" + task.getName() + "\" from their weekly goals!");
-                  chatMessageService.postMessage(username, msg);
-              }
+              // tell friends in Chat when it's checked off; take it back if it's unchecked
+              String message = completedMessage(task);
+              if (isCompleted) chatMessageService.postOnce(username, message);
+              else chatMessageService.retract(username, message);
           }
       }
 
@@ -320,49 +340,43 @@ public class WeeklyGoalsService {
     }
   }
 
+  /** This week's costs by category; empty if none are saved yet. */
   public Map<String, Double> getWeeklyCosts(String username) {
-    try {
-      String key = "users/" + normalize(username) + "/weekly_costs.json";
-      GetObjectRequest request = GetObjectRequest.builder()
-          .bucket(bucketName)
-          .key(key)
-          .build();
-
-      ResponseBytes<GetObjectResponse> objectBytes = s3Client.getObjectAsBytes(request);
-      String jsonData = new String(objectBytes.asByteArray(), StandardCharsets.UTF_8);
-
-      ObjectMapper objectMapper = new ObjectMapper();
-      Map<String, Object> rawData = objectMapper.readValue(jsonData, new TypeReference<>() {
-      });
-      Map<String, Double> costs = (Map<String, Double>) rawData.get("costs");
-
-      return costs;
-    } catch (Exception e) {
-      log.error("getWeeklyCosts failed", e);
-      throw new RuntimeException("Failed to fetch weekly costs", e);
-    }
+    Map<String, Double> costs = readNumbers("users/" + normalize(username) + "/weekly_costs.json", "costs");
+    return costs != null ? costs : new HashMap<>();
   }
 
+  /** The weekly budget (edited if the user changed it, else the one from the quiz); empty if there's none yet. */
   public Map<String, Double> getWeeklyBudget(String username) {
+    String user = normalize(username);
+    Map<String, Double> budget = readNumbers("users/" + user + "/weekly-budget-edited.json", "budget");
+    if (budget == null) budget = readNumbers("users/" + user + "/weekly-budget.json", null);
+    return budget != null ? budget : new HashMap<>();
+  }
+
+  // a map of numbers from an S3 JSON file (under `field`, or the whole file); null if the file doesn't exist
+  private Map<String, Double> readNumbers(String key, String field) {
     try {
-      String key = "users/" + normalize(username) + "/weekly-budget-edited.json";
       GetObjectRequest request = GetObjectRequest.builder()
           .bucket(bucketName)
           .key(key)
           .build();
-
       ResponseBytes<GetObjectResponse> objectBytes = s3Client.getObjectAsBytes(request);
-      String jsonData = new String(objectBytes.asByteArray(), StandardCharsets.UTF_8);
-
-      ObjectMapper objectMapper = new ObjectMapper();
-      Map<String, Object> rawData = objectMapper.readValue(jsonData, new TypeReference<>() {
+      Map<String, Object> raw = new ObjectMapper().readValue(objectBytes.asByteArray(), new TypeReference<>() {
       });
-      Map<String, Double> budget = (Map<String, Double>) rawData.get("budget");
-
-      return budget;
+      Object numbers = field == null ? raw : raw.get(field);
+      Map<String, Double> result = new HashMap<>();
+      if (numbers instanceof Map<?, ?> map) {
+        map.forEach((k, v) -> {
+          if (v instanceof Number n) result.put(String.valueOf(k), n.doubleValue());
+        });
+      }
+      return result;
+    } catch (NoSuchKeyException e) {
+      return null;
     } catch (Exception e) {
-      log.error("getWeeklyBudget failed", e);
-      throw new RuntimeException("Failed to fetch weekly budget", e);
+      log.error("Reading {} failed", key, e);
+      throw new RuntimeException("Failed to read " + key, e);
     }
   }
 

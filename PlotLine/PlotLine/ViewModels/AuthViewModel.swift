@@ -620,7 +620,10 @@ class AuthViewModel: ObservableObject {
         WidgetDataWriter.clearCredentials()
         BadgeManager.clear()
         MembershipManager.shared.reset()
-        
+        // otherwise the next account to sign in on this phone would sync this person's Google Calendar
+        GIDSignIn.sharedInstance.signOut()
+        GoalReminders.removeAll() // ...or get this person's goal reminders
+
         self.isCodeSent = false
         self.isSignin = true
         self.phoneNumber = ""

@@ -15,6 +15,7 @@ struct CalendarView: View {
 
     @State private var showingAddEventSheet = false
     @State private var showingGoogleImport = false
+    @State private var showingAppleImport = false
     private let monthColumns = Array(repeating: GridItem(.flexible()), count: 7)
 
     var body: some View {
@@ -71,6 +72,11 @@ struct CalendarView: View {
 
                     Button { showingGoogleImport = true } label: {
                         Label("Import from Google Calendar", systemImage: "arrow.down.circle")
+                    }
+                    .buttonStyle(OutlineButton(tint: PLColor.tint))
+
+                    Button { showingAppleImport = true } label: {
+                        Label("Import from Apple Calendar", systemImage: "calendar")
                     }
                     .buttonStyle(OutlineButton(tint: PLColor.tint))
                 }
@@ -200,6 +206,10 @@ struct CalendarView: View {
             }
             .sheet(isPresented: $showingGoogleImport) {
                 GoogleCalendarImportView()
+                    .environmentObject(viewModel)
+            }
+            .sheet(isPresented: $showingAppleImport) {
+                AppleCalendarImportView()
                     .environmentObject(viewModel)
             }
             // Programmatic navigation to DayView

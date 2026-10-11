@@ -2,12 +2,16 @@ package com.plotline.backend.dto;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonFormat;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.util.ArrayList;
+import java.util.List;
 
+@JsonIgnoreProperties(ignoreUnknown = true) // the app also sends fields only it uses
 public class TaskItem {
 
   private int id;
@@ -20,6 +24,12 @@ public class TaskItem {
 
   @JsonFormat(pattern = "yyyy-MM-dd")
   private LocalDate dueDate;
+
+  private List<GoalReminder> reminders = new ArrayList<>();
+
+  // set when this weekly goal is a step of a long-term goal (they're checked off together)
+  private String longTermGoalId;
+  private String longTermStepId;
 
   // --- Priority enum ---
   public enum Priority {
@@ -89,6 +99,30 @@ public class TaskItem {
 
   public void setDueDate(LocalDate dueDate) {
     this.dueDate = dueDate;
+  }
+
+  public List<GoalReminder> getReminders() {
+    return reminders;
+  }
+
+  public void setReminders(List<GoalReminder> reminders) {
+    this.reminders = reminders != null ? reminders : new ArrayList<>();
+  }
+
+  public String getLongTermGoalId() {
+    return longTermGoalId;
+  }
+
+  public void setLongTermGoalId(String longTermGoalId) {
+    this.longTermGoalId = longTermGoalId;
+  }
+
+  public String getLongTermStepId() {
+    return longTermStepId;
+  }
+
+  public void setLongTermStepId(String longTermStepId) {
+    this.longTermStepId = longTermStepId;
   }
 
   @Override

@@ -10,7 +10,9 @@ import java.util.UUID;
 public class FriendPost {
   private UUID id;
   private String username;
-  private LongTermGoal goal;
+  private LongTermGoal goal;          // a long-term goal post...
+  private WeeklyGoalShare weeklyGoal; // ...or a weekly goal post
+  private List<String> audience;      // null = all friends; otherwise only these friends (shown to the author only)
   private String comment;
   private Set<String> likedBy = new HashSet<>(); // usernames of those who liked
   private List<String> comments = new ArrayList<>();
@@ -39,6 +41,22 @@ public class FriendPost {
 
   public void setGoal(LongTermGoal goal) {
     this.goal = goal;
+  }
+
+  public List<String> getAudience() {
+    return audience;
+  }
+
+  public void setAudience(List<String> audience) {
+    this.audience = audience;
+  }
+
+  public WeeklyGoalShare getWeeklyGoal() {
+    return weeklyGoal;
+  }
+
+  public void setWeeklyGoal(WeeklyGoalShare weeklyGoal) {
+    this.weeklyGoal = weeklyGoal;
   }
 
   public String getComment() {
