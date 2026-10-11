@@ -1,341 +1,233 @@
-import SwiftUI
+//
+//  LongTermGoalsView.swift
+//  PlotLine
+//
+//  Long-term goals, laid out like weekly goals: a compact list with progress. "+" adds a goal,
+//  the archive button shows archived ones. Tap a goal for its steps, target date and reminders;
+//  swipe to share or archive.
+//
 
-// MARK: - View
+import SwiftUI
 
 struct LongTermGoalsView: View {
     @Binding var longTermGoals: [LongTermGoal]
-    @Binding var newLongTermTitle: String
-    @Binding var newStep: String
-    @Binding var newLongTermSteps: [String]
+    @Binding var weeklyGoals: [TaskItem]
     let username: String
+    var calendarVM: CalendarViewModel
+    @ObservedObject private var router = GoalsRouter.shared
 
-    @Environment(\.colorScheme) var colorScheme
+    private struct GoalRef: Identifiable { let id: UUID }
 
     @State private var archivedGoals: [LongTermGoal] = []
-    @State private var showArchiveSheet = false
-    @State private var shareAlertMessage = ""
-    @State private var showShareAlert = false
-
+    @State private var showArchived = false
+    @State private var adding = false
+    @State private var editing: LongTermGoal?
+    @State private var opened: GoalRef?
+    @State private var sharing: LongTermGoal?
+    @State private var confirmReset = false
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: PLSpacing.lg) {
-
-                // ── Create new goal card ──
-                VStack(alignment: .leading, spacing: PLSpacing.sm) {
-                    Label("New Long-Term Goal", systemImage: "flag.fill")
-                        .font(.headline)
-                        .foregroundColor(PLColor.tint)
-
-                    TextField("Goal title", text: $newLongTermTitle)
-                        .textFieldStyle(.roundedBorder)
-                        .tint(PLColor.accent)
-
-                    HStack(spacing: PLSpacing.sm) {
-                        TextField("Add a step", text: $newStep)
-                            .textFieldStyle(.roundedBorder)
-                            .tint(PLColor.accent)
-
-                        Button {
-                            guard !newStep.isEmpty else { return }
-                            newLongTermSteps.append(newStep)
-                            newStep = ""
-                        } label: {
-                            Image(systemName: "plus.circle.fill")
-                                .font(.title2)
-                                .foregroundColor(PLColor.tint)
-                        }
-                        .buttonStyle(.plain)
-                    }
-
-                    if !newLongTermSteps.isEmpty {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Steps")
-                                .font(.caption)
-                                .foregroundColor(PLColor.textSecondary)
-                            ForEach(newLongTermSteps, id: \.self) { step in
-                                HStack(spacing: 6) {
-                                    Circle().fill(PLColor.accent).frame(width: 6, height: 6)
-                                    Text(step)
-                                        .font(.subheadline)
-                                        .foregroundColor(PLColor.textPrimary)
-                                }
-                            }
-                        }
-                        .padding(.top, 2)
-                    }
-
-                    Button(action: addLongTermGoal) {
-                        Text("Save Goal")
-                            .font(.headline)
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .background(PLColor.success)
-                            .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
-                    }
-                    .disabled(newLongTermTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    .opacity(newLongTermTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.6 : 1)
-                }
-                .plCard()
-
-                // ── Active goals ──
+        List {
+            Section {
                 if longTermGoals.isEmpty {
-                    VStack(spacing: PLSpacing.sm) {
-                        Image(systemName: "flag")
-                            .font(.system(size: 36))
-                            .foregroundColor(PLColor.textSecondary)
-                            .padding(.bottom, 4)
-                        Text("No long-term goals yet")
-                            .font(.headline)
-                            .foregroundColor(PLColor.textSecondary)
-                        Text("Create one above to get started.")
-                            .font(.subheadline)
-                            .foregroundColor(PLColor.textSecondary)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 30)
-                    .plCard()
+                    emptyRow
                 } else {
                     ForEach(longTermGoals) { goal in
-                        goalCard(goal)
+                        goalRow(goal)
                     }
                 }
-
-                // ── Action buttons ──
-                HStack(spacing: PLSpacing.sm) {
-                    Button(action: { showArchiveSheet = true }) {
-                        Label("Archived", systemImage: "archivebox")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .background(Color.blue)
-                            .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
-                    }
-
-                    Button(action: resetLongTermGoals) {
-                        Label("Reset", systemImage: "arrow.counterclockwise")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .background(PLColor.danger)
-                            .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
-                    }
-                }
-                .plCard()
             }
-            .padding(.horizontal, PLSpacing.lg)
-            .padding(.vertical, PLSpacing.lg)
+            .listRowBackground(PLColor.surface)
+
+            if !longTermGoals.isEmpty {
+                Section {
+                    Button("Reset Long-Term Goals", role: .destructive) { confirmReset = true }
+                        .frame(maxWidth: .infinity)
+                }
+                .listRowBackground(PLColor.surface)
+            }
         }
-        .sheet(isPresented: $showArchiveSheet) {
-            ArchivedGoalsView(
-                archivedGoals: $archivedGoals,
-                unarchiveGoal: { unarchiveGoal($0) },
-                shareGoalToFriends: { shareGoalToFriends(goal: $0) }
-            )
+        .listStyle(.insetGrouped)
+        .scrollContentBackground(.hidden)
+        .toolbar {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                Button { showArchived = true } label: { Image(systemName: "archivebox") }
+                    .accessibilityLabel("Archived goals")
+                Button { adding = true } label: { Image(systemName: "plus") }
+                    .accessibilityLabel("New long-term goal")
+            }
         }
-        .alert("Friends Feed", isPresented: $showShareAlert) {
-            Button("OK", role: .cancel) {}
+        .sheet(isPresented: $adding) {
+            LongTermGoalEditor(existing: nil) { await addGoal($0) }
+        }
+        .sheet(item: $editing) { goal in
+            LongTermGoalEditor(existing: goal) { await updateGoal($0) }
+        }
+        .sheet(item: $opened) { ref in
+            LongTermGoalDetail(goalId: ref.id, goals: $longTermGoals, weeklyGoals: $weeklyGoals,
+                               username: username, calendarVM: calendarVM, onArchive: archiveGoal)
+        }
+        .sheet(item: $sharing) { goal in
+            ShareGoalSheet(goal: .longTerm(goal), username: username)
+        }
+        .sheet(isPresented: $showArchived) {
+            ArchivedGoalsView(archivedGoals: $archivedGoals, unarchiveGoal: unarchiveGoal)
+        }
+        .confirmationDialog("Delete all your long-term goals?", isPresented: $confirmReset, titleVisibility: .visible) {
+            Button("Delete All", role: .destructive, action: resetGoals)
         } message: {
-            Text(shareAlertMessage)
+            Text("This also deletes your archived goals.") // the server clears both
         }
-        .onTapGesture { hideKeyboard() }
+        .onAppear(perform: openRequestedGoal)
+        // a tapped reminder: open that goal once it's loaded
+        .onChange(of: router.request) { _, _ in openRequestedGoal() }
+        .onChange(of: longTermGoals.map(\.id)) { _, _ in openRequestedGoal() }
     }
 
-    private func hideKeyboard() {
-        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+    // MARK: - Rows
+
+    private var emptyRow: some View {
+        VStack(spacing: 6) {
+            Image(systemName: "flag")
+                .font(.title2)
+                .foregroundColor(PLColor.textSecondary)
+            Text("No long-term goals yet")
+                .font(.headline)
+            Text("Tap + to add one, with the steps to get there.")
+                .font(.subheadline)
+                .foregroundColor(PLColor.textSecondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, PLSpacing.md)
     }
 
-    // MARK: - Goal card
-
-    private func goalCard(_ goal: LongTermGoal) -> some View {
-        let completedSteps = goal.steps.filter { $0.isCompleted }.count
-        let totalSteps = goal.steps.count
-        let progress = totalSteps > 0 ? Double(completedSteps) / Double(totalSteps) : 0.0
-
-        return VStack(alignment: .leading, spacing: PLSpacing.md) {
-            // Header
-            HStack {
+    private func goalRow(_ goal: LongTermGoal) -> some View {
+        let progress = goal.steps.isEmpty ? 0 : Double(goal.completedSteps) / Double(goal.steps.count)
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: PLSpacing.sm) {
                 Text(goal.title)
-                    .font(.title3).bold()
+                    .font(.headline)
                     .foregroundColor(PLColor.textPrimary)
-                Spacer()
-                Button { archiveGoal(goal) } label: {
-                    Image(systemName: "archivebox")
-                        .foregroundColor(PLColor.tint)
-                        .font(.headline)
+                if goal.isDone {
+                    Image(systemName: "checkmark.seal.fill")
+                        .foregroundColor(PLColor.success)
+                        .accessibilityLabel("Done")
                 }
-                .buttonStyle(.plain)
-            }
-
-            // Progress
-            VStack(alignment: .leading, spacing: 4) {
-                ProgressView(value: progress)
-                    .tint(PLColor.success)
-                Text("\(Int(progress * 100))% complete — \(completedSteps) of \(totalSteps) steps")
-                    .font(.caption)
-                    .foregroundColor(PLColor.textSecondary)
-            }
-
-            // Steps
-            if !goal.steps.isEmpty {
-                Divider()
-                VStack(spacing: PLSpacing.xs) {
-                    ForEach(goal.steps) { step in
-                        HStack(spacing: PLSpacing.md) {
-                            Text(step.name)
-                                .font(.subheadline)
-                                .strikethrough(step.isCompleted)
-                                .foregroundColor(step.isCompleted ? PLColor.textSecondary : PLColor.textPrimary)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-
-                            Button { toggleLongStepCompletion(goalId: goal.id, stepId: step.id) } label: {
-                                Image(systemName: step.isCompleted ? "checkmark.circle.fill" : "circle")
-                                    .foregroundColor(step.isCompleted ? PLColor.success : PLColor.textSecondary)
-                                    .font(.title3)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
+                Spacer(minLength: 0)
+                if let target = goal.target {
+                    Text(WeeklyGoalsView.shortDate(target))
+                        .font(.caption)
+                        .foregroundColor(PLColor.textSecondary)
+                        .accessibilityLabel("Target \(target.formatted(date: .long, time: .omitted))")
+                }
+                if !goal.reminders.isEmpty {
+                    Text("\(Image(systemName: goal.isDone ? "bell.slash" : "bell.fill")) \(goal.reminders.count)")
+                        .font(.caption)
+                        .foregroundColor(PLColor.textSecondary)
+                        .accessibilityLabel("\(goal.reminders.count) reminder\(goal.reminders.count == 1 ? "" : "s")")
                 }
             }
+            ProgressView(value: progress)
+                .tint(PLColor.success)
+            Text(goal.steps.isEmpty ? "No steps yet" : "\(goal.completedSteps) of \(goal.steps.count) steps")
+                .font(.caption)
+                .foregroundColor(PLColor.textSecondary)
         }
-        .plCard()
+        .padding(.vertical, 4)
+        .contentShape(Rectangle())
+        .onTapGesture { opened = GoalRef(id: goal.id) }
+        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+            Button { sharing = goal } label: { Label("Share", systemImage: "person.2.fill") }
+                .tint(.blue)
+        }
+        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+            Button { archiveGoal(goal) } label: { Label("Archive", systemImage: "archivebox") }
+                .tint(.orange)
+        }
+        .contextMenu {
+            Button { opened = GoalRef(id: goal.id) } label: { Label("Open", systemImage: "list.bullet") }
+            Button { editing = goal } label: { Label("Edit", systemImage: "pencil") }
+            Button { sharing = goal } label: { Label("Share to Friends", systemImage: "person.2.fill") }
+            Button { archiveGoal(goal) } label: { Label("Archive", systemImage: "archivebox") }
+        }
     }
 
-    // MARK: - Logic (unchanged)
+    // MARK: - Actions
+
+    private func addGoal(_ goal: LongTermGoal) async -> Bool {
+        do {
+            try await GoalsAPI.addLongTerm(goal)
+        } catch {
+            AppBanner.report("add your goal", error)
+            return false
+        }
+        longTermGoals.append(goal)
+        GoalReminders.syncLongTerm(longTermGoals)
+        return true
+    }
+
+    private func updateGoal(_ goal: LongTermGoal) async -> Bool {
+        do {
+            try await GoalsAPI.updateLongTerm(goal)
+        } catch {
+            AppBanner.report("save your changes to the goal", error)
+            return false
+        }
+        if let i = longTermGoals.firstIndex(where: { $0.id == goal.id }) { longTermGoals[i] = goal }
+        GoalReminders.syncLongTerm(longTermGoals)
+        return true
+    }
 
     private func archiveGoal(_ goal: LongTermGoal) {
         longTermGoals.removeAll { $0.id == goal.id }
         archivedGoals.append(goal)
-
-        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/goals/\(username)/long-term/\(goal.id)/archive") else { return }
-        var request = URLRequest(url: url)
-        request.httpMethod = "PUT"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        BackendConfig.addApiKey(to: &request)
-        URLSession.shared.dataTask(with: request) { data, response, error in
-            if AppBanner.reportIfFailed("archive the goal", data, response, error) {
-                DispatchQueue.main.async { // put it back
-                    archivedGoals.removeAll { $0.id == goal.id }
-                    if !longTermGoals.contains(where: { $0.id == goal.id }) { longTermGoals.append(goal) }
-                }
+        GoalReminders.syncLongTerm(longTermGoals) // archived goals don't remind
+        Task {
+            do {
+                try await GoalsAPI.archiveLongTerm(goal.id)
+            } catch {
+                AppBanner.report("archive the goal", error)
+                archivedGoals.removeAll { $0.id == goal.id }
+                if !longTermGoals.contains(where: { $0.id == goal.id }) { longTermGoals.append(goal) }
+                GoalReminders.syncLongTerm(longTermGoals)
             }
-        }.resume()
+        }
     }
 
     private func unarchiveGoal(_ goal: LongTermGoal) {
         archivedGoals.removeAll { $0.id == goal.id }
         longTermGoals.append(goal)
-
-        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/goals/\(username)/long-term/\(goal.id)/unarchive") else { return }
-        var request = URLRequest(url: url)
-        request.httpMethod = "PUT"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        BackendConfig.addApiKey(to: &request)
-        URLSession.shared.dataTask(with: request) { data, response, error in
-            if AppBanner.reportIfFailed("restore the goal", data, response, error) {
-                DispatchQueue.main.async { // put it back
-                    longTermGoals.removeAll { $0.id == goal.id }
-                    if !archivedGoals.contains(where: { $0.id == goal.id }) { archivedGoals.append(goal) }
-                }
+        GoalReminders.syncLongTerm(longTermGoals)
+        Task {
+            do {
+                try await GoalsAPI.unarchiveLongTerm(goal.id)
+            } catch {
+                AppBanner.report("unarchive the goal", error)
+                longTermGoals.removeAll { $0.id == goal.id }
+                if !archivedGoals.contains(where: { $0.id == goal.id }) { archivedGoals.append(goal) }
+                GoalReminders.syncLongTerm(longTermGoals)
             }
-        }.resume()
+        }
     }
 
-    private func addLongTermGoal() {
-        guard !newLongTermTitle.isEmpty else { return }
-
-        let newGoal = LongTermGoal(
-            id: UUID(),
-            title: newLongTermTitle,
-            steps: newLongTermSteps.map { LongTermStep(id: UUID(), name: $0, isCompleted: false) }
-        )
-
-        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/goals/\(username)/long-term") else { return }
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        BackendConfig.addApiKey(to: &request)
-        guard let jsonData = try? JSONEncoder().encode(newGoal) else { return }
-        request.httpBody = jsonData
-
-        URLSession.shared.dataTask(with: request) { data, response, error in
-            // on failure the title and steps stay filled in, ready to add again
-            if AppBanner.reportIfFailed("add your goal", data, response, error) { return }
-            DispatchQueue.main.async {
-                self.longTermGoals.append(newGoal)
-                self.newLongTermTitle = ""
-                self.newLongTermSteps = []
+    private func resetGoals() {
+        Task {
+            do {
+                try await GoalsAPI.resetLongTerm()
+            } catch {
+                AppBanner.report("reset your goals", error, retry: { resetGoals() })
+                return
             }
-        }.resume()
+            longTermGoals.removeAll()
+            GoalReminders.syncLongTerm([])
+        }
     }
 
-    private func toggleLongStepCompletion(goalId: UUID, stepId: UUID) {
-        guard let goalIndex = longTermGoals.firstIndex(where: { $0.id == goalId }),
-              let stepIndex = longTermGoals[goalIndex].steps.firstIndex(where: { $0.id == stepId }) else { return }
-
-        longTermGoals[goalIndex].steps[stepIndex].isCompleted.toggle()
-
-        WidgetDataWriter.writeLongTermGoals(longTermGoals)
-        WidgetDataWriter.reloadWidgets()
-
-        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/goals/\(username)/long-term/\(goalId)/steps/\(stepId)") else { return }
-        var request = URLRequest(url: url)
-        request.httpMethod = "PUT"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        BackendConfig.addApiKey(to: &request)
-        let payload = ["isCompleted": longTermGoals[goalIndex].steps[stepIndex].isCompleted]
-        guard let jsonData = try? JSONEncoder().encode(payload) else { return }
-        request.httpBody = jsonData
-        URLSession.shared.dataTask(with: request) { data, response, error in
-            if AppBanner.reportIfFailed("update the step", data, response, error) {
-                DispatchQueue.main.async { // put the checkmark back the way it was
-                    if let g = longTermGoals.firstIndex(where: { $0.id == goalId }),
-                       let s = longTermGoals[g].steps.firstIndex(where: { $0.id == stepId }) {
-                        longTermGoals[g].steps[s].isCompleted.toggle()
-                        WidgetDataWriter.writeLongTermGoals(longTermGoals)
-                        WidgetDataWriter.reloadWidgets()
-                    }
-                }
-            }
-        }.resume()
-    }
-
-    private func resetLongTermGoals() {
-        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/goals/\(username)/long-term/reset") else { return }
-        var request = URLRequest(url: url)
-        request.httpMethod = "DELETE"
-        BackendConfig.addApiKey(to: &request)
-        URLSession.shared.dataTask(with: request) { data, response, error in
-            if AppBanner.reportIfFailed("reset your goals", data, response, error, retry: { resetLongTermGoals() }) { return }
-            DispatchQueue.main.async { self.longTermGoals.removeAll() }
-        }.resume()
-    }
-
-    private func shareGoalToFriends(goal: LongTermGoal) {
-        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/goals/friends-feed/\(username)/post") else { return }
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        BackendConfig.addApiKey(to: &request)
-        let friendPost = FriendPost(id: UUID(), username: username, goal: goal, comment: nil)
-        guard let jsonData = try? JSONEncoder().encode(friendPost) else { return }
-        request.httpBody = jsonData
-        URLSession.shared.dataTask(with: request) { _, response, error in
-            DispatchQueue.main.async {
-                if let error = error {
-                    self.shareAlertMessage = "Failed to share: \(error.localizedDescription)"
-                } else if let http = response as? HTTPURLResponse, http.statusCode == 200 {
-                    self.shareAlertMessage = "Goal shared to your friends' feeds!"
-                } else {
-                    let code = (response as? HTTPURLResponse)?.statusCode ?? 0
-                    self.shareAlertMessage = "Share failed (status \(code)). Try again."
-                }
-                self.showShareAlert = true
-            }
-        }.resume()
+    private func openRequestedGoal() {
+        guard let request = router.request, request.tab == .longTerm,
+              let id = UUID(uuidString: request.goalId), longTermGoals.contains(where: { $0.id == id }) else { return }
+        router.request = nil
+        opened = GoalRef(id: id)
     }
 }

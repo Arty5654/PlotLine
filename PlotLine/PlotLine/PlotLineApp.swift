@@ -51,6 +51,7 @@ struct PlotLineApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
+                .background(KeyboardDismisser())
                 .environmentObject(session)
                 .environmentObject(calendarVM)
                 .environmentObject(friendsVM)
@@ -92,6 +93,7 @@ struct PlotLineApp: App {
             WidgetDataWriter.refreshFinancialData()
             WidgetDataWriter.refreshGoalsData()
             calendarVM.fetchEvents(quiet: true) // background refresh: errors show when they open the calendar
+            calendarVM.syncAppleCalendarIfConnected()
             Task { await friendsVM.loadFriends(for: username) }
         }
     }

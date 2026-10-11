@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.TextNode;
 import com.plaid.client.request.PlaidApi;
+import com.plotline.backend.external.ExternalDataClient;
 import com.plotline.backend.service.AuthService;
 import com.plotline.backend.service.OpenAIService;
 import com.plotline.backend.service.SmsService;
@@ -59,6 +60,7 @@ abstract class FeatureTestBase {
     @MockBean protected SmsService smsService;
     @MockBean protected OpenAIService openAIService;
     @MockBean protected PlaidApi plaidApi;
+    @MockBean protected ExternalDataClient externalDataClient; // never call the real NewsAPI / USDA from tests
 
     @Autowired protected MockMvc mockMvc;
     @Autowired protected AuthService authService;

@@ -1,9 +1,7 @@
 package com.plotline.backend.features;
 
-import com.plotline.backend.external.ExternalDataClient;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.test.mock.mockito.MockBean;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -12,8 +10,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 
 /** Market news and food search through the real app: signed-in users only. */
 class ExternalDataFeatureTest extends FeatureTestBase {
-
-    @MockBean private ExternalDataClient externalDataClient;
 
     @Test
     @DisplayName("Food search works for signed-in users and is refused without a login")

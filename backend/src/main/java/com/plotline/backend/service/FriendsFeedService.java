@@ -8,6 +8,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.plotline.backend.dto.FriendList;
 import com.plotline.backend.dto.FriendPost;
 import com.plotline.backend.dto.LongTermGoal;
+import com.plotline.backend.dto.WeeklyGoalShare;
+import com.plotline.backend.util.UsernameUtils;
+
 import static com.plotline.backend.util.UsernameUtils.normalize;
 
 import org.springframework.dao.DuplicateKeyException;
@@ -61,37 +64,52 @@ public class FriendsFeedService {
   public void insert(FriendPost post) throws Exception {
     UUID id = post.getId() != null ? post.getId() : UUID.randomUUID();
     String goal = post.getGoal() != null ? objectMapper.writeValueAsString(post.getGoal()) : null;
+    String weeklyGoal = post.getWeeklyGoal() != null ? objectMapper.writeValueAsString(post.getWeeklyGoal()) : null;
     String comments = objectMapper.writeValueAsString(post.getComments() != null ? post.getComments() : List.of());
     String[] likedBy = post.getLikedBy() != null ? post.getLikedBy().toArray(new String[0]) : new String[0];
+    String[] audience = post.getAudience() == null || post.getAudience().isEmpty() ? null
+        : post.getAudience().stream().map(UsernameUtils::normalize).distinct().toArray(String[]::new);
     jdbc.update(con -> {
       var statement = con.prepareStatement("""
-          insert into feed_posts (id, username, author, goal, comment, liked_by, comments)
-          values (?, ?, ?, ?::jsonb, ?, ?, ?::jsonb)
+          insert into feed_posts (id, username, author, goal, weekly_goal, comment, liked_by, comments, audience)
+          values (?, ?, ?, ?::jsonb, ?::jsonb, ?, ?, ?::jsonb, ?)
           """);
       statement.setObject(1, id);
       statement.setString(2, post.getUsername());
       statement.setString(3, normalize(post.getUsername()));
       statement.setString(4, goal);
-      statement.setString(5, post.getComment());
-      statement.setArray(6, con.createArrayOf("text", likedBy));
-      statement.setString(7, comments);
+      statement.setString(5, weeklyGoal);
+      statement.setString(6, post.getComment());
+      statement.setArray(7, con.createArrayOf("text", likedBy));
+      statement.setString(8, comments);
+      statement.setArray(9, audience == null ? null : con.createArrayOf("text", audience));
       return statement;
     });
   }
 
-  /** posts by the user and their friends, oldest first */
+  /** your posts, and friends' posts shared with all their friends or with you, oldest first */
   public List<FriendPost> getFriendsFeed(String username) {
     try {
-      List<String> authors = new ArrayList<>();
-      for (String friend : friendsOf(username)) authors.add(normalize(friend));
-      authors.add(normalize(username)); // always see your own posts
+      String me = normalize(username);
+      List<String> friends = new ArrayList<>();
+      for (String friend : friendsOf(username)) friends.add(normalize(friend));
 
-      return jdbc.query(con -> {
-        var statement = con.prepareStatement(
-            "select id, username, goal, comment, liked_by, comments from feed_posts where author = any(?) order by seq");
-        statement.setArray(1, con.createArrayOf("text", authors.toArray()));
+      List<FriendPost> posts = jdbc.query(con -> {
+        var statement = con.prepareStatement("""
+            select id, username, goal, weekly_goal, comment, liked_by, comments, audience from feed_posts
+            where author = ? or (author = any(?) and (audience is null or ? = any(audience)))
+            order by seq
+            """);
+        statement.setString(1, me);
+        statement.setArray(2, con.createArrayOf("text", friends.toArray()));
+        statement.setString(3, me);
         return statement;
       }, postMapper);
+      // who else a post went to is only the author's business
+      for (FriendPost post : posts) {
+        if (!normalize(post.getUsername()).equals(me)) post.setAudience(null);
+      }
+      return posts;
     } catch (Exception e) {
       log.error("getFriendsFeed failed", e);
       return new ArrayList<>();
@@ -119,7 +137,15 @@ public class FriendsFeedService {
       post.setUsername(row.getString("username"));
       String goal = row.getString("goal");
       post.setGoal(goal != null ? objectMapper.readValue(goal, LongTermGoal.class) : null);
+      String weeklyGoal = row.getString("weekly_goal");
+      post.setWeeklyGoal(weeklyGoal != null ? objectMapper.readValue(weeklyGoal, WeeklyGoalShare.class) : null);
+      if (post.getGoal() == null && post.getWeeklyGoal() != null) {
+        // app versions from before weekly sharing need a goal on every post: show its name as a goal title
+        post.setGoal(new LongTermGoal(post.getId(), post.getWeeklyGoal().getName(), new ArrayList<>()));
+      }
       post.setComment(row.getString("comment"));
+      Array audience = row.getArray("audience");
+      post.setAudience(audience == null ? null : Arrays.asList((String[]) audience.getArray()));
       Array likedBy = row.getArray("liked_by");
       post.setLikedBy(new LinkedHashSet<>(Arrays.asList((String[]) likedBy.getArray())));
       post.setComments(objectMapper.readValue(row.getString("comments"), new TypeReference<List<String>>() { }));

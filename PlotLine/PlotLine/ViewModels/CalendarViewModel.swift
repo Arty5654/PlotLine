@@ -50,6 +50,7 @@ class CalendarViewModel: ObservableObject {
             fetchAccessData()
             fetchFriendCalendars()
             syncGoogleCalendarIfConnected()
+            await MainActor.run { syncAppleCalendarIfConnected() }
         }
     }
     
@@ -621,4 +622,65 @@ class CalendarViewModel: ObservableObject {
         }
     }
 
+
+    // MARK: - Apple Calendar Sync
+
+    // what was last sent, so coming back to the app doesn't re-upload an unchanged calendar
+    private var lastAppleSync: (username: String, signature: Int)?
+
+    // On launch and each time the app comes back to the front (they may have just added
+    // something in Calendar). Reading the phone's calendar is instant; the upload is skipped
+    // when nothing changed.
+    @MainActor
+    func syncAppleCalendarIfConnected() {
+        guard AppleCalendar.isConnected(for: username) else { return }
+        Task { await syncAppleCalendar(quiet: true) }
+    }
+
+    @MainActor
+    func syncAppleCalendar(quiet: Bool = false) async {
+        let user = username
+        let appleEvents = AppleCalendar.events(for: user)
+        let signature = Self.signature(of: appleEvents)
+        if quiet, let last = lastAppleSync, last.username == user, last.signature == signature { return }
+        do {
+            let allEvents = try await CalendarAPI.batchSyncApple(appleEvents, username: user)
+            lastAppleSync = (user, signature)
+            self.events = expandRecurringEvents(allEvents)
+        } catch {
+            if quiet {
+                print("Apple Calendar sync skipped: \(error.localizedDescription)")
+            } else {
+                AppBanner.report("import your Apple Calendar", error)
+            }
+        }
+    }
+
+    // Forgets the chosen calendars and removes the imported events (one request)
+    @MainActor
+    func disconnectAppleCalendar() {
+        let user = username
+        AppleCalendar.setSelectedCalendarIDs([], for: user)
+        lastAppleSync = nil
+        events.removeAll { $0.id.hasPrefix(AppleCalendar.idPrefix) }
+        Task {
+            do {
+                _ = try await CalendarAPI.batchSyncApple([], username: user)
+            } catch {
+                AppBanner.report("remove your Apple Calendar events", error)
+                fetchEvents()
+            }
+        }
+    }
+
+    private static func signature(of events: [Event]) -> Int {
+        var hasher = Hasher()
+        for e in events {
+            hasher.combine(e.id)
+            hasher.combine(e.title)
+            hasher.combine(e.description)
+            hasher.combine(e.endDate)
+        }
+        return hasher.finalize()
+    }
 }

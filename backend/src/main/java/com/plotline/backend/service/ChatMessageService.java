@@ -22,6 +22,7 @@ import java.io.IOException;                      // <-- correct IOException
 import software.amazon.awssdk.core.ResponseBytes;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
@@ -73,6 +74,35 @@ public class ChatMessageService {
 
         s3Client.putObject(putReq, RequestBody.fromBytes(payload));
         return message;
+    }
+
+    /** Posts an automatic message ("Has completed …") unless this user already has one with that text. */
+    public void postOnce(String username, String content) throws JsonProcessingException {
+        if (!ownKeysWith(username, content).isEmpty()) return;
+        postMessage(username, new ChatMessage(null, username, null, content));
+    }
+
+    /** Takes back an automatic message, e.g. when a goal is unchecked. */
+    public void retract(String username, String content) {
+        for (String key : ownKeysWith(username, content)) {
+            s3Client.deleteObject(DeleteObjectRequest.builder().bucket(bucketName).key(key).build());
+        }
+    }
+
+    // this user's messages with exactly this text
+    private List<String> ownKeysWith(String username, String content) {
+        List<String> keys = new ArrayList<>();
+        ListObjectsV2Response list = s3Client.listObjectsV2(ListObjectsV2Request.builder()
+            .bucket(bucketName).prefix("chat-messages/" + normalize(username) + "/").build());
+        for (S3Object obj : list.contents()) {
+            try {
+                byte[] data = s3Client.getObjectAsBytes(GetObjectRequest.builder().bucket(bucketName).key(obj.key()).build()).asByteArray();
+                if (content.equals(objectMapper.readValue(data, ChatMessage.class).getContent())) keys.add(obj.key());
+            } catch (IOException e) {
+                // an unreadable message isn't the one we're looking for
+            }
+        }
+        return keys;
     }
 
     public List<ChatMessage> getMessagesFor(String userId,

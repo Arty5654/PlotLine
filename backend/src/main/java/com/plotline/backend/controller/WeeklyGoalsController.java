@@ -6,6 +6,7 @@ import com.plotline.backend.service.FriendsFeedService;
 import com.plotline.backend.service.LongTermGoalsService;
 import com.plotline.backend.dto.FriendPost;
 import com.plotline.backend.dto.LongTermGoal;
+import com.plotline.backend.dto.LongTermStep;
 import com.plotline.backend.dto.TaskItem;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -45,6 +46,8 @@ public class WeeklyGoalsController {
       throws IOException {
     boolean success = weeklyGoalsService.addGoalToS3(username, newTask);
     if (success) {
+      LinkedStep link = LinkedStep.of(newTask);
+      if (link != null) longTermGoalsService.setStepWeeklyGoal(username, link.goalId, link.stepId, newTask.getId());
       return ResponseEntity.ok("Goal added successfully!");
     } else {
       return ResponseEntity.status(500).body("Failed to add goal.");
@@ -53,8 +56,10 @@ public class WeeklyGoalsController {
 
   @DeleteMapping("/{username}/{taskId}")
   public ResponseEntity<String> deleteGoal(@PathVariable String username, @PathVariable int taskId) throws IOException {
+    LinkedStep link = LinkedStep.of(weeklyGoalsService.findGoal(username, taskId));
     boolean success = weeklyGoalsService.deleteGoalFromS3(username, taskId);
     if (success) {
+      if (link != null) longTermGoalsService.setStepWeeklyGoal(username, link.goalId, link.stepId, null);
       return ResponseEntity.ok("Goal deleted successfully!");
     } else {
       return ResponseEntity.status(500).body("Failed to delete goal.");
@@ -90,6 +95,14 @@ public class WeeklyGoalsController {
     boolean isCompleted = request.get("isCompleted");
     boolean success = weeklyGoalsService.updateGoalCompletionInS3(username, taskId, isCompleted);
     if (success) {
+      // a weekly goal made from a long-term step checks that step off too
+      LinkedStep link = LinkedStep.of(weeklyGoalsService.findGoal(username, taskId));
+      if (link != null) {
+        LongTermStep step = longTermGoalsService.findStep(username, link.goalId, link.stepId);
+        if (step != null && step.isCompleted() != isCompleted) {
+          longTermGoalsService.updateStepCompletionInS3(username, link.goalId, link.stepId, isCompleted);
+        }
+      }
       return ResponseEntity.ok("Task completion updated successfully!");
     } else {
       return ResponseEntity.status(500).body("Failed to update task completion.");
@@ -104,6 +117,15 @@ public class WeeklyGoalsController {
     return success
         ? ResponseEntity.ok("Long-term goal added!")
         : ResponseEntity.status(500).body("Failed to add long-term goal.");
+  }
+
+  // edit a long-term goal: title, target date, reminders, steps
+  @PutMapping("/{username}/long-term/{goalId}")
+  public ResponseEntity<String> updateLongTermGoal(@PathVariable String username, @PathVariable UUID goalId,
+      @RequestBody LongTermGoal goal) {
+    return longTermGoalsService.updateLongTermGoal(username, goalId, goal)
+        ? ResponseEntity.ok("Long-term goal updated!")
+        : ResponseEntity.status(404).body("Goal not found.");
   }
 
   @GetMapping("/{username}/long-term")
@@ -122,6 +144,14 @@ public class WeeklyGoalsController {
     boolean success = longTermGoalsService.updateStepCompletionInS3(username, goalId, stepId, isCompleted);
 
     if (success) {
+      // ...and the other way round
+      LongTermStep step = longTermGoalsService.findStep(username, goalId, stepId);
+      if (step != null && step.getWeeklyGoalId() != null) {
+        TaskItem weekly = weeklyGoalsService.findGoal(username, step.getWeeklyGoalId());
+        if (weekly != null && weekly.isCompleted() != isCompleted) {
+          weeklyGoalsService.updateGoalCompletionInS3(username, weekly.getId(), isCompleted);
+        }
+      }
       return ResponseEntity.ok("Step completion updated successfully!");
     } else {
       return ResponseEntity.status(500).body("Failed to update step.");
@@ -168,6 +198,9 @@ public class WeeklyGoalsController {
 
   @PostMapping("/friends-feed/{username}/post")
   public ResponseEntity<String> postGoalToFriendsFeed(@PathVariable String username, @RequestBody FriendPost post) {
+    if (post.getGoal() == null && post.getWeeklyGoal() == null) {
+      return ResponseEntity.badRequest().body("A post needs a goal.");
+    }
     boolean success = friendsFeedService.addPostToFeed(post);
     return success ? ResponseEntity.ok("Post shared successfully!")
         : ResponseEntity.status(500).body("Failed to share post.");
@@ -221,4 +254,16 @@ public class WeeklyGoalsController {
     }
   }
 
+
+  /** the long-term step a weekly goal was made from */
+  private record LinkedStep(UUID goalId, UUID stepId) {
+    static LinkedStep of(TaskItem task) {
+      if (task == null || task.getLongTermGoalId() == null || task.getLongTermStepId() == null) return null;
+      try {
+        return new LinkedStep(UUID.fromString(task.getLongTermGoalId()), UUID.fromString(task.getLongTermStepId()));
+      } catch (IllegalArgumentException e) {
+        return null;
+      }
+    }
+  }
 }

@@ -202,7 +202,9 @@ struct GenerateFromMealView: View {
         }
 
         if let spentURL = URL(string: "\(BackendConfig.baseURLString)/api/costs/\(username)/weekly") {
-            URLSession.shared.dataTask(with: spentURL) { data, _, _ in
+            var req = URLRequest(url: spentURL)
+            BackendConfig.addApiKey(to: &req)
+            URLSession.shared.dataTask(with: req) { data, _, _ in
                 guard let data = data,
                       let decoded = try? JSONDecoder().decode(WeeklyMonthlyCostResponse.self, from: data) else { return }
                 DispatchQueue.main.async { weeklyGrocerySpent = decoded.costs["Groceries"] ?? 0 }

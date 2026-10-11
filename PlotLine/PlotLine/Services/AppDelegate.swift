@@ -56,6 +56,12 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
     ) {
         let userInfo = response.notification.request.content.userInfo
 
+        // a goal reminder: open that goal (works whether the app was running or not)
+        if userInfo["navigateTo"] as? String == "goals" {
+            let info = userInfo
+            Task { @MainActor in GoalsRouter.shared.open(info) }
+        }
+
         // Check if this is a calendar event notification
         if let navigateTo = userInfo["navigateTo"] as? String, navigateTo == "calendar" {
             // Store for cold start case (when ContentView isn't ready yet)

@@ -27,6 +27,21 @@ class ProfileFeatureTest extends FeatureTestBase {
     }
 
     @Test
+    @DisplayName("A new account that hasn't saved a profile yet gets an empty one, not an error")
+    void profileBeforeFirstSave() throws Exception {
+        User me = newUser();
+        User other = newUser();
+
+        JsonNode profile = ok(getAs(me, "/profile/get-user").param("username", me.name()));
+        assertThat(profile.get("username").asText()).isEqualTo(me.name());
+        assertThat(profile.get("name").isNull()).isTrue();
+        assertThat(profile.get("birthday").isNull()).isTrue();
+
+        assertThat(ok(getAs(other, "/profile/get-user").param("username", me.name())).get("username").asText())
+                .isEqualTo(me.name());
+    }
+
+    @Test
     @DisplayName("Your phone number is readable only by you")
     void phone() throws Exception {
         User me = newUser();

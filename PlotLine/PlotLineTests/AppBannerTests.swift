@@ -60,4 +60,12 @@ struct AppBannerTests {
         #expect(AppBanner.shared.message?.text.hasPrefix("Couldn't load your goals.") == true)
         AppBanner.shared.dismiss()
     }
+
+    @Test("Leaving a page cancels its requests; that never shows a banner")
+    func cancellationIsSilent() {
+        #expect(AppBanner.isCancellation(URLError(.cancelled)))
+        #expect(AppBanner.isCancellation(CancellationError()))
+        #expect(!AppBanner.isCancellation(URLError(.timedOut)))
+        #expect(!AppBanner.isCancellation(nil))
+    }
 }

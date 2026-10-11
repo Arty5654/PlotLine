@@ -7,6 +7,7 @@ import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
+import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import java.io.IOException;
 
@@ -51,6 +52,11 @@ public class DietaryRestrictionsService {
             // Deserialize the S3 response content into a DietaryRestrictions object
             return objectMapper.readValue(response, DietaryRestrictions.class);
 
+        } catch (NoSuchKeyException e) {
+            // none saved yet: no restrictions
+            DietaryRestrictions none = new DietaryRestrictions();
+            none.setUsername(username);
+            return none;
         } catch (IOException e) {
             throw new RuntimeException("Error fetching dietary restrictions for user: " + username, e);
         }

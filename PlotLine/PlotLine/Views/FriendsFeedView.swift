@@ -18,19 +18,18 @@ struct FriendsFeedView: View {
         return UserDefaults.standard.string(forKey: "loggedInUsername") ?? "Guest"
     }
     
+    private func isMine(_ post: FriendPost) -> Bool { post.username.lowercased() == username.lowercased() }
+
+    // everyone's posts (yours included), or just yours; newest first
     private var filteredPosts: [FriendPost] {
-        if showOnlyMyPosts {
-            return posts.filter { $0.username == username }
-        } else {
-            return posts.filter { $0.username != username }
-        }
+        (showOnlyMyPosts ? posts.filter(isMine) : posts).reversed()
     }
 
 
     var body: some View {
         VStack(spacing: 0) {
             Picker("Show", selection: $showOnlyMyPosts) {
-                Text("Friends").tag(false)
+                Text("All").tag(false)
                 Text("My posts").tag(true)
             }
             .pickerStyle(.segmented)
@@ -47,9 +46,9 @@ struct FriendsFeedView: View {
                             Image(systemName: "newspaper")
                                 .font(.title2)
                                 .foregroundColor(PLColor.textSecondary)
-                            Text(showOnlyMyPosts ? "You haven't shared any goals yet." : "No posts from friends yet.")
+                            Text(showOnlyMyPosts ? "You haven't shared any goals yet." : "No posts yet.")
                                 .font(.headline)
-                            Text(showOnlyMyPosts ? "Share a long-term goal from Goals." : "When friends share goals, they show up here.")
+                            Text("Share a goal from Goals: swipe right on a weekly goal, or open a long-term goal and tap ⋯. Goals your friends share show up here too.")
                                 .font(.subheadline)
                                 .foregroundColor(PLColor.textSecondary)
                                 .multilineTextAlignment(.center)
@@ -79,15 +78,39 @@ struct FriendsFeedView: View {
         }
     }
 
+    private func weeklyGoal(_ goal: WeeklyGoalShare) -> some View {
+        let due = goal.dueDate.flatMap { GoalReminder.dayFormatter.date(from: $0) }
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+                Image(systemName: goal.completed ? "checkmark.circle.fill" : "circle")
+                    .foregroundColor(goal.completed ? PLColor.success : Color(.tertiaryLabel))
+                Text(goal.name)
+                    .font(.headline)
+            }
+            Text(["Weekly goal", "\(goal.priority) priority",
+                  goal.completed ? "Done" : due.map { "Due \(WeeklyGoalsView.shortDate($0))" }]
+                .compactMap { $0 }.joined(separator: " · "))
+                .font(.caption)
+                .foregroundColor(PLColor.textSecondary)
+        }
+    }
+
     private func postCard(_ post: FriendPost) -> some View {
-        let isMine = post.username == username
+        let isMine = isMine(post)
         let likes = post.likedBy ?? []
         return VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
                 FriendProfilePicture(username: post.username)
                     .frame(width: 32, height: 32)
-                Text(post.username)
-                    .font(.subheadline.weight(.semibold))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(post.username)
+                        .font(.subheadline.weight(.semibold))
+                    if isMine, let audience = post.audience, !audience.isEmpty {
+                        Text("Shared with \(audience.count == 1 ? audience[0] : "\(audience.count) friends")")
+                            .font(.caption)
+                            .foregroundColor(PLColor.textSecondary)
+                    }
+                }
                 Spacer()
                 if isMine {
                     Menu {
@@ -102,16 +125,20 @@ struct FriendsFeedView: View {
             }
 
             VStack(alignment: .leading, spacing: 6) {
-                Text(post.goal.title)
-                    .font(.headline)
-                ForEach(post.goal.steps) { step in
-                    HStack(spacing: 8) {
-                        Image(systemName: step.isCompleted ? "checkmark.circle.fill" : "circle")
-                            .foregroundColor(step.isCompleted ? PLColor.success : Color(.tertiaryLabel))
-                        Text(step.name)
-                            .foregroundColor(step.isCompleted ? PLColor.textPrimary : PLColor.textSecondary)
+                if let weekly = post.weeklyGoal {
+                    weeklyGoal(weekly)
+                } else {
+                    Text(post.goal.title)
+                        .font(.headline)
+                    ForEach(post.goal.steps) { step in
+                        HStack(spacing: 8) {
+                            Image(systemName: step.isCompleted ? "checkmark.circle.fill" : "circle")
+                                .foregroundColor(step.isCompleted ? PLColor.success : Color(.tertiaryLabel))
+                            Text(step.name)
+                                .foregroundColor(step.isCompleted ? PLColor.textPrimary : PLColor.textSecondary)
+                        }
+                        .font(.subheadline)
                     }
-                    .font(.subheadline)
                 }
                 if let comment = post.comment, !comment.isEmpty {
                     Text(comment)
@@ -284,11 +311,20 @@ struct FriendsFeedView: View {
 struct FriendPost: Identifiable, Codable {
     let id: UUID
     let username: String
-    var goal: LongTermGoal
+    var goal: LongTermGoal        // for a weekly goal post the server fills this in for older app versions
+    var weeklyGoal: WeeklyGoalShare? = nil
     var comment: String? // original post message
+    /// nil = all friends; otherwise only these friends (the server only tells the author)
+    var audience: [String]? = nil
 
     var likedBy: [String]?
     var comments: [String]?
 }
 
-
+/// A weekly goal as shared to the feed (a snapshot from when it was shared)
+struct WeeklyGoalShare: Codable, Hashable {
+    var name: String
+    var priority: String
+    var dueDate: String?   // "yyyy-MM-dd"
+    var completed: Bool
+}

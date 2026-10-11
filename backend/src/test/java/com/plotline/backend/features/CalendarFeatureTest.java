@@ -67,6 +67,7 @@ class CalendarFeatureTest extends FeatureTestBase {
         Map<String, Object> keep = event(me.name(), "Keep me");
         ok(postJson(me, "/calendar/create-event", keep));
         Map<String, Object> gcal = event(me.name(), "From Google");
+        gcal.put("id", "gcal_" + gcal.get("id"));
         gcal.put("eventType", "gcal");
         ok(postJson(me, "/calendar/batch-sync-gcal", Map.of("username", me.name(), "events", List.of(gcal))));
         assertThat(find(events(me), (String) gcal.get("id"))).isNotNull();
@@ -76,6 +77,51 @@ class CalendarFeatureTest extends FeatureTestBase {
 
         assertThat(find(events(me), (String) gcal.get("id"))).isNull();
         assertThat(find(events(me), (String) keep.get("id"))).isNotNull();
+    }
+
+    @Test
+    @DisplayName("Apple Calendar sync replaces only Apple events; your own and Google events stay")
+    void appleCalendarSync() throws Exception {
+        User me = newUser();
+        Map<String, Object> mine = event(me.name(), "Mine");
+        ok(postJson(me, "/calendar/create-event", mine));
+        Map<String, Object> google = event(me.name(), "From Google");
+        google.put("id", "gcal_g1");
+        ok(postJson(me, "/calendar/batch-sync-gcal", Map.of("username", me.name(), "events", List.of(google))));
+
+        Map<String, Object> dentist = event(me.name(), "Dentist");
+        dentist.put("id", "apple_a1_1791000000");
+        Map<String, Object> gym = event(me.name(), "Gym");
+        gym.put("id", "apple_a2_1791100000");
+        ok(postJson(me, "/calendar/batch-sync-apple", Map.of("username", me.name(), "events", List.of(dentist, gym))));
+        assertThat(find(events(me), "apple_a1_1791000000")).isNotNull();
+        assertThat(find(events(me), "apple_a2_1791100000")).isNotNull();
+
+        // next sync: the gym class was deleted in Apple Calendar, and a non-Apple id is ignored
+        Map<String, Object> sneaky = event(me.name(), "Not from Apple");
+        JsonNode after = ok(postJson(me, "/calendar/batch-sync-apple",
+                Map.of("username", me.name(), "events", List.of(dentist, sneaky)))).get("events");
+        assertThat(find(after, "apple_a1_1791000000")).isNotNull();
+        assertThat(find(after, "apple_a2_1791100000")).isNull();
+        assertThat(find(after, (String) sneaky.get("id"))).isNull();
+        assertThat(find(after, (String) mine.get("id"))).isNotNull();
+        assertThat(find(after, "gcal_g1")).isNotNull();
+
+        // disconnect = sync nothing
+        ok(postJson(me, "/calendar/batch-sync-apple", Map.of("username", me.name(), "events", List.of())));
+        assertThat(find(events(me), "apple_a1_1791000000")).isNull();
+        assertThat(find(events(me), "gcal_g1")).isNotNull();
+    }
+
+    @Test
+    @DisplayName("You can't sync Apple events into someone else's calendar")
+    void appleCalendarSyncOwnOnly() throws Exception {
+        User me = newUser();
+        User other = newUser();
+        Map<String, Object> e = event(other.name(), "Planted");
+        e.put("id", "apple_x_1");
+        call(postJson(me, "/calendar/batch-sync-apple", Map.of("username", other.name(), "events", List.of(e))), 403);
+        assertThat(find(events(other), "apple_x_1")).isNull();
     }
 
     @Test
