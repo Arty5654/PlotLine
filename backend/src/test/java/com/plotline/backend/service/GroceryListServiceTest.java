@@ -299,8 +299,8 @@ class GroceryListServiceTest {
     }
 
     @Test
-    @DisplayName("restore returns a private list with items unchecked and members cleared")
-    void restore_resetsSharedStateAndChecks() throws Exception {
+    @DisplayName("restore returns a private list with members cleared and checkmarks kept as archived")
+    void restore_resetsSharedStateKeepsChecks() throws Exception {
         String listId = createList("alice", "Groceries");
         service.addItem("alice", listId, item("I1", "Milk"));
         service.toggleChecked("alice", listId, "I1");
@@ -316,8 +316,7 @@ class GroceryListServiceTest {
         assertThat(restored).isNotNull();
         assertThat(restored.getMembers()).isEmpty();
         assertThat(restored.getOwnerUsername()).isEqualTo("alice");
-        assertThat(restored.getItems()).allMatch(i -> !i.isChecked());
-        assertThat(restored.getItems()).allMatch(i -> i.getCheckedBy() == null);
+        assertThat(restored.getItems()).allMatch(GroceryItem::isChecked); // Milk was checked when archived
     }
 
     @Test

@@ -218,4 +218,33 @@ class BudgetSpendingFeatureTest extends FeatureTestBase {
                 software.amazon.awssdk.core.sync.RequestBody.fromString("not json"));
         call(getAs(me, "/api/subscriptions/{u}", me.name()), 500);
     }
+
+    @Test
+    @DisplayName("\"Spent this week\" starts from zero each week (it used to be a running total that never reset)")
+    void weeklySpendingResetsEachWeek() throws Exception {
+        User me = newUser();
+        // categories saved by the budget quiz still show, at 0
+        ok(postJson(me, "/api/costs", Map.of("username", me.name(), "type", "weekly",
+                "costs", Map.of("Groceries", 0.0, "Gas", 0.0))));
+        // last week's trip and this week's trip (week of Sunday 2026-10-11)
+        for (Object[] trip : new Object[][]{{"2026-10-07", 40.0}, {"2026-10-12", 25.5}}) {
+            for (String type : List.of("weekly", "monthly")) {
+                ok(postJson(me, "/api/costs/add-dated", Map.of("username", me.name(), "type", type,
+                        "date", trip[0], "costs", Map.of("Groceries", trip[1]))));
+            }
+        }
+
+        JsonNode thisWeek = ok(getAs(me, "/api/costs/{u}/weekly", me.name()).param("date", "2026-10-14")).get("costs");
+        assertThat(thisWeek.get("Groceries").asDouble()).isEqualTo(25.5);
+        assertThat(thisWeek.get("Gas").asDouble()).isZero();
+
+        JsonNode lastWeek = ok(getAs(me, "/api/costs/{u}/weekly", me.name()).param("date", "2026-10-08")).get("costs");
+        assertThat(lastWeek.get("Groceries").asDouble()).isEqualTo(40.0);
+
+        JsonNode nextWeek = ok(getAs(me, "/api/costs/{u}/weekly", me.name()).param("date", "2026-10-19")).get("costs");
+        assertThat(nextWeek.get("Groceries").asDouble()).isZero();
+
+        JsonNode october = ok(getAs(me, "/api/costs/{u}/monthly", me.name()).param("date", "2026-10-31")).get("costs");
+        assertThat(october.get("Groceries").asDouble()).isEqualTo(65.5);
+    }
 }

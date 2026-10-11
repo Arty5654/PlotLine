@@ -201,7 +201,7 @@ struct GenerateFromMealView: View {
             }.resume()
         }
 
-        if let spentURL = URL(string: "\(BackendConfig.baseURLString)/api/costs/\(username)/weekly") {
+        if let spentURL = GroceryCosts.thisWeekURL(username: username) {
             var req = URLRequest(url: spentURL)
             BackendConfig.addApiKey(to: &req)
             URLSession.shared.dataTask(with: req) { data, _, _ in

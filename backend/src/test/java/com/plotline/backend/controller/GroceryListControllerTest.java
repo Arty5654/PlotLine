@@ -7,6 +7,7 @@ import com.plotline.backend.dto.GroceryListInvite;
 import com.plotline.backend.service.AuthService;
 import com.plotline.backend.service.DietaryRestrictionsService;
 import com.plotline.backend.service.GroceryListService;
+import com.plotline.backend.service.MealService;
 import com.plotline.backend.service.OpenAIService;
 import com.plotline.backend.security.CurrentUser;
 import org.junit.jupiter.api.BeforeEach;
@@ -86,6 +87,9 @@ class GroceryListControllerTest {
 
     @MockBean
     private DietaryRestrictionsService dietaryRestrictionsService;
+
+    @MockBean
+    private MealService mealService;
 
     private GroceryList sampleList(String id, String name, String owner) {
         GroceryList list = new GroceryList();
@@ -271,7 +275,7 @@ class GroceryListControllerTest {
     @Test
     @DisplayName("POST /archive/{username} returns 200 on success")
     void archive_success() throws Exception {
-        when(groceryListService.archiveGroceryList(any(), eq("alice"))).thenReturn("archived/key");
+        when(groceryListService.archiveGroceryList(any(), eq("alice"), any(), any())).thenReturn("archived/key");
         mockMvc.perform(post("/api/groceryLists/archive/alice")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(sampleList("L1", "Weekly", "alice"))))

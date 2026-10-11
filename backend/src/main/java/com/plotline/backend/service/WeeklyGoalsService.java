@@ -340,9 +340,13 @@ public class WeeklyGoalsService {
     }
   }
 
-  /** This week's costs by category; empty if none are saved yet. */
+  /** This week's costs by category (Sunday to Saturday, from the dated costs); empty if none yet. */
   public Map<String, Double> getWeeklyCosts(String username) {
-    Map<String, Double> costs = readNumbers("users/" + normalize(username) + "/weekly_costs.json", "costs");
+    java.time.LocalDate today = java.time.LocalDate.now();
+    java.time.LocalDate sunday = today.minusDays(today.getDayOfWeek().getValue() % 7);
+    java.time.temporal.WeekFields weeks = java.time.temporal.WeekFields.SUNDAY_START;
+    String week = "%04d-W%02d".formatted(sunday.get(weeks.weekBasedYear()), sunday.get(weeks.weekOfWeekBasedYear()));
+    Map<String, Double> costs = readNumbers("users/" + normalize(username) + "/costs/weekly/" + week + ".json", "totals");
     return costs != null ? costs : new HashMap<>();
   }
 

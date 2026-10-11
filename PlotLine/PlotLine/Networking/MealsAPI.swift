@@ -7,7 +7,7 @@
 
 import Foundation
 
-struct Meal: Identifiable, Decodable {
+struct Meal: Identifiable, Decodable, Hashable {
     var id: String
     var mealName: String
     var ingredients: [String]
@@ -25,6 +25,18 @@ class MealViewModel: ObservableObject {
     @Published var meals: [Meal] = []  // Array of meals instead of single meal
     
     static let baseURL = "\(BackendConfig.baseURLString)/api/meals"
+
+    /// one meal (e.g. a grocery list's recipe)
+    static func fetchMeal(username: String, mealID: String) async throws -> Meal {
+        guard let url = URL(string: "\(baseURL)/\(username)/meals/\(mealID)") else { throw URLError(.badURL) }
+        var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+        return try JSONDecoder().decode(Meal.self, from: data)
+    }
     
     func deleteMeal(username: String, mealID: String) async throws {
         guard let url = URL(string: "\(MealViewModel.baseURL)/\(username)/\(mealID)") else {

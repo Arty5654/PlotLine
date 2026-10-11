@@ -528,6 +528,11 @@ public class GroceryListService {
 
     // Method to archive a grocery list to S3 in JSON format
     public String archiveGroceryList(GroceryList groceryList, String username) throws IOException {
+        return archiveGroceryList(groceryList, username, null, null);
+    }
+
+    /** `spentAmount`/`spentDate`: what this trip added to grocery costs, if anything (kept with the archived list) */
+    public String archiveGroceryList(GroceryList groceryList, String username, Double spentAmount, String spentDate) throws IOException {
         // Ensure the list exists before attempting to archive
         if (groceryList.getId() == null) {
             throw new IllegalArgumentException("Grocery list ID is required.");
@@ -544,12 +549,19 @@ public class GroceryListService {
             return sharedPointerPath(normUser, groceryListID);
         }
 
+        // Archive the list as it's saved right now (which items are checked, items added since the
+        // app opened it), not the possibly stale copy the app sends.
+        GroceryList saved = getGroceryList(normUser, groceryListID);
+        if (saved != null) groceryList = saved;
+        groceryList.setSpentAmount(spentAmount != null && spentAmount > 0 ? spentAmount : null);
+        groceryList.setSpentDate(spentAmount != null && spentAmount > 0 ? spentDate : null);
+
         // Serialize the GroceryList object to JSON
         ObjectMapper objectMapper = new ObjectMapper();
         String jsonString = objectMapper.writeValueAsString(groceryList);
 
         // Define the source and destination S3 keys
-        String sourceKey = "users/" + normUser + "/grocery/lists/" + groceryListID + ".json";
+        String sourceKey = getS3Path(normUser, groceryListID);
         String destinationKey = "users/" + normUser + "/grocery/archived/" + groceryListID + ".json";
 
         // Copy the grocery list from the original folder to the archived folder
@@ -629,17 +641,29 @@ public class GroceryListService {
     }
 
     // Method to restore an archived grocery list, unchecking all items
+    private GroceryList readArchived(String username, String listId) {
+        try {
+            byte[] data = s3Client.getObjectAsBytes(GetObjectRequest.builder().bucket(BUCKET_NAME)
+                    .key("users/" + normalize(username) + "/grocery/archived/" + listId + ".json").build()).asByteArray();
+            return new ObjectMapper().configure(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+                    .readValue(data, GroceryList.class);
+        } catch (Exception e) {
+            return null; // fall back to the copy the app sent
+        }
+    }
+
     public String restoreArchivedGroceryList(GroceryList groceryList, String username) throws IOException {
         // Ensure the list exists before attempting to restore
         if (groceryList.getId() == null) {
             throw new IllegalArgumentException("Grocery list ID is required.");
         }
 
-        // Uncheck all items in the grocery list
-        for (GroceryItem item : groceryList.getItems()) {
-            item.setChecked(false);   // Set each item's checked status to false
-            item.setCheckedBy(null);  // Clear who-checked attribution on restore
-        }
+        // Restore it exactly as it was archived (checked items stay checked)
+        GroceryList archived = readArchived(username, groceryList.getId());
+        if (archived != null) groceryList = archived;
+        // the app has already asked whether to take that spending back; an active list doesn't carry it
+        groceryList.setSpentAmount(null);
+        groceryList.setSpentDate(null);
 
         // Restore as a fresh private list owned by the restorer. Any prior shared
         // members' pointers were removed when it was archived, so keeping the old member
@@ -837,6 +861,11 @@ public class GroceryListService {
     }
 
     public String generateGroceryListFromMeal(String mealName, String username, String rawOpenAIResponse) throws Exception {
+        return generateGroceryListFromMeal(mealName, username, rawOpenAIResponse, null);
+    }
+
+    /** an AI-made list; `source` is "meal" or "goal" (what the Grocery page offers for it depends on it) */
+    public String generateGroceryListFromMeal(String mealName, String username, String rawOpenAIResponse, String source) throws Exception {
         // Parse the raw JSON response from OpenAI
         ObjectMapper mapper = new ObjectMapper();
         List<GroceryItem> items = new ArrayList<>();
@@ -884,6 +913,7 @@ public class GroceryListService {
         list.setName(mealName);
         list.setItems(items);  // Set all items before saving
         list.setAI(true);
+        list.setSource(source);
         
         // Set timestamps
         String currentTimestamp = String.valueOf(System.currentTimeMillis());
