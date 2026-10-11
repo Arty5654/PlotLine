@@ -19,6 +19,9 @@ struct ArchivedGroceryListsView: View {
     @State private var isDeletingAll = false
     @State private var alertMessage: String = ""
     @State private var showAlert = false
+    /// a restored list that had added to grocery spending: offer to take that back
+    @State private var spendingToUndo: GroceryList?
+    @State private var isUndoingSpending = false
 
     private var adaptiveTextColor: Color {
         colorScheme == .dark ? .white : .blue
@@ -143,6 +146,14 @@ struct ArchivedGroceryListsView: View {
         } message: {
             Text(alertMessage)
         }
+        .alert(spendingToUndo.map { "Remove $\(String(format: "%.2f", $0.spentAmount ?? 0)) from your spending?" } ?? "",
+               isPresented: Binding(get: { spendingToUndo != nil }, set: { if !$0 { spendingToUndo = nil } }),
+               presenting: spendingToUndo) { list in
+            Button("Remove It", role: .destructive) { undoSpending(for: list) }
+            Button("Keep It", role: .cancel) { }
+        } message: { list in
+            Text("When you archived \"\(list.name)\"\(spentDateText(list)), this trip added $\(String(format: "%.2f", list.spentAmount ?? 0)) to your grocery spending. If you didn't actually buy those items, remove it.")
+        }
         .onAppear { fetchArchivedGroceryLists() }
     }
 
@@ -220,11 +231,32 @@ struct ArchivedGroceryListsView: View {
                 switch result {
                 case .success:
                     archivedLists.removeAll { $0.id == groceryList.id }
+                    if (groceryList.spentAmount ?? 0) > 0 { spendingToUndo = groceryList }
                 case .failure(let error):
                     alertMessage = "Failed to restore: \(error.localizedDescription)"
                     showAlert = true
                 }
             }
+        }
+    }
+
+    private func spentDateText(_ list: GroceryList) -> String {
+        guard let text = list.spentDate, let date = GoalReminder.dayFormatter.date(from: text) else { return "" }
+        return " on \(date.formatted(date: .abbreviated, time: .omitted))"
+    }
+
+    private func undoSpending(for list: GroceryList) {
+        guard let amount = list.spentAmount, amount > 0 else { return }
+        isUndoingSpending = true
+        Task {
+            do {
+                // from the day it was added, so it comes off the right week and month
+                try await GroceryCosts.undo(amount, on: list.spentDate ?? GroceryCosts.today())
+                WidgetDataWriter.refreshFinancialData()
+            } catch {
+                AppBanner.report("remove the trip from your spending", error, retry: { undoSpending(for: list) })
+            }
+            isUndoingSpending = false
         }
     }
 

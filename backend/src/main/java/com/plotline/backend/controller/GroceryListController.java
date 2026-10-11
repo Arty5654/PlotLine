@@ -4,6 +4,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import com.plotline.backend.security.ActingUser;
 import com.plotline.backend.service.OpenAIService;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.plotline.backend.service.MealService;
 
 import com.plotline.backend.dto.GroceryItem;
 import com.plotline.backend.dto.GroceryList;
@@ -39,6 +41,9 @@ public class GroceryListController {
 
     @Autowired
     private DietaryRestrictionsService dietaryRestrictionsService;
+
+    @Autowired
+    private MealService mealService;
 
 
     // Create grocery list
@@ -144,14 +149,16 @@ public class GroceryListController {
     // body is the list itself; for a shared list its username/owner can be a friend
     @PostMapping("/archive/{username}")
     @ActingUser(value = {"username"}, others = {"ownerUsername"}, checkBody = false)
-    public ResponseEntity<String> archiveGroceryList(@PathVariable String username, @RequestBody GroceryList groceryList) {
+    public ResponseEntity<String> archiveGroceryList(@PathVariable String username, @RequestBody GroceryList groceryList,
+                                                     @RequestParam(required = false) Double spentAmount,
+                                                     @RequestParam(required = false) String spentDate) {
         try {
             // Ensure that the grocery list object has a valid ID
             if (groceryList.getId() == null) {
                 return ResponseEntity.status(HttpStatus.SC_BAD_REQUEST).body("Grocery list must have a valid ID.");
             }
             // Call the service method to archive the grocery list
-            String result = groceryListService.archiveGroceryList(groceryList, username);
+            String result = groceryListService.archiveGroceryList(groceryList, username, spentAmount, spentDate);
             // Return a success response with the new path of the archived list
             return ResponseEntity.ok("Grocery list archived successfully at: " + result);
         } catch (IOException e) {
@@ -286,33 +293,34 @@ public class GroceryListController {
                 return ResponseEntity.ok(response);
             }
 
-            // Case 2: Meal requires modifications for dietary restrictions
-            if (rootNode.has("modifications")) {
-                String modifications = rootNode.get("modifications").asText();
-                JsonNode itemsNode = rootNode.get("items");
+            // The list (and, from the current prompt, its recipe). Older answers were a bare array of items.
+            JsonNode itemsNode = rootNode.isArray() ? rootNode : rootNode.get("items");
+            if (itemsNode == null || !itemsNode.isArray()) {
+                return ResponseEntity.status(500).body("Invalid response format: missing items array");
+            }
+            boolean modified = rootNode.has("modifications");
+            String listName = modified ? mealName + " (Modified for dietary restrictions)" : mealName;
+            String listId = groceryListService.generateGroceryListFromMeal(
+                listName, username, mapper.writeValueAsString(itemsNode), "meal");
 
-                if (itemsNode == null || !itemsNode.isArray()) {
-                    return ResponseEntity.status(500).body("Invalid response format: missing items array");
+            // save the recipe as the list's meal, so the list can open it ("View Recipe")
+            JsonNode meal = rootNode.isObject() ? rootNode.get("meal") : null;
+            if (meal != null && meal.isObject() && meal.has("recipe")) {
+                try {
+                    List<Map<String, Object>> items = mapper.convertValue(itemsNode, new TypeReference<>() { });
+                    mealService.createMeal(username, listId, mapper.writeValueAsString(meal), items);
+                } catch (Exception e) {
+                    log.error("Saving the recipe for {} failed; the list can still get one later", listId, e);
                 }
-
-                // Generate the grocery list with the modified items
-                String listId = groceryListService.generateGroceryListFromMeal(
-                    mealName + " (Modified for dietary restrictions)",
-                    username,
-                    mapper.writeValueAsString(itemsNode)
-                );
-
-                // Return a special response indicating modifications were made
-                Map<String, String> modResponse = new HashMap<>();
-                modResponse.put("modifications", modifications);
-                modResponse.put("listId", listId);
-
-                String responseStr = "MODIFIED:" + mapper.writeValueAsString(modResponse);
-                return ResponseEntity.ok(responseStr);
             }
 
-            // Case 3: Standard success case - meal works with dietary restrictions
-            String listId = groceryListService.generateGroceryListFromMeal(mealName, username, rawResponse);
+            if (modified) {
+                // Return a special response indicating modifications were made
+                Map<String, String> modResponse = new HashMap<>();
+                modResponse.put("modifications", rootNode.get("modifications").asText());
+                modResponse.put("listId", listId);
+                return ResponseEntity.ok("MODIFIED:" + mapper.writeValueAsString(modResponse));
+            }
             return ResponseEntity.ok(listId);
 
         } catch (Exception e) {
@@ -472,7 +480,7 @@ public class GroceryListController {
             }
             
             // Generate the grocery list and save it to S3
-            String listId = groceryListService.generateGroceryListFromMeal(listTitle, username, mapper.writeValueAsString(itemsNode));
+            String listId = groceryListService.generateGroceryListFromMeal(listTitle, username, mapper.writeValueAsString(itemsNode), "goal");
             
             // Return the list ID and the full JSON response
             Map<String, String> response = new HashMap<>();

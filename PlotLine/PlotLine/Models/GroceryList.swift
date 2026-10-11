@@ -17,6 +17,9 @@ struct GroceryList: Identifiable, Codable {
     var mealName: String?
     var ownerUsername: String?   // Owner of the canonical shared list (nil for older lists)
     var members: [String]?       // Usernames this list is shared with (excludes the owner)
+    var source: String?          // "meal" or "goal" for AI lists made since Oct 2026; nil for typed-in and older lists
+    var spentAmount: Double?     // archived with "Add to Spending": how much it added to grocery costs...
+    var spentDate: String?       // ...and on which day ("yyyy-MM-dd")
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -28,6 +31,9 @@ struct GroceryList: Identifiable, Codable {
         case mealName
         case ownerUsername
         case members
+        case source
+        case spentAmount
+        case spentDate
     }
 
     // True when this list has more than one participant (owner + at least one member).

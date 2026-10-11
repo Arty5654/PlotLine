@@ -361,7 +361,7 @@ struct ActiveGroceryListView: View {
     private func fetchWeeklyGroceryData() async {
         guard let user = username else { return }
 
-        if let url = URL(string: "\(BackendConfig.baseURLString)/api/costs/\(user)/weekly") {
+        if let url = GroceryCosts.thisWeekURL(username: user) {
             var req = URLRequest(url: url)
             BackendConfig.addApiKey(to: &req)
             if let (data, _) = try? await URLSession.shared.data(for: req),

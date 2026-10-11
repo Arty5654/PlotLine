@@ -253,8 +253,15 @@ struct GroceryListAPI {
     }
     
     // Function to archive a grocery list
-    static func archiveGroceryList(username: String, groceryList: GroceryList, completion: @escaping (Result<String, Error>) -> Void) {
-        let url = URL(string: "\(baseURL)/archive/\(username)")!
+    /// `spentAmount`/`spentDate`: what this trip added to grocery spending, kept with the archived list
+    static func archiveGroceryList(username: String, groceryList: GroceryList, spentAmount: Double? = nil, spentDate: String? = nil,
+                                   completion: @escaping (Result<String, Error>) -> Void) {
+        var components = URLComponents(string: "\(baseURL)/archive/\(username)")!
+        if let spentAmount, let spentDate {
+            components.queryItems = [URLQueryItem(name: "spentAmount", value: String(spentAmount)),
+                                     URLQueryItem(name: "spentDate", value: spentDate)]
+        }
+        let url = components.url!
         var request = URLRequest(url: url)
         BackendConfig.addApiKey(to: &request)
         request.httpMethod = "POST"

@@ -14,6 +14,9 @@ public class GroceryList {
     private String mealName;               // Name of the meal associated with the grocery list
     private String ownerUsername;          // Username that owns the canonical copy of this list
     private List<String> members;          // Usernames this list is shared with (excludes the owner)
+    private String source;                 // "meal" or "goal" for AI lists made since 2026-10; null for typed-in and older lists
+    private Double spentAmount;            // archived with "Add to Spending": how much was added to grocery costs...
+    private String spentDate;              // ...and on which day ("yyyy-MM-dd"), so restoring can offer to take it back
 
     // Default constructor
     public GroceryList() {}
@@ -73,6 +76,30 @@ public class GroceryList {
 
     public void setItems(List<GroceryItem> items) {
         this.items = items;
+    }
+
+    public Double getSpentAmount() {
+        return spentAmount;
+    }
+
+    public void setSpentAmount(Double spentAmount) {
+        this.spentAmount = spentAmount;
+    }
+
+    public String getSpentDate() {
+        return spentDate;
+    }
+
+    public void setSpentDate(String spentDate) {
+        this.spentDate = spentDate;
+    }
+
+    public String getSource() {
+        return source;
+    }
+
+    public void setSource(String source) {
+        this.source = source;
     }
 
     public String getMealID() {

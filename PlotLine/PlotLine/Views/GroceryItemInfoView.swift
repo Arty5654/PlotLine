@@ -49,8 +49,9 @@ struct GroceryItemInfoView: View {
                 .scrollDismissesKeyboard(.interactively)
         }
         .frame(maxWidth: 420)
-        .background(Color(.systemBackground))
+        .background(Color(.secondarySystemBackground)) // stands out from the dimmed screen in dark mode too
         .clipShape(RoundedRectangle(cornerRadius: 20))
+        .overlay(RoundedRectangle(cornerRadius: 20).stroke(PLColor.cardBorder))
         .shadow(radius: 10)
         .padding(.horizontal, PLSpacing.md)
         .padding(.vertical, PLSpacing.lg)
@@ -155,12 +156,13 @@ struct GroceryItemInfoView: View {
                 }
                 .plCard()
 
-                // Warnings
-                VStack(spacing: 4) {
-                    if !quantityWarning.isEmpty { WarningRow(text: quantityWarning) }
-                    if !priceWarning.isEmpty    { WarningRow(text: priceWarning) }
+                // Warnings (only take up room when there is one)
+                if !quantityWarning.isEmpty || !priceWarning.isEmpty {
+                    VStack(spacing: 4) {
+                        if !quantityWarning.isEmpty { WarningRow(text: quantityWarning) }
+                        if !priceWarning.isEmpty    { WarningRow(text: priceWarning) }
+                    }
                 }
-                .frame(minHeight: 18)
 
                 // Actions
                 HStack(spacing: PLSpacing.sm) {

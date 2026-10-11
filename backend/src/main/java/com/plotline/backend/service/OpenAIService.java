@@ -528,15 +528,20 @@ public class OpenAIService {
 
             %s
 
-            When given a meal name, analyze if it can be made with these dietary restrictions.
+            When given a meal name, analyze if it can be made with these dietary restrictions, then give the
+            grocery list to buy for it and the recipe to cook it.
 
             If the meal cannot be made with these dietary restrictions, respond with a JSON object:
             {"incompatible": true, "reason": "explanation of why the meal can't be made with these restrictions"}
 
             If the meal requires substitutions to meet dietary restrictions, respond with a JSON object:
-            {"modifications": "explanation of the modifications made", "items": [array of grocery items]}
+            {"modifications": "explanation of the modifications made", "items": [array of grocery items], "meal": recipe}
 
-            If the meal can be made as-is with these dietary restrictions, respond with a JSON array of grocery items.
+            If the meal can be made as-is with these dietary restrictions, respond with a JSON object:
+            {"items": [array of grocery items], "meal": recipe}
+
+            The recipe (with any substitutions applied) is a JSON object:
+            {"mealName": "Meal Name", "ingredients": ["amount + ingredient", ...], "recipe": ["Step 1: ...", "Step 2: ..."], "optionalToppings": ["topping", ...]}
 
             Each grocery item should include:
             - name (string): The name of the ingredient, in PROPER CASE
@@ -545,9 +550,10 @@ public class OpenAIService {
 
             Example grocery item: {"name": "Chicken breast", "quantity": 1, "notes": "1 pound"}
 
-            All grocery items in a grocery list should be in a JSON array format, and separated by commas.
-
-            Example: [{"name": "Eggs", "quantity": 6}, {"name": "Milk", "quantity": 1}]
+            Example: {"items": [{"name": "Eggs", "quantity": 6}, {"name": "Milk", "quantity": 1}],
+                      "meal": {"mealName": "Scrambled Eggs", "ingredients": ["4 eggs", "2 tbsp milk"],
+                               "recipe": ["Step 1: Whisk the eggs and milk.", "Step 2: Cook over low heat, stirring."],
+                               "optionalToppings": ["Chives"]}}
 
             Respond with ONLY the JSON with no additional text, explanation, or formatting.
             """.formatted(dietaryPrefix);

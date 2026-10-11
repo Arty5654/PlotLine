@@ -88,9 +88,26 @@ public class WeeklyMonthlyCostController {
         }
     }
 
+    /**
+     * This week's (or month's) spending by category, e.g. the grocery budget card's "spent this week".
+     * Amounts come from the dated costs for the period containing `date` (the person's today;
+     * defaults to the server's), so they start from zero each week. The categories in the old
+     * running-total file (users/<u>/weekly_costs.json, which never reset) are still listed, at 0
+     * when nothing was spent, because receipt scanning offers them.
+     */
     @GetMapping("/{username}/{type}")
-    public ResponseEntity<String> getWeeklyMonthlyCosts(@PathVariable String username, @PathVariable String type) {
+    public ResponseEntity<String> getWeeklyMonthlyCosts(@PathVariable String username, @PathVariable String type,
+                                                        @RequestParam(required = false) String date) {
         String normUser = normalize(username);
+        if ("weekly".equalsIgnoreCase(type) || "monthly".equalsIgnoreCase(type)) {
+            try {
+                return ResponseEntity.ok(currentPeriodCosts(normUser, type.toLowerCase(),
+                        date != null ? LocalDate.parse(date) : LocalDate.now()));
+            } catch (Exception e) {
+                log.error("Reading {} costs for {} failed", type, normUser, e);
+                return ResponseEntity.status(500).body("Error reading costs: " + e.getMessage());
+            }
+        }
         try {
             // Determine current week or month
             //int period = determinePeriod(type);
@@ -187,6 +204,27 @@ public class WeeklyMonthlyCostController {
             error.put("error", e.getMessage());
             return ResponseEntity.status(500).body(error);
         }
+    }
+
+    private String currentPeriodCosts(String normUser, String type, LocalDate day) throws Exception {
+        Map<String, Double> costs = new LinkedHashMap<>();
+        try {
+            Map<String, Object> old = new ObjectMapper().readValue(
+                    s3Service.downloadFile("users/" + normUser + "/" + type + "_costs.json"), new TypeReference<>() {});
+            if (old.get("costs") instanceof Map<?, ?> categories) {
+                for (Object category : categories.keySet()) costs.put(String.valueOf(category), 0.0);
+            }
+        } catch (Exception e) {
+            // no categories saved yet
+        }
+        String periodKey = "weekly".equals(type) ? weekKey(day) : monthKey(day);
+        Map<String, Object> period = loadJsonOrEmpty("users/%s/costs/%s/%s.json".formatted(normUser, type, periodKey));
+        if (period.get("totals") instanceof Map<?, ?> totals) {
+            for (var entry : totals.entrySet()) {
+                if (entry.getValue() instanceof Number n) costs.put(String.valueOf(entry.getKey()), round2(n.doubleValue()));
+            }
+        }
+        return new ObjectMapper().writeValueAsString(Map.of("username", normUser, "type", type, "costs", costs));
     }
 
     private void overwriteCosts(String username, String type,
