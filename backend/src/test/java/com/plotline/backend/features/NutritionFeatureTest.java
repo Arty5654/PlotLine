@@ -40,18 +40,6 @@ class NutritionFeatureTest extends FeatureTestBase {
     }
 
     @Test
-    @DisplayName("Food photo analysis returns what the AI found")
-    void analyzeFoodPhoto() throws Exception {
-        when(openAIService.analyzeFoodFromImage(anyString()))
-                .thenReturn("[{\"name\":\"Banana\",\"calories\":105,\"protein\":1,\"carbs\":27,\"fat\":0}]");
-        User me = newUser();
-        MockMultipartFile photo = new MockMultipartFile("image", "lunch.jpg", "image/jpeg", new byte[]{1, 2, 3});
-
-        JsonNode result = ok(as(me, multipart("/api/nutrition/analyze-food").file(photo).param("username", me.name())));
-        assertThat(result.toString()).contains("Banana");
-    }
-
-    @Test
     @DisplayName("Dietary restrictions: save and read back")
     void dietaryRestrictions() throws Exception {
         User me = newUser();

@@ -58,4 +58,67 @@ struct NutritionTests {
         #expect(back.nutFree)
         #expect(!back.vegan)
     }
+
+    @Test("A food without an id (what the photo analysis used to send) still loads")
+    func foodWithoutId() throws {
+        let foods = try TestJSON.decode([FoodItem].self, """
+        [{"name":"Banana","servingSize":"1 medium","servings":1,"calories":105,"protein":1.3,"carbs":27,"fat":0.4,"source":"photo"},
+         {"name":"Mystery","calories":"80"}]
+        """, iso8601: false)
+        #expect(foods.count == 2)
+        #expect(!foods[0].id.isEmpty)
+        #expect(foods[0].source == .photo)
+        #expect(foods[1].calories == 80)
+        #expect(foods[1].servings == 1)
+    }
+
+    @Test("Changing a photo food's grams rescales its numbers")
+    func photoFoodGrams() throws {
+        var thigh = try TestJSON.decode(PhotoFood.self, """
+        {"id":"A","name":"Roasted chicken thigh","grams":150,"servingSize":"150 g (1 large thigh)",
+         "calories":269,"protein":37.2,"carbs":0,"fat":12.2,"basis":"usda","usdaName":"Chicken, thigh, meat only, roasted"}
+        """, iso8601: false)
+        let asFound = thigh.foodItem(mealType: .dinner)
+        #expect(asFound.calories == 269)
+        #expect(asFound.servingSize == "150 g (1 large thigh)")
+        #expect(asFound.source == .photo)
+        #expect(asFound.mealType == .dinner)
+
+        thigh.grams = 100
+        let smaller = thigh.foodItem(mealType: .dinner)
+        #expect(smaller.calories == 179)
+        #expect(abs(smaller.protein - 24.8) < 0.01)
+        #expect(smaller.servingSize == "100 g")
+    }
+
+    @Test("The food log keeps a group's foods together under one row, in order")
+    func logGroups() {
+        func food(_ name: String, group: String? = nil) -> FoodItem {
+            FoodItem(name: name, servingSize: "1", servings: 1, calories: 100, protein: 1, carbs: 1, fat: 1,
+                     source: .manual, mealType: .dinner, groupId: group, groupName: group.map { "Meal \($0)" })
+        }
+        let rows = NutritionView.logRows([food("Soup"), food("Chicken", group: "A"), food("Salad"), food("Rice", group: "A")])
+        #expect(rows.count == 3)
+        guard case .food(let first) = rows[0], case .group(_, let grouped) = rows[1], case .food(let last) = rows[2] else {
+            Issue.record("unexpected rows"); return
+        }
+        #expect(first.name == "Soup")
+        #expect(grouped.map(\.name) == ["Chicken", "Rice"])
+        #expect(last.name == "Salad")
+        #expect(NutritionView.photoGroupName([food("Chicken"), food("Rice"), food("Sauce")]) == "Chicken + 2 more")
+    }
+
+    @Test("A search result scales to the amount eaten, and keeps its brand in the name")
+    func searchResultAmount() throws {
+        let beef = try TestJSON.decode(SearchFood.self, """
+        {"id":"usda-1","name":"Ground Beef","brand":"Wal-Mart Stores, Inc.","kind":"branded",
+         "per100g":{"calories":312,"protein":17,"carbs":0,"fat":26},"portions":[{"label":"4 oz (112 g)","grams":112}]}
+        """, iso8601: false)
+        let item = beef.foodItem(grams: 112, amountLabel: "4 oz (112 g)")
+        #expect(item.name == "Ground Beef (Wal-Mart Stores, Inc.)")
+        #expect(item.calories == 349)
+        #expect(abs(item.fat - 29.12) < 0.01)
+        #expect(item.servingSize == "4 oz (112 g)")
+        #expect(beef.isBranded)
+    }
 }

@@ -86,7 +86,7 @@ public class ExternalDataController {
         try {
             return json(newsCache.get(topic, this::fetchNews));
         } catch (UncheckedIOException e) {
-            log.warn("News fetch failed: {}", e.getCause().getMessage());
+            log.warn("News fetch failed: {}", e.getCause().toString());
             return error(HttpStatus.BAD_GATEWAY, "Couldn't load news. Please try again.");
         }
     }
@@ -122,7 +122,7 @@ public class ExternalDataController {
         try {
             return json(foodCache.get(q, this::fetchFoods));
         } catch (UncheckedIOException e) {
-            log.warn("Food search failed: {}", e.getCause().getMessage());
+            log.warn("Food search failed: {}", e.getCause().toString());
             return error(HttpStatus.BAD_GATEWAY, "Couldn't search foods. Please try again.");
         }
     }

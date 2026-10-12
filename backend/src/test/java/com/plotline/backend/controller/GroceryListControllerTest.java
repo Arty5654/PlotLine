@@ -8,6 +8,7 @@ import com.plotline.backend.service.AuthService;
 import com.plotline.backend.service.DietaryRestrictionsService;
 import com.plotline.backend.service.GroceryListService;
 import com.plotline.backend.service.MealService;
+import com.plotline.backend.service.GroceryPriceCache;
 import com.plotline.backend.service.OpenAIService;
 import com.plotline.backend.security.CurrentUser;
 import org.junit.jupiter.api.BeforeEach;
@@ -90,6 +91,9 @@ class GroceryListControllerTest {
 
     @MockBean
     private MealService mealService;
+
+    @MockBean
+    private GroceryPriceCache groceryPriceCache;
 
     private GroceryList sampleList(String id, String name, String owner) {
         GroceryList list = new GroceryList();

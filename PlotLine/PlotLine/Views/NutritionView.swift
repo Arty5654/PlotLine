@@ -29,7 +29,8 @@ struct NutritionView: View {
     @State private var showBarcodeScanner = false
     @State private var showCamera = false
     @State private var showPhotoPicker = false
-    @State private var isAnalyzingPhoto = false
+    /// a meal photo waiting for its note and review (PhotoFoodSheet)
+    @State private var photoToAnalyze: MealPhoto?
     @State private var showFavorites = false
     @State private var showSavedMeals = false
     @State private var showCreateMeal = false
@@ -43,23 +44,27 @@ struct NutritionView: View {
     @State private var isLookingUpBarcode = false
 
     // Photo analysis
-    @State private var photoFoods: [FoodItem] = []
-    @State private var showPhotoResults = false
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var capturedImage: UIImage?
 
     // Copy/Move
-    @State private var foodToCopy: FoodItem?
-    @State private var showCopyDatePicker = false
+    /// copying or moving a food (or a whole group) to another day
+    struct CopyRequest: Identifiable {
+        let id = UUID()
+        let foods: [FoodItem]
+        let title: String
+        let move: Bool
+    }
+    @State private var copyRequest: CopyRequest?
+    @State private var expandedGroups: Set<String> = []
+    @State private var groupToDelete: [FoodItem] = []
     @State private var copyTargetDate = Date()
-    @State private var isMoveMode = false  // true = move, false = copy
 
     // Edit logged food
     @State private var foodToEdit: FoodItem?
 
     // Add to grocery list
-    @State private var foodToAddToGrocery: FoodItem?
-    @State private var showGroceryPicker = false
+    @State private var groceryRequest: GroceryRequest?
 
     // Shop for meal
     @State private var isShoppingForMeal = false
@@ -68,6 +73,12 @@ struct NutritionView: View {
 
     // Edit saved meal
     @State private var mealToEdit: SavedMeal?
+
+    // Adding a saved meal: confirm which meal it goes to, then say it was added
+    @State private var mealToAdd: SavedMeal?
+    @State private var favoriteToAdd: FoodItem?
+    @State private var addedMessage: String?
+    @State private var addedMessageTask: Task<Void, Never>?
 
     private let api = NutritionAPI.shared
 
@@ -85,12 +96,32 @@ struct NutritionView: View {
             .padding(.bottom, PLSpacing.lg)
         }
         .navigationTitle("Nutrition")
+        .overlay(alignment: .bottom) {
+            if let addedMessage {
+                Label(addedMessage, systemImage: "checkmark.circle.fill")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(PLColor.success, in: Capsule())
+                    .shadow(radius: 6)
+                    .padding(.bottom, PLSpacing.lg)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .accessibilityAddTraits(.isStaticText)
+            }
+        }
+        .animation(.spring(duration: 0.3), value: addedMessage)
         .onAppear { loadEntry(); loadUserData() }
         .onChange(of: selectedDate) { _, _ in loadEntry() }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
             loadEntry(); loadUserData()
         }
-        .sheet(isPresented: $showFoodSearch) { FoodSearchSheet { food in addFood(food) } }
+        .sheet(isPresented: $showFoodSearch) {
+            FoodSearchSheet(addLabel: "Add to \(selectedMealType.displayName)") { food in
+                addFoods([food], to: selectedMealType)
+                showAdded("Added \(food.name) to \(selectedMealType.displayName)")
+            }
+        }
         .sheet(isPresented: $showManualEntry) { ManualFoodEntrySheet { food in addFood(food) } }
         .sheet(item: $foodToEdit) { food in
             NavigationStack {
@@ -109,11 +140,21 @@ struct NutritionView: View {
                 }
             }
         }
-        .sheet(isPresented: $showPhotoResults) { photoResultsSheet }
+        .sheet(item: $photoToAnalyze) { photo in
+            PhotoFoodSheet(image: photo.image, mealType: selectedMealType) { foods in
+                addFoods(foods, to: selectedMealType, asGroup: Self.photoGroupName(foods))
+                showAdded("Added \(foods.count) item\(foods.count == 1 ? "" : "s") to \(selectedMealType.displayName)")
+            }
+        }
         .sheet(isPresented: $showFavorites) { favoritesSheet }
         .sheet(isPresented: $showSavedMeals) { savedMealsSheet }
         .sheet(isPresented: $showCreateMeal) { createMealSheet }
-        .sheet(isPresented: $showCopyDatePicker) { copyDatePickerSheet }
+        .sheet(item: $copyRequest) { request in copyDatePickerSheet(request) }
+        .confirmationDialog("Delete \(groupToDelete.first?.groupName ?? "this meal") and its \(groupToDelete.count) foods?",
+                            isPresented: Binding(get: { !groupToDelete.isEmpty }, set: { if !$0 { groupToDelete = [] } }),
+                            titleVisibility: .visible) {
+            Button("Delete Meal", role: .destructive) { deleteFoods(groupToDelete) }
+        }
         .sheet(isPresented: $showGoalSettings) {
             NutritionGoalView(goals: $userData.goals) { newGoal in
                 if newGoal.calorieGoal <= 0 {
@@ -126,10 +167,10 @@ struct NutritionView: View {
                 persistUserData()
             }
         }
-        .sheet(isPresented: $showGroceryPicker) {
-            if let food = foodToAddToGrocery {
-                AddFoodToGrocerySheet(food: food)
-            }
+        // opened from the food itself: with a separate show flag the sheet could open before it saw
+        // which food was picked, and showed up blank the first time
+        .sheet(item: $groceryRequest) { request in
+            AddToGrocerySheet(request: request)
         }
         .alert("Grocery List Created", isPresented: $showShopMealAlert) {
             Button("OK", role: .cancel) {}
@@ -155,8 +196,8 @@ struct NutritionView: View {
             Text(barcodeError ?? "Something went wrong")
         }
         .overlay {
-            if isAnalyzingPhoto || isLookingUpBarcode {
-                ProgressView(isAnalyzingPhoto ? "Analyzing food..." : "Looking up product...")
+            if isLookingUpBarcode {
+                ProgressView("Looking up product...")
                     .padding(24)
                     .background(.ultraThinMaterial)
                     .clipShape(RoundedRectangle(cornerRadius: 12))
@@ -425,11 +466,128 @@ struct NutritionView: View {
             }
             .padding(.top, 4)
 
-            ForEach(foods) { food in
-                foodRow(food)
+            ForEach(Self.logRows(foods)) { row in
+                switch row {
+                case .food(let food): foodRow(food)
+                case .group(let id, let items): groupRow(id: id, foods: items)
+                }
             }
 
             Divider()
+        }
+    }
+
+    /// a meal's foods in order, with each group's foods together under one row
+    enum LogRow: Identifiable {
+        case food(FoodItem)
+        case group(id: String, foods: [FoodItem])
+        var id: String {
+            switch self {
+            case .food(let f): return f.id
+            case .group(let id, _): return "group-" + id
+            }
+        }
+    }
+
+    static func logRows(_ foods: [FoodItem]) -> [LogRow] {
+        var rows: [LogRow] = []
+        var seen: Set<String> = []
+        for food in foods {
+            guard let gid = food.groupId else { rows.append(.food(food)); continue }
+            guard seen.insert(gid).inserted else { continue }
+            rows.append(.group(id: gid, foods: foods.filter { $0.groupId == gid }))
+        }
+        return rows
+    }
+
+    static func photoGroupName(_ foods: [FoodItem]) -> String {
+        guard let first = foods.first?.name else { return "Meal photo" }
+        return foods.count == 1 ? first : "\(first) + \(foods.count - 1) more"
+    }
+
+    private func groupRow(id: String, foods: [FoodItem]) -> some View {
+        let expanded = expandedGroups.contains(id)
+        let name = foods.first?.groupName ?? "Meal"
+        let mealType = foods.first?.mealType ?? .snack
+        return VStack(alignment: .leading, spacing: 2) {
+            HStack {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        if expanded { expandedGroups.remove(id) } else { expandedGroups.insert(id) }
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.semibold))
+                            .rotationEffect(.degrees(expanded ? 90 : 0))
+                            .foregroundColor(PLColor.textSecondary)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(name).font(.subheadline.bold())
+                            Text("\(foods.count) item\(foods.count == 1 ? "" : "s")")
+                                .font(.caption)
+                                .foregroundColor(PLColor.textSecondary)
+                        }
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint(expanded ? "Hides the foods" : "Shows the foods")
+
+                Spacer()
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("\(Int(foods.reduce(0) { $0 + $1.calories })) cal")
+                        .font(.subheadline.bold())
+                    Text("P:\(Int(foods.reduce(0) { $0 + $1.protein })) C:\(Int(foods.reduce(0) { $0 + $1.carbs })) F:\(Int(foods.reduce(0) { $0 + $1.fat }))")
+                        .font(.caption2)
+                        .foregroundColor(PLColor.textSecondary)
+                }
+
+                Menu {
+                    moveToMealMenu(current: mealType) { target in moveFoods(foods, to: target) }
+                    Button {
+                        startCopy(foods, title: name, move: false)
+                    } label: { Label("Copy to Date", systemImage: "doc.on.doc") }
+                    Button {
+                        startCopy(foods, title: name, move: true)
+                    } label: { Label("Move to Date", systemImage: "arrow.right.doc.on.clipboard") }
+                    Button {
+                        groceryRequest = GroceryRequest(title: name, foods: foods)
+                    } label: { Label("Add to Grocery List", systemImage: "cart.badge.plus") }
+                    Button { ungroup(foods) } label: { Label("Ungroup", systemImage: "square.split.1x2") }
+                    Divider()
+                    Button(role: .destructive) { groupToDelete = foods } label: {
+                        Label("Delete Meal", systemImage: "trash")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .font(.subheadline)
+                        .foregroundColor(PLColor.textSecondary)
+                }
+                .padding(.leading, 4)
+                .accessibilityLabel("\(name) options")
+            }
+
+            if expanded {
+                ForEach(foods) { food in
+                    foodRow(food)
+                        .padding(.leading, 18)
+                        .overlay(alignment: .leading) {
+                            Rectangle().fill(PLColor.textSecondary.opacity(0.3)).frame(width: 2).padding(.leading, 5)
+                        }
+                }
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
+    @ViewBuilder
+    private func moveToMealMenu(current: FoodItem.MealType, move: @escaping (FoodItem.MealType) -> Void) -> some View {
+        Menu {
+            ForEach(FoodItem.MealType.allCases.filter { $0 != current }, id: \.self) { type in
+                Button { move(type) } label: { Label(type.displayName, systemImage: type.icon) }
+            }
+        } label: {
+            Label("Move to", systemImage: "arrow.up.arrow.down")
         }
     }
 
@@ -471,24 +629,18 @@ struct NutritionView: View {
                     Label(isFav ? "Unfavorite" : "Favorite", systemImage: isFav ? "star.slash" : "star")
                 }
                 Button {
-                    foodToAddToGrocery = food
-                    showGroceryPicker = true
+                    groceryRequest = GroceryRequest(title: food.name, foods: [food])
                 } label: {
                     Label("Add to Grocery List", systemImage: "cart.badge.plus")
                 }
+                moveToMealMenu(current: food.mealType ?? .snack) { target in moveFoods([food], to: target) }
                 Button {
-                    foodToCopy = food
-                    isMoveMode = false
-                    copyTargetDate = selectedDate
-                    showCopyDatePicker = true
+                    startCopy([food], title: food.name, move: false)
                 } label: {
                     Label("Copy to Date", systemImage: "doc.on.doc")
                 }
                 Button {
-                    foodToCopy = food
-                    isMoveMode = true
-                    copyTargetDate = selectedDate
-                    showCopyDatePicker = true
+                    startCopy([food], title: food.name, move: true)
                 } label: {
                     Label("Move to Date", systemImage: "arrow.right.doc.on.clipboard")
                 }
@@ -532,36 +684,6 @@ struct NutritionView: View {
 
 
     // MARK: - Photo Results Sheet
-    private var photoResultsSheet: some View {
-        NavigationStack {
-            List {
-                Section(header: Text("Detected Foods")) {
-                    ForEach(photoFoods) { food in
-                        HStack {
-                            VStack(alignment: .leading) {
-                                Text(food.name).font(.subheadline.bold())
-                                Text("\(food.servingSize) x \(food.servings, specifier: "%.1f")")
-                                    .font(.caption).foregroundColor(.secondary)
-                            }
-                            Spacer()
-                            Text("\(Int(food.calories)) cal")
-                                .font(.subheadline)
-                        }
-                    }
-                }
-            }
-            .navigationBarTitle("Food Analysis", displayMode: .inline)
-            .navigationBarItems(
-                leading: Button("Cancel") { showPhotoResults = false },
-                trailing: Button("Add All") {
-                    addFoods(photoFoods)
-                    showPhotoResults = false
-                }
-                .bold()
-            )
-        }
-    }
-
     // MARK: - Favorites Sheet
     private var favoritesSheet: some View {
         NavigationStack {
@@ -573,10 +695,7 @@ struct NutritionView: View {
                 } else {
                     ForEach(userData.favorites) { food in
                         Button {
-                            var newFood = food
-                            newFood.id = UUID().uuidString
-                            addFood(newFood)
-                            showFavorites = false
+                            favoriteToAdd = food
                         } label: {
                             HStack {
                                 VStack(alignment: .leading, spacing: 2) {
@@ -599,6 +718,14 @@ struct NutritionView: View {
             }
             .navigationBarTitle("Favorites", displayMode: .inline)
             .navigationBarItems(leading: Button("Done") { showFavorites = false })
+            .alert("Add \"\(favoriteToAdd?.name ?? "")\" to \(selectedMealType.displayName)?",
+                   isPresented: Binding(get: { favoriteToAdd != nil }, set: { if !$0 { favoriteToAdd = nil } }),
+                   presenting: favoriteToAdd) { food in
+                Button("Add to \(selectedMealType.displayName)") { addFavorite(food) }
+                Button("Cancel", role: .cancel) { }
+            } message: { food in
+                Text("\(food.servingSize) · \(Int(food.calories)) cal")
+            }
         }
     }
 
@@ -613,8 +740,7 @@ struct NutritionView: View {
                 } else {
                     ForEach(userData.savedMeals) { meal in
                         Button {
-                            addFoods(meal.foods)
-                            showSavedMeals = false
+                            mealToAdd = meal
                         } label: {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(meal.name).font(.headline).foregroundColor(.primary)
@@ -654,6 +780,14 @@ struct NutritionView: View {
             }
             .navigationBarTitle("Saved Meals", displayMode: .inline)
             .navigationBarItems(leading: Button("Done") { showSavedMeals = false })
+            .alert("Add \"\(mealToAdd?.name ?? "")\" to \(selectedMealType.displayName)?",
+                   isPresented: Binding(get: { mealToAdd != nil }, set: { if !$0 { mealToAdd = nil } }),
+                   presenting: mealToAdd) { meal in
+                Button("Add to \(selectedMealType.displayName)") { addSavedMeal(meal) }
+                Button("Cancel", role: .cancel) { }
+            } message: { meal in
+                Text("\(meal.foods.count) item\(meal.foods.count == 1 ? "" : "s") · \(Int(meal.totalCalories)) cal")
+            }
             .sheet(item: $mealToEdit) { meal in
                 CreateMealSheet(
                     todayFoods: entry?.foods ?? [],
@@ -691,29 +825,27 @@ struct NutritionView: View {
     }
 
     // MARK: - Copy/Move Date Picker Sheet
-    private var copyDatePickerSheet: some View {
-        NavigationStack {
+    private func copyDatePickerSheet(_ request: CopyRequest) -> some View {
+        let isGroup = request.foods.count > 1
+        return NavigationStack {
             Form {
-                Section(header: Text(isMoveMode ? "Move to Date" : "Copy to Date")) {
+                Section(header: Text(request.move ? "Move to Date" : "Copy to Date")) {
                     DatePicker("Target Date", selection: $copyTargetDate, displayedComponents: .date)
                         .tint(PLColor.tint)
                 }
-                if let food = foodToCopy {
-                    Section(header: Text("Food")) {
-                        Text(food.name).font(.subheadline.bold())
-                        Text("\(Int(food.calories)) cal  P:\(Int(food.protein))g  C:\(Int(food.carbs))g  F:\(Int(food.fat))g")
-                            .font(.caption).foregroundColor(.secondary)
-                    }
+                Section(header: Text(isGroup ? "Meal" : "Food")) {
+                    Text(request.title).font(.subheadline.bold())
+                    Text("\(isGroup ? "\(request.foods.count) items · " : "")\(Int(request.foods.reduce(0) { $0 + $1.calories })) cal")
+                        .font(.caption).foregroundColor(.secondary)
                 }
             }
-            .navigationBarTitle(isMoveMode ? "Move Food" : "Copy Food", displayMode: .inline)
+            .navigationBarTitle(request.move ? (isGroup ? "Move Meal" : "Move Food") : (isGroup ? "Copy Meal" : "Copy Food"),
+                                displayMode: .inline)
             .navigationBarItems(
-                leading: Button("Cancel") { showCopyDatePicker = false },
-                trailing: Button(isMoveMode ? "Move" : "Copy") {
-                    if let food = foodToCopy {
-                        copyOrMoveFood(food, to: copyTargetDate, move: isMoveMode)
-                    }
-                    showCopyDatePicker = false
+                leading: Button("Cancel") { copyRequest = nil },
+                trailing: Button(request.move ? "Move" : "Copy") {
+                    copyOrMoveFoods(request.foods, to: copyTargetDate, move: request.move)
+                    copyRequest = nil
                 }
                 .bold()
             )
@@ -738,7 +870,7 @@ struct NutritionView: View {
                     let item = GroceryItem(
                         listId: listUUID,
                         id: UUID(),
-                        name: food.name,
+                        name: GroceryName.forShopping(food), // "Pasta", not "Pasta, cooked"
                         quantity: 1,
                         checked: false
                     )
@@ -829,17 +961,49 @@ struct NutritionView: View {
         addFoods([food])
     }
 
+    private func addFavorite(_ food: FoodItem) {
+        let mealType = selectedMealType
+        addFoods([food], to: mealType)
+        showFavorites = false
+        showAdded("Added \(food.name) to \(mealType.displayName)")
+    }
+
+    private func addSavedMeal(_ meal: SavedMeal) {
+        let mealType = selectedMealType
+        addFoods(meal.foods, to: mealType, asGroup: meal.name)
+        showSavedMeals = false
+        showAdded("Added \(meal.name) to \(mealType.displayName)")
+    }
+
+    // a short "Added …" message at the bottom of the page
+    private func showAdded(_ text: String) {
+        addedMessageTask?.cancel()
+        addedMessage = text
+        addedMessageTask = Task {
+            try? await Task.sleep(for: .seconds(2.5))
+            guard !Task.isCancelled else { return }
+            addedMessage = nil
+        }
+    }
+
     // Appends all foods and saves exactly once — avoids the race condition where
     // looping addFood() fires concurrent PUTs that overwrite each other on the server.
-    private func addFoods(_ foods: [FoodItem]) {
+    // `mealType` puts them all in that meal (saved meals and favorites remember the meal they
+    // came from, which isn't necessarily the one being logged now).
+    // `asGroup` names a group the foods are logged as (a saved meal, a meal photo); otherwise each
+    // food stands alone (even if it came from a group, e.g. a favorite saved from a meal)
+    private func addFoods(_ foods: [FoodItem], to mealType: FoodItem.MealType? = nil, asGroup groupName: String? = nil) {
         guard dayIsReady() else { return }
         if entry == nil {
             entry = NutritionEntry(date: selectedDate, foods: [])
         }
+        let groupId = groupName != nil && foods.count > 1 ? UUID().uuidString : nil
         for food in foods {
             var f = food
             f.id = UUID().uuidString
-            if f.mealType == nil { f.mealType = selectedMealType }
+            if let mealType { f.mealType = mealType } else if f.mealType == nil { f.mealType = selectedMealType }
+            f.groupId = groupId
+            f.groupName = groupId != nil ? groupName : nil
             entry?.foods.append(f)
         }
         saveEntry()
@@ -939,34 +1103,79 @@ struct NutritionView: View {
         }
     }
 
-    private func copyOrMoveFood(_ food: FoodItem, to targetDate: Date, move: Bool) {
+    private func startCopy(_ foods: [FoodItem], title: String, move: Bool) {
+        copyRequest = CopyRequest(foods: foods, title: title, move: move)
+        copyTargetDate = selectedDate
+    }
+
+    private func copyOrMoveFoods(_ foods: [FoodItem], to targetDate: Date, move: Bool) {
+        let what = foods.count > 1 ? "meal" : "food"
         Task {
             // the other day has to load first: saving replaces it, so a failed load would wipe it
             var targetEntry: NutritionEntry
             do {
                 targetEntry = try await api.fetchEntries(for: targetDate) ?? NutritionEntry(date: targetDate, foods: [])
             } catch {
-                AppBanner.report(move ? "move the food" : "copy the food", error)
+                AppBanner.report(move ? "move the \(what)" : "copy the \(what)", error)
                 return
             }
-            var newFood = food
-            newFood.id = UUID().uuidString
-            targetEntry.foods.append(newFood)
+            // a copied group is its own group on that day
+            let newGroupId = foods.contains { $0.groupId != nil } ? UUID().uuidString : nil
+            for food in foods {
+                var newFood = food
+                newFood.id = UUID().uuidString
+                if food.groupId != nil { newFood.groupId = newGroupId }
+                targetEntry.foods.append(newFood)
+            }
 
             do {
                 try await api.saveEntry(targetEntry)
                 if move {
-                    await MainActor.run { deleteFood(food) }
+                    await MainActor.run { deleteFoods(foods) }
                 }
             } catch {
                 // Save failed — leave source untouched
-                AppBanner.report(move ? "move the food" : "copy the food", error)
+                AppBanner.report(move ? "move the \(what)" : "copy the \(what)", error)
             }
 
             if Calendar.current.isDate(targetDate, inSameDayAs: selectedDate) {
                 await MainActor.run { loadEntry() }
             }
         }
+    }
+
+    /// to another meal on the same day; a single food moved out of a group leaves the group
+    private func moveFoods(_ foods: [FoodItem], to mealType: FoodItem.MealType) {
+        guard dayIsReady(), var updated = entry?.foods else { return }
+        let ids = Set(foods.map(\.id))
+        let wholeGroup = foods.count > 1
+        for i in updated.indices where ids.contains(updated[i].id) {
+            updated[i].mealType = mealType
+            if !wholeGroup { updated[i].groupId = nil; updated[i].groupName = nil }
+        }
+        entry?.foods = updated
+        saveEntry()
+        writeNutritionToWidget()
+        showAdded("Moved \(wholeGroup ? (foods.first?.groupName ?? "meal") : (foods.first?.name ?? "food")) to \(mealType.displayName)")
+    }
+
+    private func ungroup(_ foods: [FoodItem]) {
+        guard dayIsReady() else { return }
+        let ids = Set(foods.map(\.id))
+        for i in (entry?.foods.indices ?? 0..<0) where ids.contains(entry!.foods[i].id) {
+            entry?.foods[i].groupId = nil
+            entry?.foods[i].groupName = nil
+        }
+        saveEntry()
+    }
+
+    private func deleteFoods(_ foods: [FoodItem]) {
+        guard dayIsReady() else { return }
+        let ids = Set(foods.map(\.id))
+        entry?.foods.removeAll { ids.contains($0.id) }
+        saveEntry()
+        writeNutritionToWidget()
+        checkDailyNutritionTrophies()
     }
 
     private func lookupBarcode(_ barcode: String) {
@@ -1009,31 +1218,12 @@ struct NutritionView: View {
     }
 
     private func handleCapturedPhoto(_ image: UIImage) {
+        let fromCamera = showCamera
         showCamera = false
         showPhotoPicker = false
-        isAnalyzingPhoto = true
-        Task {
-            do {
-                let foods = try await api.analyzeFoodPhoto(image)
-                await MainActor.run {
-                    photoFoods = foods
-                    isAnalyzingPhoto = false
-                    if foods.isEmpty {
-                        barcodeError = "Could not identify any food in the photo. Try again or use manual entry."
-                        showBarcodeError = true
-                    } else {
-                        showPhotoResults = true
-                    }
-                }
-            } catch {
-                await MainActor.run {
-                    isAnalyzingPhoto = false
-                    barcodeError = error is AILimitError
-                        ? error.localizedDescription
-                        : "Photo analysis failed: \(error.localizedDescription)"
-                    showBarcodeError = true
-                }
-            }
+        // let the camera sheet finish closing before the photo sheet opens
+        DispatchQueue.main.asyncAfter(deadline: .now() + (fromCamera ? 0.6 : 0.1)) {
+            photoToAnalyze = MealPhoto(image: image)
         }
     }
 }
@@ -1164,7 +1354,7 @@ struct CreateMealSheet: View {
                 }
             }
             .sheet(isPresented: $showAddSearch) {
-                FoodSearchSheet { food in
+                FoodSearchSheet(addLabel: "Add to Meal") { food in
                     extraFoods.append(food)
                     selectedFoodIds.insert(food.id)
                 }
@@ -1266,166 +1456,6 @@ struct CreateMealSheet: View {
                 }
             } catch {
                 AppBanner.report("look up that barcode", error)
-            }
-        }
-    }
-}
-
-// MARK: - Food Search Sheet
-struct FoodSearchSheet: View {
-    let onSelect: (FoodItem) -> Void
-    @Environment(\.dismiss) var dismiss
-    @Environment(\.colorScheme) var colorScheme
-
-    @State private var query = ""
-    @State private var results: [FoodItem] = []
-    @State private var isSearching = false
-    @State private var hasSearched = false
-    @State private var selectedFood: FoodItem?
-    @State private var showServingsSheet = false
-
-    private let api = NutritionAPI.shared
-
-    // Debounce: only search after user stops typing
-    @State private var searchTask: Task<Void, Never>?
-
-    var body: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                // Search bar
-                HStack(spacing: 10) {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundColor(.secondary)
-                    TextField("Search foods (e.g. chicken, Big Mac...)", text: $query)
-                        .textInputAutocapitalization(.never)
-                        .disableAutocorrection(true)
-                        .submitLabel(.search)
-                        .onSubmit { performSearch() }
-                        .tint(PLColor.tint)
-                    if !query.isEmpty {
-                        Button { query = ""; results = []; hasSearched = false } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                }
-                .padding(12)
-                .background(Color(.secondarySystemBackground))
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-                .padding(.horizontal)
-                .padding(.top, 8)
-
-                // Results
-                if isSearching {
-                    Spacer()
-                    ProgressView("Searching...")
-                    Spacer()
-                } else if results.isEmpty && hasSearched {
-                    Spacer()
-                    VStack(spacing: 8) {
-                        Image(systemName: "magnifyingglass")
-                            .font(.largeTitle)
-                            .foregroundColor(.secondary)
-                        Text("No results found")
-                            .font(.headline)
-                            .foregroundColor(.secondary)
-                        Text("Try a different search term")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                    }
-                    Spacer()
-                } else if results.isEmpty {
-                    Spacer()
-                    VStack(spacing: 8) {
-                        Image(systemName: "fork.knife")
-                            .font(.largeTitle)
-                            .foregroundColor(.secondary)
-                        Text("Search for any food or product")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                    }
-                    Spacer()
-                } else {
-                    List {
-                        ForEach(results) { food in
-                            Button {
-                                selectedFood = food
-                                showServingsSheet = true
-                            } label: {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(food.name)
-                                        .font(.subheadline.weight(.semibold))
-                                        .foregroundColor(.primary)
-                                        .lineLimit(2)
-                                    Text(food.servingSize)
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                    HStack(spacing: 12) {
-                                        Text("\(Int(food.calories)) cal")
-                                            .font(.caption.bold())
-                                        Text("P: \(Int(food.protein))g")
-                                            .font(.caption)
-                                        Text("C: \(Int(food.carbs))g")
-                                            .font(.caption)
-                                        Text("F: \(Int(food.fat))g")
-                                            .font(.caption)
-                                    }
-                                    .foregroundColor(.secondary)
-                                }
-                                .padding(.vertical, 4)
-                            }
-                        }
-                    }
-                    .listStyle(.plain)
-                }
-            }
-            .navigationBarTitle("Search Food", displayMode: .inline)
-            .navigationBarItems(leading: Button("Cancel") { dismiss() })
-            .sheet(isPresented: $showServingsSheet) {
-                if let food = selectedFood {
-                    NavigationStack {
-                        ServingsAdjustmentSheet(food: food) { adjusted in
-                            onSelect(adjusted)
-                            showServingsSheet = false
-                        }
-                    }
-                }
-            }
-            .onChange(of: query) { _, _ in
-                // Debounce: wait 500ms after typing stops before searching
-                searchTask?.cancel()
-                guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                    results = []
-                    hasSearched = false
-                    return
-                }
-                searchTask = Task {
-                    try? await Task.sleep(nanoseconds: 500_000_000)
-                    guard !Task.isCancelled else { return }
-                    await MainActor.run { performSearch() }
-                }
-            }
-        }
-    }
-
-    private func performSearch() {
-        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        isSearching = true
-        Task {
-            do {
-                let foods = try await api.searchFoods(trimmed)
-                await MainActor.run {
-                    results = foods
-                    isSearching = false
-                    hasSearched = true
-                }
-            } catch {
-                await MainActor.run {
-                    results = []
-                    isSearching = false
-                    hasSearched = true
-                }
             }
         }
     }
@@ -1674,146 +1704,8 @@ struct CameraPickerView: UIViewControllerRepresentable {
     }
 }
 
-// MARK: - Add Food to Grocery List Sheet
-
-struct AddFoodToGrocerySheet: View {
-    let food: FoodItem
-
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.colorScheme) private var colorScheme
-
-    @State private var groceryLists: [GroceryList] = []
-    @State private var isLoading = true
-    @State private var isAdding = false
-    @State private var showNewListField = false
-    @State private var newListName = ""
-    @State private var successMessage: String?
-
-    private var username: String { UserDefaults.standard.string(forKey: "loggedInUsername") ?? "" }
-
-    var body: some View {
-        NavigationStack {
-            Group {
-                if let msg = successMessage {
-                    VStack(spacing: 16) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 56))
-                            .foregroundColor(.green)
-                        Text(msg)
-                            .font(.subheadline)
-                            .multilineTextAlignment(.center)
-                            .foregroundColor(.secondary)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if isLoading {
-                    ProgressView("Loading lists…")
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else {
-                    List {
-                        Section {
-                            if showNewListField {
-                                HStack {
-                                    TextField("List name", text: $newListName)
-                                        .tint(PLColor.tint)
-                                    Button("Create") { createAndAdd() }
-                                        .disabled(newListName.trimmingCharacters(in: .whitespaces).isEmpty || isAdding)
-                                        .foregroundColor(PLColor.tint)
-                                }
-                            } else {
-                                Button {
-                                    newListName = food.name
-                                    showNewListField = true
-                                } label: {
-                                    Label("New Grocery List", systemImage: "plus.circle.fill")
-                                        .foregroundColor(PLColor.tint)
-                                }
-                            }
-                        }
-
-                        if !groceryLists.isEmpty {
-                            Section("Existing Lists") {
-                                ForEach(groceryLists) { list in
-                                    Button {
-                                        addToList(list)
-                                    } label: {
-                                        HStack {
-                                            Image(systemName: "cart")
-                                                .foregroundColor(PLColor.tint)
-                                            Text(list.name).foregroundColor(.primary)
-                                            Spacer()
-                                            Text("\(list.items.count) item\(list.items.count == 1 ? "" : "s")")
-                                                .font(.caption)
-                                                .foregroundColor(.secondary)
-                                        }
-                                    }
-                                    .disabled(isAdding)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            .navigationTitle("Add \"\(food.name)\"")
-            .navigationBarTitleDisplayMode(.inline)
-            .navigationBarItems(leading: Button("Cancel") { dismiss() })
-            .task { await loadLists() }
-        }
-    }
-
-    private func loadLists() async {
-        isLoading = true
-        do {
-            let lists = try await GroceryListAPI.getGroceryLists(username: username)
-            await MainActor.run { groceryLists = lists; isLoading = false }
-        } catch {
-            await MainActor.run { isLoading = false }
-            AppBanner.report("load your grocery lists", error, retry: { Task { await loadLists() } })
-        }
-    }
-
-    private func addToList(_ list: GroceryList) {
-        isAdding = true
-        Task {
-            let item = GroceryItem(listId: list.id, id: UUID(), name: food.name, quantity: 1, checked: false)
-            do {
-                try await GroceryListAPI.addItem(listId: list.id.uuidString, item: item)
-            } catch {
-                await MainActor.run { isAdding = false } // the sheet stays open to try again
-                AppBanner.report("add \(food.name) to \(list.name)", error)
-                return
-            }
-            await MainActor.run {
-                isAdding = false
-                successMessage = "Added to \"\(list.name)\""
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { dismiss() }
-            }
-        }
-    }
-
-    private func createAndAdd() {
-        let name = newListName.trimmingCharacters(in: .whitespaces)
-        guard !name.isEmpty else { return }
-        isAdding = true
-        Task {
-            do {
-                let listId = try await GroceryListAPI.createGroceryList(name: name)
-                let trimmedId = listId.trimmingCharacters(in: .whitespacesAndNewlines)
-                    .trimmingCharacters(in: CharacterSet(charactersIn: "\""))
-                guard let listUUID = UUID(uuidString: trimmedId) else {
-                    await MainActor.run { isAdding = false }
-                    return
-                }
-                let item = GroceryItem(listId: listUUID, id: UUID(), name: food.name, quantity: 1, checked: false)
-                try await GroceryListAPI.addItem(listId: trimmedId, item: item)
-                await MainActor.run {
-                    isAdding = false
-                    successMessage = "Added to \"\(name)\""
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { dismiss() }
-                }
-            } catch {
-                await MainActor.run { isAdding = false }
-                AppBanner.report("create the list", error)
-            }
-        }
-    }
+/// a picked or taken meal photo, for `.sheet(item:)`
+struct MealPhoto: Identifiable {
+    let id = UUID()
+    let image: UIImage
 }

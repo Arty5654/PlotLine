@@ -6,6 +6,7 @@ import com.plotline.backend.security.ActingUser;
 import com.plotline.backend.service.OpenAIService;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.plotline.backend.service.MealService;
+import com.plotline.backend.service.GroceryPriceCache;
 
 import com.plotline.backend.dto.GroceryItem;
 import com.plotline.backend.dto.GroceryList;
@@ -44,6 +45,9 @@ public class GroceryListController {
 
     @Autowired
     private MealService mealService;
+
+    @Autowired
+    private GroceryPriceCache groceryPriceCache;
 
 
     // Create grocery list
@@ -365,11 +369,26 @@ public class GroceryListController {
     }
 
     // Get cost of the groccery item live (as soon as user inputs it into the list)
+    /** Total price of the items: each item's unit price comes from the shared price cache (AI-estimated when new or stale). */
     @PostMapping("/estimate-grocery-cost-live")
     public ResponseEntity<Double> estimateGroceryCost2(@RequestBody GroceryCostEstimateRequest request) {
         try {
-            double cost = openAIService.estimateGroceryCost(request);
-            return ResponseEntity.ok(cost);
+            String location = request.getLocation() != null ? request.getLocation() : "United States";
+            double total = 0;
+            for (GroceryItem item : request.getItems() == null ? List.<GroceryItem>of() : request.getItems()) {
+                if (item.getName() == null || item.getName().isBlank()) continue;
+                double unit = groceryPriceCache.unitPrice(item.getName(), location, () -> {
+                    GroceryItem one = new GroceryItem();
+                    one.setName(item.getName());
+                    one.setQuantity(1);
+                    GroceryCostEstimateRequest single = new GroceryCostEstimateRequest();
+                    single.setLocation(location);
+                    single.setItems(List.of(one));
+                    return openAIService.estimateGroceryCost(single);
+                });
+                total += unit * Math.max(1, item.getQuantity());
+            }
+            return ResponseEntity.ok(Math.round(total * 100) / 100.0);
         } catch (Exception e) {
             log.error("estimateGroceryCost2 failed", e);
             return ResponseEntity
