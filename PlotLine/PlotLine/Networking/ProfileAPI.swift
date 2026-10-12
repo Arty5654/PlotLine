@@ -103,8 +103,10 @@ struct ProfileAPI {
     }
 
     
+    /// saves the picture and returns its new address (which changes with every new picture)
     static func uploadProfilePicture(image: UIImage, username: String) async throws -> String {
-        guard let imageData = image.jpegData(compressionQuality: 0.8) else {
+        // a profile picture is shown small: 1024 px uploads in a moment instead of several MB
+        guard let imageData = NutritionAPI.resized(image, maxSide: 1024).jpegData(compressionQuality: 0.8) else {
             throw URLError(.badURL)
         }
 
@@ -134,8 +136,17 @@ struct ProfileAPI {
 
         request.httpBody = body
 
-        let (data, _) = try await URLSession.shared.data(for: request)
-        return String(data: data, encoding: .utf8) ?? ""
+        let (data, response) = try await URLSession.shared.data(for: request)
+        // a failed upload used to be ignored, and the old picture stayed with "Saved" shown
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+        let saved = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        // the old picture may be cached under the same address (before the server versioned it)
+        for address in [saved, saved.components(separatedBy: "?").first ?? ""] {
+            if let url = URL(string: address) { URLCache.shared.removeCachedResponse(for: URLRequest(url: url)) }
+        }
+        return saved
     }
 
 
@@ -153,7 +164,14 @@ struct ProfileAPI {
         var request = URLRequest(url: url)
         BackendConfig.addApiKey(to: &request)
         request.httpMethod = "POST"
-        _ = try? await URLSession.shared.data(for: request)
+        // the answer is the updated trophies: a new level pops up right away
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              (response as? HTTPURLResponse)?.statusCode == 200 else { return }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        if let trophies = try? decoder.decode([Trophy].self, from: data) {
+            await TrophyAlerts.shared.update(trophies, username: username)
+        }
     }
 
     //fetch trophies and decode

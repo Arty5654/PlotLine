@@ -59,6 +59,10 @@ public class CalendarController {
                 request.getRecurrence(),
                 request.getInvitedFriends()
             );
+            newEvent.setLocation(request.getLocation());
+            newEvent.setRecurrenceRule(request.getRecurrenceRule());
+            newEvent.setRecurrenceEnd(request.getRecurrenceEnd());
+            newEvent.setExcludedDates(request.getExcludedDates());
             newEvent.setFriendsCanSee(request.isFriendsCanSee());
             newEvent.setAddedBy(request.getAddedBy());
             newEvent.setStatus(request.getStatus());
@@ -85,6 +89,10 @@ public class CalendarController {
                 request.getRecurrence(),
                 request.getInvitedFriends()
             );
+            updatedEvent.setLocation(request.getLocation());
+            updatedEvent.setRecurrenceRule(request.getRecurrenceRule());
+            updatedEvent.setRecurrenceEnd(request.getRecurrenceEnd());
+            updatedEvent.setExcludedDates(request.getExcludedDates());
             updatedEvent.setFriendsCanSee(request.isFriendsCanSee());
             updatedEvent.setAddedBy(request.getAddedBy());
             updatedEvent.setStatus(request.getStatus());

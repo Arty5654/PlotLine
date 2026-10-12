@@ -28,7 +28,11 @@ struct CalendarAPI {
             invitedFriends: event.invitedFriends,
             friendsCanSee: event.friendsCanSee,
             addedBy: event.addedBy,
-            status: event.status
+            status: event.status,
+            location: event.location,
+            recurrenceRule: event.recurrenceRule,
+            recurrenceEnd: event.recurrenceEnd,
+            excludedDates: event.excludedDates
         )
         
         let encoder = JSONEncoder()
@@ -109,7 +113,11 @@ struct CalendarAPI {
             invitedFriends: event.invitedFriends,
             friendsCanSee: event.friendsCanSee,
             addedBy: event.addedBy,
-            status: event.status
+            status: event.status,
+            location: event.location,
+            recurrenceRule: event.recurrenceRule,
+            recurrenceEnd: event.recurrenceEnd,
+            excludedDates: event.excludedDates
         )
         
         let encoder = JSONEncoder()
@@ -212,7 +220,9 @@ struct CalendarAPI {
                                    description: $0.description, startDate: $0.startDate,
                                    endDate: $0.endDate, eventType: $0.eventType,
                                    recurrence: $0.recurrence, invitedFriends: [],
-                                   friendsCanSee: true, addedBy: nil, status: "approved")
+                                   friendsCanSee: $0.friendsCanSee, addedBy: nil, status: "approved",
+                                   location: $0.location, recurrenceRule: $0.recurrenceRule,
+                                   recurrenceEnd: $0.recurrenceEnd, excludedDates: $0.excludedDates)
             }
         )
 

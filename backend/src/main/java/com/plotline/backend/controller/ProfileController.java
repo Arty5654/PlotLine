@@ -99,6 +99,7 @@ public class ProfileController {
             String imageUrl = userProfileService.uploadProfilePicture(file, username);
             return ResponseEntity.ok(imageUrl);
         } catch (Exception e) {
+            log.error("uploadProfilePicture failed", e);
             return ResponseEntity.status(500).body("Error uploading profile picture");
         }
     }
@@ -106,8 +107,7 @@ public class ProfileController {
     @GetMapping("/get-profile-pic")
     @ActingUser(value = {}, others = {"username"}) // pictures are public
     public ResponseEntity<Map<String, String>> getProfilePicture(@RequestParam String username) {   
-        String s3Url = "https://plotline-database-bucket.s3.amazonaws.com/users/" + username + "/profile_pictures/" + username + ".jpg";
-        return ResponseEntity.ok(Collections.singletonMap("profilePicUrl", s3Url));
+        return ResponseEntity.ok(Collections.singletonMap("profilePicUrl", userProfileService.profilePictureUrl(username)));
     }
 
     // TROPHY ENDPOINTS 

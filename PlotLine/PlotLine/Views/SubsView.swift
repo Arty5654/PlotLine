@@ -634,7 +634,7 @@ struct SubsView: View {
                 }
                 await MainActor.run {
                     for ev in matches {
-                        calendarVM.deleteEvent(ev.id)
+                        calendarVM.deleteEvent(ev.seriesKey)
                     }
                 }
             } catch {
@@ -644,7 +644,7 @@ struct SubsView: View {
                     $0.title.caseInsensitiveCompare(sub.name) == .orderedSame
                 }
                 for ev in matches {
-                    calendarVM.deleteEvent(ev.id)
+                    calendarVM.deleteEvent(ev.seriesKey)
                 }
             }
         }

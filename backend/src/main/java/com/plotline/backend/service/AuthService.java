@@ -91,6 +91,7 @@ public class AuthService {
     // Same password and email rules the app shows on sign-up (AuthViewModel.passwordRules / isValidEmail)
     public static final String PASSWORD_RULES =
             "Password needs 8+ characters with an uppercase letter, a lowercase letter, and a number.";
+    public static final String SAME_PASSWORD = "Your new password must be different from your current password.";
     public static final String EMAIL_RULES = "Enter a valid email address.";
     private static final java.util.regex.Pattern EMAIL_PATTERN =
             java.util.regex.Pattern.compile("^[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}$", java.util.regex.Pattern.CASE_INSENSITIVE);
@@ -520,6 +521,12 @@ public class AuthService {
                 }
             }
     
+            // checked only after the old password or code: otherwise the code flow, which needs no
+            // sign-in, would tell anyone whether a guess is someone's current password
+            if (userRecord.getPassword() != null && BCrypt.checkpw(newPassword, userRecord.getPassword())) {
+                return SAME_PASSWORD;
+            }
+
             String hashedNewPassword = BCrypt.hashpw(newPassword, BCrypt.gensalt());
             userRecord.setPassword(hashedNewPassword);
     

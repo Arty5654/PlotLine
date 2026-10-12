@@ -130,3 +130,17 @@ struct AuthTests {
         #expect(LegalPage.terms.url.host == LegalPage.privacy.url.host)
     }
 }
+
+/// Profile → Change Password: what the server's answers say on screen.
+struct ChangePasswordTests {
+    @Test("Server reasons read naturally; a used-up code asks for a new one")
+    func messages() {
+        #expect(ChangePasswordModalView.message(for: AuthError.custom("Incorrect old password"), proof: .currentPassword)
+                == "Your current password isn't right.")
+        #expect(ChangePasswordModalView.message(for: AuthError.custom("Invalid OTP Code"), proof: .textCode)
+                .contains("Send a new one"))
+        let same = "Your new password must be different from your current password."
+        #expect(ChangePasswordModalView.message(for: AuthError.custom(same), proof: .currentPassword) == same)
+        #expect(ChangePasswordModalView.message(for: AuthError.custom(same), proof: .textCode) == same + " Send a new code to try again.")
+    }
+}

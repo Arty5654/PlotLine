@@ -228,14 +228,9 @@ struct ProfileView: View {
                                                  city: self.homeCity)
 
                 if let selectedImage {
-                    let result = try await ProfileAPI.uploadProfilePicture(image: selectedImage, username: self.username)
-                    print("Profile picture uploaded: \(result)")
-
-                    let newProfilePicURL = try await ProfileAPI.getProfilePic(username: self.username)
+                    let saved = try await ProfileAPI.uploadProfilePicture(image: selectedImage, username: self.username)
                     DispatchQueue.main.async {
-                        if let urlString = newProfilePicURL, let url = URL(string: urlString) {
-                            self.profileImageURL = url
-                        }
+                        if let url = URL(string: saved) { self.profileImageURL = url }
                     }
                 }
 
@@ -329,139 +324,6 @@ struct ImagePicker: UIViewControllerRepresentable {
         }
     }
 }
-
-struct ChangePasswordModalView: View {
-    @Binding var isPresented: Bool
-    
-    @State private var useOTPFlow = false
-    @State private var username: String = UserDefaults.standard.string(forKey: "loggedInUsername") ?? "Guest"
-    
-    @State private var oldPassword: String = ""
-    @State private var newPassword: String = ""
-    @State private var confirmPassword: String = ""
-    
-    @State private var phoneNumber: String = ""
-    @State private var otpCode: String = ""
-    
-    @State private var errorMessage: String?
-
-    
-    var body: some View {
-        NavigationStack {
-            Form {
-                if !useOTPFlow {
-                    
-                    Section(header: Text("Change Password with current PW")) {
-                        SecureField("Current Password", text: $oldPassword)
-                        SecureField("New Password", text: $newPassword)
-                        SecureField("Confirm New Password", text: $confirmPassword)
-                        
-                        Button("Save") {
-                            self.errorMessage = nil
-                            
-                            Task {
-                                guard newPassword == confirmPassword else {
-                                    self.errorMessage = "New passwords do not match."
-                                    return
-                                }
-
-                                do {
-                                    let success = try await AuthAPI.changePassword(username: username, oldPassword: oldPassword, newPassword: newPassword)
-                                    if success {
-                                        isPresented = false
-                                    } else {
-                                        self.errorMessage = "Failed to change password. Incorrect Old Password"
-                                    }
-                                } catch {
-                                    self.errorMessage = AuthViewModel.message(for: error)
-                                }
-                            }
-                        }
-                        .disabled(oldPassword.isEmpty || newPassword.isEmpty || confirmPassword.isEmpty)
-                    }
-                } else {
-                    Section(header: Text("Change Password with OTP")) {
-                        //send otp to acct phone num
-                        Button("Send One-Time-Passcode") {
-                            Task {
-                                do {
-                                    _ = try await AuthAPI.sendCode(
-                                        phone: self.phoneNumber
-                                    )
-                                } catch {
-                                    AppBanner.report("send the passcode", error)
-                                }
-                            }
-                        }
-                        
-                        TextField("Enter OTP", text: $otpCode)
-                            .keyboardType(.numberPad)
-                        
-                        SecureField("New Password", text: $newPassword)
-                        SecureField("Confirm New Password", text: $confirmPassword)
-                        
-                        Button("Verify & Save") {
-                            self.errorMessage = nil
-                            
-                            guard newPassword == confirmPassword else {
-                                self.errorMessage = "New passwords do not match."
-                                return
-                            }
-                            
-                            Task {
-                                do {
-                                    let success = try await AuthAPI.changePasswordWithCode(username: username, newPassword: newPassword, code: otpCode)
-                                    if success {
-                                        isPresented = false
-                                    } else {
-                                        self.errorMessage = "Invalid Code. Please Try again"
-                                    }
-
-                                } catch {
-                                    self.errorMessage = AuthViewModel.message(for: error)
-                                }
-                                
-                            }
-                        }
-                        .disabled(phoneNumber.isEmpty || otpCode.isEmpty || newPassword.isEmpty || confirmPassword.isEmpty)
-                    }
-                }
-                
-                if let errorMessage = errorMessage {
-                    Text(errorMessage)
-                        .foregroundColor(.red)
-                        .font(.caption)
-                        .padding()
-                }
-            }
-            .navigationBarTitle("Change Password", displayMode: .inline)
-            
-            .navigationBarItems(
-                trailing: Button(action: {
-                    Task {
-                            do {
-                                // grab phone num once
-                                if (self.phoneNumber == "") {
-                                    let fetchedPhone = try await ProfileAPI.fetchPhone(username: self.username)
-                                    self.phoneNumber = fetchedPhone ?? ""
-                                }
-                                
-                                withAnimation {
-                                    useOTPFlow.toggle()
-                                    self.errorMessage = nil
-                                }
-                            } catch {
-                                print("Error fetching phone: \(error)")
-                            }
-                        }
-                }) {
-                    Text(useOTPFlow ? "Use Old PW" : "Get A Text")
-                }
-            )
-        }
-    }
-}
-
 
 struct Profile_preview: PreviewProvider {
     static var previews: some View {

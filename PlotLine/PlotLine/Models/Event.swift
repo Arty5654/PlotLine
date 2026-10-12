@@ -9,7 +9,7 @@ import Foundation
 
 struct Event: Identifiable, Codable {
 
-    let id: String
+    var id: String
     var title: String
     var description: String
     var startDate: Date
@@ -21,22 +21,37 @@ struct Event: Identifiable, Codable {
     var addedBy: String?
     var status: String
     var inviteStatuses: [String: String]  // friend -> "pending"/"accepted"/"declined"
+    var location: String?                 // "Starbucks, 123 Main St"
+    // repeating (see Recurrence.swift): an imported rule, the last day, and dates taken out of the series
+    var recurrenceRule: String?           // "FREQ=WEEKLY;BYDAY=MO,WE" (imported events)
+    var recurrenceEnd: String?            // "2026-12-31": repeats until this day
+    var excludedDates: [String]           // "2026-10-12": this date was changed or removed
+
+    // one date of a repeating event, as shown in the app (not saved)
+    var seriesId: String? = nil
+    var occurrenceStart: Date? = nil
 
     enum CodingKeys: String, CodingKey {
         case id, title, description, startDate, endDate, eventType, recurrence,
-             invitedFriends, friendsCanSee, addedBy, status, inviteStatuses
+             invitedFriends, friendsCanSee, addedBy, status, inviteStatuses, location,
+             recurrenceRule, recurrenceEnd, excludedDates
     }
 
     init(id: String, title: String, description: String, startDate: Date, endDate: Date,
          eventType: String, recurrence: String, invitedFriends: [String],
          friendsCanSee: Bool = true, addedBy: String? = nil, status: String = "approved",
-         inviteStatuses: [String: String] = [:]) {
+         inviteStatuses: [String: String] = [:], location: String? = nil,
+         recurrenceRule: String? = nil, recurrenceEnd: String? = nil, excludedDates: [String] = []) {
         self.id = id; self.title = title; self.description = description
         self.startDate = startDate; self.endDate = endDate
         self.eventType = eventType; self.recurrence = recurrence
         self.invitedFriends = invitedFriends
         self.friendsCanSee = friendsCanSee; self.addedBy = addedBy; self.status = status
         self.inviteStatuses = inviteStatuses
+        self.location = location
+        self.recurrenceRule = recurrenceRule
+        self.recurrenceEnd = recurrenceEnd
+        self.excludedDates = excludedDates
     }
 
     init(from decoder: Decoder) throws {
@@ -53,6 +68,10 @@ struct Event: Identifiable, Codable {
         addedBy         = try c.decodeIfPresent(String.self, forKey: .addedBy)
         status          = try c.decodeIfPresent(String.self, forKey: .status) ?? "approved"
         inviteStatuses  = try c.decodeIfPresent([String: String].self, forKey: .inviteStatuses) ?? [:]
+        location        = try c.decodeIfPresent(String.self, forKey: .location)
+        recurrenceRule  = try c.decodeIfPresent(String.self, forKey: .recurrenceRule)
+        recurrenceEnd   = try c.decodeIfPresent(String.self, forKey: .recurrenceEnd)
+        excludedDates   = try c.decodeIfPresent([String].self, forKey: .excludedDates) ?? []
     }
 }
 
@@ -70,6 +89,10 @@ struct CreateEventRequest: Codable {
     let friendsCanSee: Bool
     let addedBy: String?
     let status: String
+    var location: String? = nil
+    var recurrenceRule: String? = nil
+    var recurrenceEnd: String? = nil
+    var excludedDates: [String] = []
 }
 
 struct UpdateEventRequest: Codable {
@@ -85,6 +108,10 @@ struct UpdateEventRequest: Codable {
     let friendsCanSee: Bool
     let addedBy: String?
     let status: String
+    var location: String? = nil
+    var recurrenceRule: String? = nil
+    var recurrenceEnd: String? = nil
+    var excludedDates: [String] = []
 }
 
 

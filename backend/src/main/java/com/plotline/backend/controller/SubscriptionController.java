@@ -46,8 +46,7 @@ public class SubscriptionController {
 
             if (request.getSubscriptions() != null) {
                 int count = request.getSubscriptions().size();
-                userProfileService.setTrophyProgress(request.getUsername(), "subscription-spender", 0);
-                userProfileService.incrementTrophy(request.getUsername(), "subscription-spender", count);
+                userProfileService.setTrophyProgress(request.getUsername(), "subscription-spender", count);
             }            
 
 
@@ -130,8 +129,7 @@ public class SubscriptionController {
 
             // Update trophy progress
             int count = request.getSubscriptions().size();
-            userProfileService.setTrophyProgress(username, "subscription-spender", 0);
-            userProfileService.incrementTrophy(username, "subscription-spender", count);
+            userProfileService.setTrophyProgress(username, "subscription-spender", count);
 
             return ResponseEntity.ok("Subscription deleted successfully.");
         } catch (Exception e) {

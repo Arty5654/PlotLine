@@ -9,6 +9,10 @@ public class EventRequest {
   private String id;
   private String title;
   private String description;
+  private String location;
+  private String recurrenceRule;
+  private String recurrenceEnd;
+  private List<String> excludedDates;
   private String startDate; // or use a date/time type if desired
   private String endDate;
   private String eventType;
@@ -117,4 +121,36 @@ public class EventRequest {
 
   public Map<String, String> getInviteStatuses() { return inviteStatuses; }
   public void setInviteStatuses(Map<String, String> inviteStatuses) { this.inviteStatuses = inviteStatuses; }
+
+  public String getLocation() {
+    return location;
+  }
+
+  public void setLocation(String location) {
+    this.location = location;
+  }
+
+  public String getRecurrenceRule() {
+    return recurrenceRule;
+  }
+
+  public void setRecurrenceRule(String recurrenceRule) {
+    this.recurrenceRule = recurrenceRule;
+  }
+
+  public String getRecurrenceEnd() {
+    return recurrenceEnd;
+  }
+
+  public void setRecurrenceEnd(String recurrenceEnd) {
+    this.recurrenceEnd = recurrenceEnd;
+  }
+
+  public List<String> getExcludedDates() {
+    return excludedDates;
+  }
+
+  public void setExcludedDates(List<String> excludedDates) {
+    this.excludedDates = excludedDates;
+  }
 }

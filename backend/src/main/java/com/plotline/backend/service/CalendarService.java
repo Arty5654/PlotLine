@@ -6,6 +6,7 @@ import org.slf4j.LoggerFactory;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.locks.ReentrantLock;
 
 import org.springframework.stereotype.Service;
@@ -159,6 +160,7 @@ public class CalendarService {
                         newEvent.getRecurrence(),
                         new java.util.ArrayList<>(List.of(normUser))
                     );
+                    friendEvent.copyDetailsFrom(newEvent);
                     friendEvent.setStatus("invite-pending");
                     friendEvent.setAddedBy(normUser);
                     friendEvent.setFriendsCanSee(newEvent.isFriendsCanSee());
@@ -254,6 +256,7 @@ public class CalendarService {
                         updated.getEventType(), updated.getRecurrence(),
                         new java.util.ArrayList<>(List.of(normUser))
                     );
+                    updatedFriendEvent.copyDetailsFrom(updated);
                     // Preserve the friend's current invite status
                     updatedFriendEvent.setStatus(friendEvents.get(i).getStatus());
                     updatedFriendEvent.setAddedBy(normUser);
@@ -272,6 +275,7 @@ public class CalendarService {
                     updated.getEventType(), updated.getRecurrence(),
                     new java.util.ArrayList<>(List.of(normUser))
                 );
+                newFriendEvent.copyDetailsFrom(updated);
                 newFriendEvent.setStatus("invite-pending");
                 newFriendEvent.setAddedBy(normUser);
                 newFriendEvent.setFriendsCanSee(updated.isFriendsCanSee());
@@ -415,6 +419,7 @@ public class CalendarService {
             if (existing != null) {
                 // if event exists, update it
                 existing.setDescription(newEvent.getDescription());
+                existing.setLocation(newEvent.getLocation());
                 existing.setStartDate(newEvent.getStartDate());
                 existing.setEndDate(newEvent.getEndDate());
     
@@ -456,16 +461,65 @@ public class CalendarService {
     public List<EventDto> replaceImportedEvents(String username, String prefix, List<EventDto> incoming) throws Exception {
         String normUser = normalize(username);
         List<EventDto> result = new java.util.ArrayList<>();
+        Map<String, EventDto> previous = new java.util.HashMap<>();
         for (EventDto e : getEvents(normUser)) {
-            if (!e.getId().startsWith(prefix)) result.add(e);
+            if (e.getId().startsWith(prefix)) previous.put(e.getId(), e);
+            else result.add(e);
         }
+        List<EventDto> changedWithFriends = new java.util.ArrayList<>();
         if (incoming != null) {
             for (EventDto e : incoming) {
-                if (e.getId() != null && e.getId().startsWith(prefix)) result.add(e);
+                if (e.getId() == null || !e.getId().startsWith(prefix)) continue;
+                // the details come from Apple/Google; who can see it and who's invited are set in PlotLine
+                EventDto before = previous.remove(e.getId());
+                if (before != null) {
+                    e.setFriendsCanSee(before.isFriendsCanSee());
+                    e.setInvitedFriends(before.getInvitedFriends() == null ? new java.util.ArrayList<>() : before.getInvitedFriends());
+                    e.setInviteStatuses(before.getInviteStatuses() == null ? new java.util.HashMap<>() : before.getInviteStatuses());
+                    if (!e.getInvitedFriends().isEmpty() && !e.sameDetails(before)) changedWithFriends.add(e);
+                } else {
+                    e.setInvitedFriends(new java.util.ArrayList<>());
+                }
+                result.add(e);
             }
         }
         saveEventsToS3(normUser, result);
+
+        // invited friends see the change, and an event deleted there leaves their calendars too
+        for (EventDto e : changedWithFriends) updateFriendCopies(e);
+        for (EventDto gone : previous.values()) {
+            for (String friend : invitedOf(gone)) {
+                List<EventDto> friendEvents = getEvents(friend);
+                if (friendEvents.removeIf(f -> f.getId().equals(gone.getId()))) saveEventsToS3(friend, friendEvents);
+            }
+        }
         return result;
+    }
+
+    private static java.util.Set<String> invitedOf(EventDto event) {
+        java.util.Set<String> friends = new java.util.HashSet<>();
+        if (event.getInvitedFriends() != null) for (String f : event.getInvitedFriends()) friends.add(normalize(f));
+        if (event.getInviteStatuses() != null) friends.addAll(event.getInviteStatuses().keySet());
+        return friends;
+    }
+
+    /** an imported event changed in Apple/Google: the copies on invited friends' calendars follow */
+    private void updateFriendCopies(EventDto event) throws Exception {
+        for (String friend : invitedOf(event)) {
+            List<EventDto> friendEvents = getEvents(friend);
+            boolean changed = false;
+            for (EventDto copy : friendEvents) {
+                if (!copy.getId().equals(event.getId())) continue;
+                copy.setTitle(event.getTitle());
+                copy.setDescription(event.getDescription());
+                copy.setStartDate(event.getStartDate());
+                copy.setEndDate(event.getEndDate());
+                copy.setRecurrence(event.getRecurrence());
+                copy.copyDetailsFrom(event);
+                changed = true;
+            }
+            if (changed) saveEventsToS3(friend, friendEvents);
+        }
     }
 
     public void deleteEventsByType(String username, String type) throws Exception {

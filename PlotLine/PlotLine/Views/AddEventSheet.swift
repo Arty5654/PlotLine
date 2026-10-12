@@ -12,11 +12,15 @@ struct AddEventSheet: View {
 
     @State private var title: String = ""
     @State private var description: String = ""
+    @State private var location: String = ""
     @State private var startDate: Date
     @State private var endDate: Date
 
     @State private var isRecurring: Bool = false
     @State private var recurrence: String = "none"
+    @State private var endsOnDate: Bool = false
+    @State private var repeatEnd: Date = Date()
+    @State private var showScopeChoice = false
 
     @State private var isRange: Bool = false
 
@@ -49,14 +53,16 @@ struct AddEventSheet: View {
     // Friends whose calendars the current user can publish to (received "add" access)
     let publishableFriendCalendars: [String]
 
-    // onSave: (eventId, title, description, start, end, recurrence, friends, eventType, friendsCanSee, publishToCalendars)
-    let onSave: (String, String, String, Date, Date, String, [String], String, Bool, [String]) -> Void
+    // the event being edited (nil when adding one)
+    let original: Event?
+    let onSave: (EventDraft) -> Void
 
     // MARK: - Init for creating a new event
-    init(defaultDate: Date, existingEvents: [Event] = [], publishableFriendCalendars: [String] = [], onSave: @escaping (String, String, String, Date, Date, String, [String], String, Bool, [String]) -> Void) {
+    init(defaultDate: Date, existingEvents: [Event] = [], publishableFriendCalendars: [String] = [], onSave: @escaping (EventDraft) -> Void) {
         self.defaultDate = defaultDate
         self.existingEvents = existingEvents
         self.editingEventId = nil
+        self.original = nil
         self.publishableFriendCalendars = publishableFriendCalendars
         self.onSave = onSave
 
@@ -65,26 +71,32 @@ struct AddEventSheet: View {
         _startDate = State(initialValue: defaultDate)
         _endDate = State(initialValue: defaultDate)
         _recurrence = State(initialValue: "none")
+        _repeatEnd = State(initialValue: Calendar.current.date(byAdding: .month, value: 3, to: defaultDate) ?? defaultDate)
         _internalEventId = State(initialValue: UUID().uuidString)
         _selectedReminders = State(initialValue: [])
         _friendsCanSee = State(initialValue: true)
     }
 
     // MARK: - Init for editing an existing event
-    init(existingEvent: Event, existingEvents: [Event] = [], onSave: @escaping (String, String, String, Date, Date, String, [String], String, Bool, [String]) -> Void) {
+    init(existingEvent: Event, existingEvents: [Event] = [], onSave: @escaping (EventDraft) -> Void) {
         self.defaultDate = existingEvent.startDate
         self.existingEvents = existingEvents
         self.editingEventId = existingEvent.id
+        self.original = existingEvent
         self.publishableFriendCalendars = []
         self.onSave = onSave
 
         let isSub = existingEvent.eventType.lowercased().hasPrefix("subscription")
         _title = State(initialValue: existingEvent.title)
+        _location = State(initialValue: existingEvent.location ?? "")
         _startDate = State(initialValue: existingEvent.startDate)
         _endDate = State(initialValue: existingEvent.endDate)
         _isRange = State(initialValue: !Calendar.current.isDate(existingEvent.startDate, inSameDayAs: existingEvent.endDate))
         _isRecurring = State(initialValue: existingEvent.recurrence != "none")
         _recurrence = State(initialValue: existingEvent.recurrence)
+        _endsOnDate = State(initialValue: existingEvent.recurrenceEnd != nil)
+        _repeatEnd = State(initialValue: existingEvent.recurrenceEnd.flatMap(Event.endOfDay)
+                           ?? Calendar.current.date(byAdding: .month, value: 3, to: existingEvent.startDate) ?? existingEvent.startDate)
         _isSubscription = State(initialValue: isSub)
         _selectedFriends = State(initialValue: existingEvent.invitedFriends.filter { !$0.contains("-creator-user-") }
             .map { Friend(username: $0) })
@@ -92,8 +104,7 @@ struct AddEventSheet: View {
         _friendsCanSee = State(initialValue: existingEvent.friendsCanSee)
 
         // Restore previously saved reminder selections
-        let saved = UserDefaults.standard.array(forKey: "event_reminders_\(existingEvent.id)") as? [Double] ?? []
-        _selectedReminders = State(initialValue: Set(saved.map { TimeInterval($0) }))
+        _selectedReminders = State(initialValue: EventReminders.saved(for: existingEvent))
 
         if isSub {
             let desc = existingEvent.description
@@ -133,13 +144,43 @@ struct AddEventSheet: View {
     }
 
     private var canSave: Bool {
-        !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !hasDuplicateTitle
+        !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && (importedFrom != nil || !hasDuplicateTitle)
+    }
+
+    /// Apple or Google Calendar: those details are changed there (the next sync would undo them here)
+    private var importedFrom: String? { original?.importedFrom }
+
+    /// an imported rule the picker can't show ("every 3 weeks on Mon and Wed")
+    private var customRule: RecurrenceRule? {
+        guard let text = original?.recurrenceRule, let rule = RecurrenceRule(rrule: text),
+              rule.name == nil || importedFrom != nil else { return nil }
+        return rule
+    }
+
+    private var recurrenceEndKey: String? {
+        isRecurring && endsOnDate ? Recurrence.dayKey(repeatEnd) : nil
+    }
+
+    /// the repeat settings were changed: then the change can only be for the whole series
+    private var repeatChanged: Bool {
+        guard let original else { return false }
+        return recurrence != original.recurrence || recurrenceEndKey != original.recurrenceEnd
     }
 
     var body: some View {
         NavigationStack {
             Form {
+                if let importedFrom {
+                    Section {
+                        Label("From \(importedFrom). Change the title, time, place or repeat there. Reminders, invited friends and who can see it are set here.",
+                              systemImage: "lock")
+                            .font(.footnote)
+                            .foregroundColor(.secondary)
+                    }
+                }
+
                 // Event type
+                if importedFrom == nil {
                 Section(header: Text("Event Type")) {
                     Toggle("Subscription", isOn: $isSubscription)
                         .onChange(of: isSubscription) { _, on in
@@ -157,14 +198,18 @@ struct AddEventSheet: View {
                         }
                     }
                 }
+                }
 
                 // Event detail fields
                 Section(header: Text("Event Details")) {
                     TextField("Title", text: $title)
                     if !isSubscription {
                         TextField("Description", text: $description)
+                        TextField("Location", text: $location)
+                            .textContentType(.fullStreetAddress)
                     }
                 }
+                .disabled(importedFrom != nil)
 
                 // Date selection fields
                 Section(header: Text("Dates & Times")) {
@@ -175,25 +220,37 @@ struct AddEventSheet: View {
                         DatePicker("End", selection: $endDate, in: startDate..., displayedComponents: [.date, .hourAndMinute])
                     }
                 }
+                .disabled(importedFrom != nil)
 
                 // Recurrence options
                 Section(header: Text("Repeat")) {
-                    Toggle("Recurring Event?", isOn: $isRecurring)
-                        .onChange(of: isRecurring) { _, on in
-                            if !on { recurrence = "none" }
-                            else if recurrence == "none" {
-                                recurrence = "weekly" // sensible default when turning on
+                    if let customRule {
+                        Label(customRule.summary, systemImage: "repeat")
+                    } else {
+                        Toggle("Recurring Event?", isOn: $isRecurring)
+                            .onChange(of: isRecurring) { _, on in
+                                if !on { recurrence = "none" }
+                                else if recurrence == "none" {
+                                    recurrence = "weekly" // sensible default when turning on
+                                }
                             }
-                        }
-                    if isRecurring {
-                        Picker("Frequency", selection: $recurrence) {
-                            Text("Every Week").tag("weekly")
-                            Text("Every other week").tag("biweekly")
-                            Text("Every Month").tag("monthly")
-                            Text("Every Year").tag("yearly")
+                        if isRecurring {
+                            Picker("Frequency", selection: $recurrence) {
+                                Text("Every Day").tag("daily")
+                                Text("Every Weekday (Mon–Fri)").tag("weekdays")
+                                Text("Every Week").tag("weekly")
+                                Text("Every other week").tag("biweekly")
+                                Text("Every Month").tag("monthly")
+                                Text("Every Year").tag("yearly")
+                            }
+                            Toggle("End Repeat", isOn: $endsOnDate)
+                            if endsOnDate {
+                                DatePicker("Last Day", selection: $repeatEnd, in: startDate..., displayedComponents: .date)
+                            }
                         }
                     }
                 }
+                .disabled(importedFrom != nil)
 
 
                 Section(header: Text("Invite Friends")) {
@@ -332,20 +389,45 @@ struct AddEventSheet: View {
                     Task { await friendVM.loadFriends(for: username) }
                 }
             }
-            .navigationBarTitle("Add Event", displayMode: .inline)
+            .navigationBarTitle(original == nil ? "Add Event" : "Edit Event", displayMode: .inline)
             .navigationBarItems(
                 leading: Button("Cancel") {
                     presentationMode.wrappedValue.dismiss()
                 },
                 trailing: Button("Save") {
-                    if hasDuplicateTitle {
+                    if importedFrom == nil && hasDuplicateTitle {
                         showDuplicateAlert = true
+                    } else if let original, original.isRepeating, importedFrom == nil {
+                        showScopeChoice = true // this date, or every date?
                     } else {
+                        save(scope: .allEvents)
+                    }
+                }
+                .disabled(!canSave)
+            )
+            .confirmationDialog("This is a repeating event.", isPresented: $showScopeChoice, titleVisibility: .visible) {
+                if !repeatChanged {
+                    Button("Save for This Event Only") { save(scope: .thisEvent) }
+                }
+                Button("Save for All Events") { save(scope: .allEvents) }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                if repeatChanged {
+                    Text("Changing how it repeats applies to every date.")
+                }
+            }
+            .alert("Duplicate Event", isPresented: $showDuplicateAlert) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("An event with this name already exists on this day. Please choose a different name.")
+            }
+        }
+        .tint(PLColor.accent)
+    }
+
+    private func save(scope: CalendarViewModel.RepeatScope) {
                         let finalEndDate = isRange ? endDate : startDate
 
-                        // Persist reminder selections and reschedule (cancels old ones first)
-                        UserDefaults.standard.set(Array(selectedReminders), forKey: "event_reminders_\(internalEventId)")
-                        scheduleReminders(for: internalEventId, eventTitle: title, start: startDate)
 
                         let eventType = isSubscription ? "subscription" : "user"
                         var finalDescription = description
@@ -358,19 +440,51 @@ struct AddEventSheet: View {
                             }
                         }
 
-                        onSave(internalEventId, title, finalDescription, startDate, finalEndDate, recurrence, selectedFriends.map { $0.id }, eventType, friendsCanSee, Array(selectedPublishCalendars))
+                        onSave(EventDraft(id: internalEventId, title: title, description: finalDescription,
+                                          start: startDate, end: finalEndDate, recurrence: recurrence,
+                                          recurrenceEnd: recurrenceEndKey, invitedFriends: selectedFriends.map { $0.id },
+                                          eventType: eventType, friendsCanSee: friendsCanSee,
+                                          publishTo: Array(selectedPublishCalendars),
+                                          location: isSubscription ? "" : location.trimmingCharacters(in: .whitespacesAndNewlines),
+                                          reminders: selectedReminders, scope: scope))
                         presentationMode.wrappedValue.dismiss()
-                    }
-                }
-                .disabled(!canSave)
-            )
-            .alert("Duplicate Event", isPresented: $showDuplicateAlert) {
-                Button("OK", role: .cancel) {}
-            } message: {
-                Text("An event with this name already exists on this day. Please choose a different name.")
-            }
+    }
+}
+
+/// what the event editor saves
+struct EventDraft {
+    var id: String
+    var title: String
+    var description: String
+    var start: Date
+    var end: Date
+    var recurrence: String
+    var recurrenceEnd: String?
+    var invitedFriends: [String]
+    var eventType: String
+    var friendsCanSee: Bool
+    var publishTo: [String]
+    var location: String
+    /// seconds before the start; for a repeating event, every date (or just this one with `.thisEvent`)
+    var reminders: Set<TimeInterval> = []
+    var scope: CalendarViewModel.RepeatScope = .allEvents
+
+    /// `event` with these changes. An imported event only takes the PlotLine parts (friends, who can see it).
+    func applied(to event: Event) -> Event {
+        var e = event
+        if event.importedFrom == nil {
+            e.title = title
+            e.description = description
+            e.startDate = start
+            e.endDate = end
+            e.recurrence = recurrence
+            e.recurrenceEnd = recurrence == "none" ? nil : recurrenceEnd
+            e.eventType = eventType
+            e.location = location.isEmpty ? nil : location
         }
-        .tint(PLColor.accent)
+        e.invitedFriends = invitedFriends
+        e.friendsCanSee = friendsCanSee
+        return e
     }
 }
 
@@ -385,52 +499,6 @@ private extension AddEventSheet {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
     }
 
-    func scheduleReminders(for eventId: String, eventTitle: String, start: Date) {
-        let center = UNUserNotificationCenter.current()
-
-        // Cancel all existing notifications for this event before rescheduling
-        let allIds = reminderOptions.map { "reminder_\(eventId)_\(Int($0.secondsBefore))" }
-        center.removePendingNotificationRequests(withIdentifiers: allIds)
-
-        let selectedOpts = reminderOptions.filter { selectedReminders.contains($0.secondsBefore) }
-        guard !selectedOpts.isEmpty else { return }
-
-        let eventName = eventTitle.isEmpty ? "Event" : eventTitle
-        let dateFormatter = ISO8601DateFormatter()
-
-        for opt in selectedOpts {
-            let triggerDate = start.addingTimeInterval(-opt.secondsBefore)
-            if triggerDate < Date() { continue }
-
-            var comps = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: triggerDate)
-            comps.second = 0
-            let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: false)
-
-            let content = UNMutableNotificationContent()
-            content.title = "Upcoming Event"
-            content.body = switch opt.secondsBefore {
-                case 0:         "\(eventName) is starting now!"
-                case 15 * 60:  "\(eventName) starts in 15 minutes"
-                case 60 * 60:  "\(eventName) starts in 1 hour"
-                default:        "\(eventName) starts in 24 hours"
-            }
-            content.sound = .default
-            content.userInfo = [
-                "eventTitle": eventTitle,
-                "eventDate": dateFormatter.string(from: start),
-                "navigateTo": "calendar",
-                "secondsBefore": opt.secondsBefore,
-                "showDayView": opt.secondsBefore < 24 * 60 * 60
-            ]
-
-            let request = UNNotificationRequest(
-                identifier: "reminder_\(eventId)_\(Int(opt.secondsBefore))",
-                content: content,
-                trigger: trigger
-            )
-            center.add(request)
-        }
-    }
 }
 
 

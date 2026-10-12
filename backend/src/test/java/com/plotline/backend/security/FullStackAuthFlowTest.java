@@ -293,5 +293,30 @@ class FullStackAuthFlowTest {
         assertThat(response.get("success").asBoolean()).isFalse();
         assertThat(response.get("error").asText()).isEqualTo(com.plotline.backend.service.AuthService.PASSWORD_RULES);
     }
-}
 
+    @Test
+    @DisplayName("The new password can't be the current one (with the current password or a texted code); a different one works")
+    void changePasswordMustDiffer() throws Exception {
+        when(smsService.verifyCode(anyString(), anyString(), anyString())).thenReturn(true);
+        String fay = signUp("fay", "fay@mail.com");
+        markPhoneVerified("fay");
+
+        JsonNode same = call(json(fay, post("/auth/change-password"),
+                Map.of("username", "fay", "oldPassword", "Password1", "newPassword", "Password1")), 200);
+        assertThat(same.get("success").asBoolean()).isFalse();
+        assertThat(same.get("error").asText()).isEqualTo(com.plotline.backend.service.AuthService.SAME_PASSWORD);
+
+        JsonNode sameByCode = call(withKey(post("/auth/change-password-code")).contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of("username", "fay", "code", "123456", "newPassword", "Password1"))), 200);
+        assertThat(sameByCode.get("error").asText()).isEqualTo(com.plotline.backend.service.AuthService.SAME_PASSWORD);
+
+        // a wrong current password is still reported as wrong, not as "the same"
+        JsonNode wrongOld = call(json(fay, post("/auth/change-password"),
+                Map.of("username", "fay", "oldPassword", "Nope12345", "newPassword", "Nope12345")), 200);
+        assertThat(wrongOld.get("error").asText()).isEqualTo("Incorrect old password");
+
+        JsonNode changed = call(json(fay, post("/auth/change-password"),
+                Map.of("username", "fay", "oldPassword", "Password1", "newPassword", "Different2")), 200);
+        assertThat(changed.get("success").asBoolean()).isTrue();
+    }
+}

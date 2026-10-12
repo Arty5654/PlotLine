@@ -150,6 +150,38 @@ class BudgetSpendingFeatureTest extends FeatureTestBase {
     }
 
     @Test
+    @DisplayName("Subscription trophy: earned at 5 subscriptions, announced once, kept after removing one")
+    void subscriptionTrophy() throws Exception {
+        User me = newUser();
+        // accounts made before the fix have the misspelled id, which nothing ever awarded
+        String key = "users/" + me.name().toLowerCase() + "/trophies.json";
+        ok(getAs(me, "/profile/get-trophies").param("username", me.name()));
+        String stored = new String(s3.getObjectAsBytes(b -> b.bucket("plotline-database-bucket").key(key)).asByteArray());
+        s3.putObject(b -> b.bucket("plotline-database-bucket").key(key),
+                software.amazon.awssdk.core.sync.RequestBody.fromString(stored.replace("subscription-spender", "subcription-spender")));
+
+        Map<String, Object> subs = new java.util.LinkedHashMap<>();
+        for (String name : List.of("Netflix", "Spotify", "Hulu", "iCloud", "Gym")) {
+            subs.put(name, Map.of("name", name, "cost", "9.99", "dueDate", "2026-10-20T00:00:00.000Z"));
+        }
+        ok(postJson(me, "/api/subscriptions", Map.of("username", me.name(), "subscriptions", subs)));
+        ok(postJson(me, "/api/subscriptions", Map.of("username", me.name(), "subscriptions", subs))); // saved again
+        ok(deleteAs(me, "/api/subscriptions/{u}/{name}", me.name(), "Gym"));
+
+        JsonNode trophy = null;
+        for (JsonNode t : ok(getAs(me, "/profile/get-trophies").param("username", me.name()))) {
+            assertThat(t.get("id").asText()).isNotEqualTo("subcription-spender");
+            if (t.get("id").asText().equals("subscription-spender")) trophy = t;
+        }
+        assertThat(trophy).isNotNull();
+        assertThat(trophy.get("level").asInt()).isEqualTo(1);
+        assertThat(trophy.get("progress").asInt()).isEqualTo(4);
+
+        String chat = ok(getAs(me, "/chat/get-feed").param("userId", me.name())).toString();
+        assertThat(chat.split("Subscription Maxxer", -1)).hasSize(2); // one announcement
+    }
+
+    @Test
     @DisplayName("Recurring charge detection spots a monthly subscription; snoozing hides it")
     void recurringCharges() throws Exception {
         User me = newUser();
