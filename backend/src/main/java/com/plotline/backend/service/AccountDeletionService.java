@@ -62,6 +62,9 @@ public class AccountDeletionService {
     private final AccountDirectory accountDirectory;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.plotline.backend.push.PushService pushService;
+
     public AccountDeletionService(S3Client s3Client, AuthService authService, AppleSignInService appleSignInService,
                                   AppleTokenRevoker appleTokenRevoker, FriendsService friendsService,
                                   FriendsFeedService friendsFeedService, GroceryListService groceryListService,
@@ -161,6 +164,15 @@ public class AccountDeletionService {
             membershipService.forget(user);
         } catch (Exception e) {
             log.error("Failed to release App Store subscription: {}", e.getMessage());
+        }
+
+        // 6b. Phones: stop push notifications and drop the weekly recap history
+        if (pushService != null) {
+            try {
+                pushService.removeAllDevices(user);
+            } catch (Exception e) {
+                log.error("Failed to remove push devices: {}", e.getMessage());
+            }
         }
 
         // 7. Everything stored under the user (account.json is kept for last)

@@ -61,7 +61,8 @@ struct GoogleCalendarImportView: View {
             .onAppear {
                 GIDSignIn.sharedInstance.restorePreviousSignIn { user, _ in
                     DispatchQueue.main.async {
-                        if user != nil { state = .connected }
+                        // signed in with Google isn't the same as having connected the calendar
+                        if CalendarViewModel.hasCalendarAccess(user) { state = .connected }
                     }
                 }
             }
@@ -280,6 +281,7 @@ struct GoogleCalendarImportView: View {
                 // One request: backend replaces all gcal_ events atomically
                 _ = try await CalendarAPI.batchSyncGcal(gcalEvents, username: calendarVM.username)
                 await calendarVM.reloadEvents()
+                await MainActor.run { calendarVM.googleCalendarConnected = true }
                 await MainActor.run {
                     importedCount = fetchedEvents.count
                     state = .connected

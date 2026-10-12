@@ -38,6 +38,18 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         return false
     }
 
+    // push notifications from the server: this phone's address
+    func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+        PushRegistration.didRegister(token: deviceToken)
+    }
+
+    func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
+        print("Push registration failed: \(error.localizedDescription)") // e.g. the Simulator without push support
+    }
+
+    // a push from the server says which screen it's about ("friends", "calendar", "grocery", "budget")
+    static var pendingDestination: String?
+
     // Ensure notifications appear in foreground
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
@@ -55,6 +67,11 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
         let userInfo = response.notification.request.content.userInfo
+
+        if let destination = userInfo["destination"] as? String {
+            AppDelegate.pendingDestination = destination // the app may still be starting
+            NotificationCenter.default.post(name: .plotlineDeepLink, object: nil, userInfo: ["destination": destination])
+        }
 
         // a goal reminder: open that goal (works whether the app was running or not)
         if userInfo["navigateTo"] as? String == "goals" {

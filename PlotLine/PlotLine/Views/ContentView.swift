@@ -23,6 +23,9 @@ struct ContentView: View {
     @State private var navigateToNutrition = false
     @State private var navigateToBudget = false
     @State private var navigateToGoals = false
+    @State private var navigateToGrocery = false
+    @State private var navigateToQuiz = false
+    @StateObject private var getStarted = GetStartedModel()
     @State private var friendInviteSender: String = ""
     @State private var isFriendInvitePresented = false
 
@@ -38,6 +41,15 @@ struct ContentView: View {
 
                     // Widgets
                     VStack(spacing: PLSpacing.lg) {
+                        if getStarted.showsCard {
+                            GetStartedCard(model: getStarted,
+                                           openQuiz: { navigateToQuiz = true },
+                                           openBudget: { navigateToBudget = true },
+                                           openGoals: { navigateToGoals = true },
+                                           openFriends: { isFriendsPresented = true })
+                                .transition(.opacity)
+                        }
+
                         CalendarWidget()
                             .environmentObject(calendarVM)
                             .environmentObject(friendsVM)
@@ -111,6 +123,12 @@ struct ContentView: View {
             .navigationDestination(isPresented: $navigateToGoals) {
                 GoalsView().environmentObject(calendarVM)
             }
+            .navigationDestination(isPresented: $navigateToGrocery) {
+                TopGroceryListView()
+            }
+            .navigationDestination(isPresented: $navigateToQuiz) {
+                BudgetQuizView().environmentObject(calendarVM)
+            }
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("NavigateToCalendar"))) { notification in
                 if let userInfo = notification.userInfo,
                    let showDayView = userInfo["showDayView"] as? Bool,
@@ -145,6 +163,8 @@ struct ContentView: View {
                 case "budget":      navigateToBudget = true
                 case "goals":       navigateToGoals = true
                 case "friends":     isFriendsPresented = true
+                case "calendar":    navigateToCalendar = true
+                case "grocery":     navigateToGrocery = true
                 case "add-friend":
                     if let sender = notification.userInfo?["from"] as? String, !sender.isEmpty {
                         friendInviteSender = sender
@@ -155,10 +175,26 @@ struct ContentView: View {
             }
         }
         .task {
+            PushRegistration.refreshIfAllowed() // just signed in: this phone gets their notifications
             calendarVM.fetchEvents()
             await friendsVM.loadFriends(for: username)
+            await getStarted.refresh(friendCount: friendsVM.friends.count)
+        }
+        .onChange(of: friendsVM.friends.count) { _, count in
+            Task { await getStarted.refresh(friendCount: count) }
+        }
+        // back from Settings (notifications turned on there) or another app
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
+            Task { await getStarted.refresh(friendCount: friendsVM.friends.count) }
         }
         .onAppear {
+            // back on Home (after the quiz, a goal, a friend...): tick off what's done
+            Task { await getStarted.refresh(friendCount: friendsVM.friends.count) }
+            // a push notification opened the app: go where it points
+            if let destination = AppDelegate.pendingDestination {
+                AppDelegate.pendingDestination = nil
+                NotificationCenter.default.post(name: .plotlineDeepLink, object: nil, userInfo: ["destination": destination])
+            }
             // Handle pending notification navigation from cold start
             if let userInfo = AppDelegate.pendingNotificationUserInfo {
                 AppDelegate.pendingNotificationUserInfo = nil // Clear it

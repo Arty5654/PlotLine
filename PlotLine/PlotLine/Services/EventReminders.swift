@@ -15,7 +15,7 @@
 //
 
 import Foundation
-import UserNotifications
+@preconcurrency import UserNotifications
 
 enum EventReminders {
 

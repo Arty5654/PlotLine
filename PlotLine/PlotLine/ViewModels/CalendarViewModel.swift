@@ -32,6 +32,16 @@ class CalendarViewModel: ObservableObject {
     @Published var friendColors: [String: Color] = [:]
     @Published var showFriendOverlays: Bool = true
 
+    // MARK: - Imported calendars
+    /// Google Calendar is connected when the calendar permission was granted (signing in to PlotLine
+    /// with Google alone doesn't connect it)
+    @Published var googleCalendarConnected = false
+    @Published var appleCalendarConnected = false
+
+    static func hasCalendarAccess(_ user: GIDGoogleUser?) -> Bool {
+        user?.grantedScopes?.contains(GoogleCalendarAPI.calendarScope) == true
+    }
+
     private let friendColorPalette: [Color] = [.purple, .orange, .pink, .teal, .indigo, .mint]
 
     // one entry per event to approve or answer, not one per date of a repeating one
@@ -52,6 +62,7 @@ class CalendarViewModel: ObservableObject {
     }
 
     init() {
+        appleCalendarConnected = AppleCalendar.isConnected(for: username)
         Task {
             await fetchEvents()
             fetchAccessData()
@@ -651,7 +662,10 @@ class CalendarViewModel: ObservableObject {
             await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
                 GIDSignIn.sharedInstance.restorePreviousSignIn { _, _ in c.resume() }
             }
-            guard GIDSignIn.sharedInstance.currentUser != nil else { return }
+            // signed in to PlotLine with Google but never connected the calendar: don't ask for it now
+            let connected = Self.hasCalendarAccess(GIDSignIn.sharedInstance.currentUser)
+            await MainActor.run { googleCalendarConnected = connected }
+            guard connected else { return }
             await syncGoogleCalendar(quiet: true)
         }
     }
@@ -666,6 +680,7 @@ class CalendarViewModel: ObservableObject {
 
             let allEvents = try await CalendarAPI.batchSyncGcal(gcalPlotlineEvents, username: username)
             self.events = expandRecurringEvents(allEvents)
+            googleCalendarConnected = true
         } catch {
             if quiet {
                 print("Google Calendar sync skipped: \(error.localizedDescription)")
@@ -679,15 +694,16 @@ class CalendarViewModel: ObservableObject {
     @MainActor
     func disconnectGoogleCalendar() {
         GIDSignIn.sharedInstance.signOut()
-        let gcalIds = events.filter { $0.id.hasPrefix("gcal_") }.map { $0.id }
+        googleCalendarConnected = false
         events.removeAll { $0.id.hasPrefix("gcal_") }
+        let user = username
         Task {
-            var failed = 0
-            for id in gcalIds {
-                do { try await CalendarAPI.deleteEvent(id, username: username) } catch { failed += 1 }
-            }
-            if failed > 0 {
-                AppBanner.report("remove \(failed) imported Google event\(failed == 1 ? "" : "s")")
+            do {
+                // one request removes every imported Google event (it was one request per event)
+                let remaining = try await CalendarAPI.batchSyncGcal([], username: user)
+                self.events = expandRecurringEvents(remaining)
+            } catch {
+                AppBanner.report("remove your Google Calendar events", error)
                 fetchEvents()
             }
         }
@@ -718,6 +734,7 @@ class CalendarViewModel: ObservableObject {
             let allEvents = try await CalendarAPI.batchSyncApple(appleEvents, username: user)
             lastAppleSync = (user, signature)
             self.events = expandRecurringEvents(allEvents)
+            appleCalendarConnected = AppleCalendar.isConnected(for: user)
         } catch {
             if quiet {
                 print("Apple Calendar sync skipped: \(error.localizedDescription)")
@@ -732,6 +749,7 @@ class CalendarViewModel: ObservableObject {
     func disconnectAppleCalendar() {
         let user = username
         AppleCalendar.setSelectedCalendarIDs([], for: user)
+        appleCalendarConnected = false
         lastAppleSync = nil
         events.removeAll { $0.id.hasPrefix(AppleCalendar.idPrefix) }
         Task {

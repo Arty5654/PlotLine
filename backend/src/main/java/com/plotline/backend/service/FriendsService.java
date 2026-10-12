@@ -28,6 +28,14 @@ public class FriendsService {
     private final CalendarAccessService calendarAccessService;
     private final CalendarService calendarService;
 
+    // phone notifications (optional: tests that build this service by hand have none)
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.plotline.backend.push.PushService push;
+
+    private void sendPush(String username, String title, String body, String destination) {
+        if (push != null) push.send(username, new com.plotline.backend.push.PushService.Message(title, body, destination));
+    }
+
     public FriendsService(S3Client s3Client, CalendarAccessService calendarAccessService, CalendarService calendarService) {
         this.s3Client = s3Client;
         this.objectMapper = new ObjectMapper();
@@ -97,10 +105,12 @@ public class FriendsService {
         }
 
         // don't duplicate requests
-        if (!requestList.getPendingRequests().contains(sender)) {
+        boolean isNew = !requestList.getPendingRequests().contains(sender);
+        if (isNew) {
             requestList.getPendingRequests().add(sender);
         }
         writeJson(key, requestList);
+        if (isNew) sendPush(receiver, "New friend request", sender + " wants to be friends on PlotLine.", "friends");
         return "Successfully sent request!";
     }
 
@@ -163,6 +173,7 @@ public class FriendsService {
         }
 
         writeJson(senderFriendsKey, senderFriendList);
+        sendPush(sender, "Friend request accepted", receiver + " accepted your friend request.", "friends");
     }
 
     // remove sender username from receiver's pending requests

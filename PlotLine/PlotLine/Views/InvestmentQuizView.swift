@@ -434,6 +434,7 @@ struct InvestmentQuizView: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 Task {
                     calendarViewModel.addMonthlyInvestmentReminder(dayOfMonth: 1)
+                    await NotificationPermission.ensure(for: "your monthly investing reminder")
                 }
                 onFinish?()  // Notifies StockView to refresh and pops view
                 dismiss()    // Navigates back

@@ -533,9 +533,18 @@ private struct FriendEventDetailSheet: View {
                         Toggle(opt.label, isOn: Binding<Bool>(
                             get: { selectedReminders.contains(opt.secondsBefore) },
                             set: { isOn in
-                                if isOn { selectedReminders.insert(opt.secondsBefore) }
-                                else { selectedReminders.remove(opt.secondsBefore) }
-                                saveAndSchedule()
+                                if isOn {
+                                    selectedReminders.insert(opt.secondsBefore)
+                                    Task {
+                                        if !(await NotificationPermission.ensure(for: "event reminders")) {
+                                            selectedReminders.remove(opt.secondsBefore)
+                                        }
+                                        saveAndSchedule()
+                                    }
+                                } else {
+                                    selectedReminders.remove(opt.secondsBefore)
+                                    saveAndSchedule()
+                                }
                             }
                         ))
                     }

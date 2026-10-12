@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.plotline.backend.dto.BudgetQuizRequest;
 import com.plotline.backend.dto.BudgetRequest;
+import com.plotline.backend.tax.TakeHomeCalculator;
 import com.plotline.backend.service.OpenAIService;
 import com.plotline.backend.service.S3Service;
 import static com.plotline.backend.util.UsernameUtils.normalize;
@@ -39,29 +40,9 @@ public class BudgetQuizController {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    // Tax Hash Map
-    private static Map<String, Object> TAX_TABLE;     
-
-    @PostConstruct
-    void loadTaxTable() throws Exception {
-        if (TAX_TABLE != null) return;                
-        try (InputStream in = getClass()
-                .getClassLoader()
-                .getResourceAsStream("us_state_federal_tax_brackets_2024.json"))   {
-            TAX_TABLE = objectMapper.readValue(in,
-                    new TypeReference<>() {});
-        }
-    }
-
-    // Fica Data - 2024
-    private static final double SS_RATE = 0.062;             
-    private static final double SS_WAGE_BASE_2024 = 168_600.0;       
-    private static final double MEDICARE_RATE = 0.0145;              
-    private static final double ADDL_MEDICARE_RATE = 0.009;          
-    private static final double ADDL_MEDICARE_THRESHOLD_SINGLE = 200_000.0;
-
-    // 401k
-    private static final double K401_EMPLOYEE_LIMIT_2024 = 23_000.0;
+    // take-home pay with the current year's tax rules (shared with the paycheck calculator)
+    @Autowired
+    private TakeHomeCalculator takeHome;
 
     // Debt
     private static final double MIN_DEBT_FLOOR = 25.0;
@@ -145,23 +126,18 @@ public class BudgetQuizController {
 
 
 
-            // Account for 401(k) before calcuating taxes
-            double k401Defferal = Math.min(grossYearlyIncome * (retirment / 100.0), K401_EMPLOYEE_LIMIT_2024);
+            // 401(k) and taxes with the current year's rules (the standard deduction and the state's
+            // deductions are taken off first; this used 2024 tables without them)
+            TakeHomeCalculator.Result pay = takeHome.calculate(grossYearlyIncome,
+                    takeHome.knowsState(state) ? state : takeHome.stateCode(state), retirment, 0);
+            double k401Defferal = pay.k401();
             double taxableIncome = Math.max(0.0, grossYearlyIncome - k401Defferal);
-
-            // Get the taxes
-
-            double federalTax = calcTax(
-                    (List<Map<String,Object>>) TAX_TABLE.get("FEDERAL_2024_SINGLE"),
-                    taxableIncome);
-
-            Map<String,Object> stateSpec =
-                    (Map<String,Object>) TAX_TABLE.get(state.toUpperCase());
-            double stateTax   = calcTax(stateSpec, taxableIncome);
-            double fica = calcFica(grossYearlyIncome);
+            double federalTax = pay.federalTax();
+            double stateTax = pay.stateTax();
+            double fica = pay.socialSecurity() + pay.medicare();
             double localTax = calcLocalTax(city, state, taxableIncome);
 
-            double afterTaxYearly = taxableIncome - federalTax - stateTax - fica - localTax;
+            double afterTaxYearly = pay.takeHome() - localTax;
             double monthlyNet = afterTaxYearly / 12.0;
 
             log.debug("Taxable Income (After 401k): {}", taxableIncome);
@@ -408,53 +384,6 @@ public class BudgetQuizController {
         }
     }
 
-
-    // Tax Helper Functions
-
-    @SuppressWarnings("unchecked")
-    private double calcTax(Object spec, double income) {
-        if (spec == null) return 0.0;
-
-        if (spec instanceof List<?> brackets) {        // FEDERAL table case
-            return taxFromBrackets((List<Map<String,Object>>) brackets, income);
-        }
-        Map<String,Object> obj = (Map<String,Object>) spec;
-        String type = ((String) obj.get("type")).toLowerCase(Locale.ROOT);
-
-        return switch (type) {
-            case "none" -> 0.0;
-            case "flat" -> income * ((Number) obj.get("rate")).doubleValue();
-            case "progressive" ->
-                    taxFromBrackets((List<Map<String,Object>>) obj.get("brackets"), income);
-            default -> 0.0;
-        };
-    }
-
-    private double taxFromBrackets(List<Map<String,Object>> brackets, double income) {
-        double tax = 0.0;
-        double prevCap = 0.0;
-        for (Map<String,Object> b : brackets) {
-            Number capNum = (Number) b.get("up_to");
-            double cap = capNum == null ? Double.MAX_VALUE : capNum.doubleValue();
-            double rate = ((Number) b.get("rate")).doubleValue();
-            if (income <= cap) {
-                tax += (income - prevCap) * rate;
-                break;
-            } else {
-                tax += (cap - prevCap) * rate;
-                prevCap = cap;
-            }
-        }
-        return tax;
-    }
-
-    // FICA - Social Security + Medicare (+ Additional Medicare over threshold)
-    private double calcFica(double wages) {
-        double ssTax = Math.min(wages, SS_WAGE_BASE_2024) * SS_RATE;
-        double medicare = wages * MEDICARE_RATE;
-        double addlMedicare = Math.max(0.0, wages - ADDL_MEDICARE_THRESHOLD_SINGLE) * ADDL_MEDICARE_RATE;
-        return ssTax + medicare + addlMedicare;
-    }
 
     // Calculate local/muniicipal taxes if the state has any
     private double calcLocalTax(String city, String state, double taxableIncome) {

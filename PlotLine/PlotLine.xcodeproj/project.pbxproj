@@ -628,6 +628,7 @@
 				INFOPLIST_FILE = PlotLine/Info.plist;
 				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "PlotLine shows events from the Apple calendars you choose in your PlotLine calendar. It never changes them.";
 				INFOPLIST_KEY_NSCameraUsageDescription = "PlotLine uses the camera to scan receipts and food barcodes, and to photograph meals for nutrition info.";
+				INFOPLIST_KEY_NSFaceIDUsageDescription = "PlotLine uses Face ID to unlock the app when you turn on the app lock.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "PlotLine uses your city to tailor your budget and estimate grocery prices near you.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "PlotLine uses the photos you choose for receipts, meals, and your profile picture.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -663,6 +664,7 @@
 				INFOPLIST_FILE = PlotLine/Info.plist;
 				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "PlotLine shows events from the Apple calendars you choose in your PlotLine calendar. It never changes them.";
 				INFOPLIST_KEY_NSCameraUsageDescription = "PlotLine uses the camera to scan receipts and food barcodes, and to photograph meals for nutrition info.";
+				INFOPLIST_KEY_NSFaceIDUsageDescription = "PlotLine uses Face ID to unlock the app when you turn on the app lock.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "PlotLine uses your city to tailor your budget and estimate grocery prices near you.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "PlotLine uses the photos you choose for receipts, meals, and your profile picture.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;

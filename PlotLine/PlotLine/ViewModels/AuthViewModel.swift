@@ -611,7 +611,11 @@ class AuthViewModel: ObservableObject {
         }
     }
 
-    func signOut() {        
+    func signOut() {
+        // this phone stops getting the account's push notifications (needs the login, so first)
+        if let request = PushRegistration.unregisterRequest() {
+            Task.detached { _ = try? await URLSession.shared.data(for: request) }
+        }
         self.isLoggedIn = false
         self.authToken = nil
         KeychainManager.removeToken()

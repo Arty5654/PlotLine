@@ -80,6 +80,26 @@ struct ProfileView: View {
                     }
 
                     VStack(spacing: PLSpacing.sm) {
+                        PLSectionHeader(title: "Security")
+                        AppLockToggle()
+                            .plCard()
+                    }
+
+                    VStack(spacing: PLSpacing.sm) {
+                        PLSectionHeader(title: "Support")
+                        VStack(spacing: 6) {
+                            SupportRow(username: username)
+                        }
+                        .buttonStyle(.plain)
+                        .plCard()
+                        Text("Questions, problems or ideas? We read every email.")
+                            .font(.caption)
+                            .foregroundColor(PLColor.textSecondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 4)
+                    }
+
+                    VStack(spacing: PLSpacing.sm) {
                         PLSectionHeader(title: "Legal")
                         VStack(spacing: 6) {
                             Button { legalPage = .terms } label: {

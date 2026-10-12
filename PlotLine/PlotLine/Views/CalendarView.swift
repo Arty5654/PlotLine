@@ -16,6 +16,7 @@ struct CalendarView: View {
     @State private var showingAddEventSheet = false
     @State private var showingGoogleImport = false
     @State private var showingAppleImport = false
+    @State private var calendarToDisconnect: String?   // "Google" or "Apple"
     private let monthColumns = Array(repeating: GridItem(.flexible()), count: 7)
 
     var body: some View {
@@ -70,15 +71,42 @@ struct CalendarView: View {
                     }
                     .buttonStyle(PrimaryButton())
 
-                    Button { showingGoogleImport = true } label: {
-                        Label("Import from Google Calendar", systemImage: "arrow.down.circle")
+                    if viewModel.googleCalendarConnected {
+                        Button { calendarToDisconnect = "Google" } label: {
+                            Label("Disconnect Google Calendar", systemImage: "xmark.circle")
+                        }
+                        .buttonStyle(OutlineButton(tint: PLColor.danger))
+                    } else {
+                        Button { showingGoogleImport = true } label: {
+                            Label("Import from Google Calendar", systemImage: "arrow.down.circle")
+                        }
+                        .buttonStyle(OutlineButton(tint: PLColor.tint))
                     }
-                    .buttonStyle(OutlineButton(tint: PLColor.tint))
 
-                    Button { showingAppleImport = true } label: {
-                        Label("Import from Apple Calendar", systemImage: "calendar")
+                    if viewModel.appleCalendarConnected {
+                        Button { calendarToDisconnect = "Apple" } label: {
+                            Label("Disconnect Apple Calendar", systemImage: "xmark.circle")
+                        }
+                        .buttonStyle(OutlineButton(tint: PLColor.danger))
+                    } else {
+                        Button { showingAppleImport = true } label: {
+                            Label("Import from Apple Calendar", systemImage: "calendar")
+                        }
+                        .buttonStyle(OutlineButton(tint: PLColor.tint))
                     }
-                    .buttonStyle(OutlineButton(tint: PLColor.tint))
+                }
+                .confirmationDialog("Disconnect \(calendarToDisconnect ?? "") Calendar?",
+                                    isPresented: Binding(get: { calendarToDisconnect != nil },
+                                                         set: { if !$0 { calendarToDisconnect = nil } }),
+                                    titleVisibility: .visible) {
+                    Button("Disconnect", role: .destructive) {
+                        if calendarToDisconnect == "Google" { viewModel.disconnectGoogleCalendar() }
+                        else { viewModel.disconnectAppleCalendar() }
+                        calendarToDisconnect = nil
+                    }
+                    Button("Cancel", role: .cancel) { calendarToDisconnect = nil }
+                } message: {
+                    Text("Its events are removed from PlotLine, along with their reminders. Nothing changes in \(calendarToDisconnect ?? "") Calendar itself, and you can connect again anytime.")
                 }
 
                 // Pending event invites (current user was invited by someone)

@@ -27,6 +27,15 @@ import static com.plotline.backend.util.UsernameUtils.normalize;
 
 @Service
 public class CalendarService {
+
+    // phone notifications (optional: tests that build this service by hand have none)
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.plotline.backend.push.PushService push;
+
+    private void sendPush(String username, String title, String body, String destination) {
+        if (push != null) push.send(username, new com.plotline.backend.push.PushService.Message(title, body, destination));
+    }
+
     private static final Logger log = LoggerFactory.getLogger(CalendarService.class);
 
 
@@ -169,6 +178,7 @@ public class CalendarService {
 
                     // Track invite status on creator's event
                     newEvent.getInviteStatuses().put(normFriend, "pending");
+                    sendPush(normFriend, "Event invite", normUser + " invited you to \"" + newEvent.getTitle() + "\".", "calendar");
                 }
 
                 userProfileService.incrementTrophy(normUser, "friends-invited", newEvent.getInvitedFriends().size());
@@ -281,6 +291,7 @@ public class CalendarService {
                 newFriendEvent.setFriendsCanSee(updated.isFriendsCanSee());
                 friendEvents.add(newFriendEvent);
                 updated.getInviteStatuses().put(friend, "pending");
+                sendPush(friend, "Event invite", normUser + " invited you to \"" + updated.getTitle() + "\".", "calendar");
             }
 
             saveEventsToS3(friend, friendEvents);
@@ -333,6 +344,8 @@ public class CalendarService {
                     }
                 }
                 saveEventsToS3(normCreator, creatorEvents);
+                sendPush(normCreator, accept ? "Invite accepted" : "Invite declined",
+                        normFriend + (accept ? " is going to \"" : " can't make it to \"") + friendEvent.getTitle() + "\".", "calendar");
             }
 
             return true;
