@@ -76,11 +76,6 @@ enum GoalReminders {
         }
     }
 
-    /// Asks for notification permission the first time someone adds a reminder.
-    static func requestPermission() async -> Bool {
-        (try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])) ?? false
-    }
-
     // tapping it opens that goal (AppDelegate → GoalsRouter)
     private static func request(id: String, title: String, body: String, date: Date,
                                 tab: String, goalId: String) -> UNNotificationRequest {

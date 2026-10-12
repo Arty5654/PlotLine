@@ -204,7 +204,6 @@ struct WeeklyMonthlyCostView: View {
             fetchFixedCosts()
             fetchTakeHomeMonthly()
             fetchMonthlyFeedback(for: selectedMonth)
-            requestNotificationPermission()
         }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
             loadMonthlyData()
@@ -1113,15 +1112,6 @@ struct WeeklyMonthlyCostView: View {
     
     
     // MARK: - Notifications
-    private func requestNotificationPermission() {
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) { granted, error in
-            if granted { print("Notification permission granted.") }
-            else { print("Notification permission denied: \(error?.localizedDescription ?? "Unknown error")") }
-        }
-        UNUserNotificationCenter.current().getNotificationSettings { settings in
-            print("Notification Settings: \(settings.authorizationStatus.rawValue)")
-        }
-    }
     private func sendNotification(title: String, message: String) {
         let content = UNMutableNotificationContent()
         content.title = title
@@ -2049,6 +2039,8 @@ struct PlaidAccount: Identifiable, Codable, Hashable {
     let type: String?
     let subtype: String?
     let itemId: String       // parent item id
+    var current: Double? = nil    // balance: what's in it, or owed on a card/loan
+    var available: Double? = nil
 
     // UI-only computed helpers are fine (not encoded/decoded)
     var display: String { "\(name)\(mask.map { " ••\($0)" } ?? "")" }

@@ -34,6 +34,15 @@ import java.util.UUID;
 
 @Service
 public class GroceryListService {
+
+    // phone notifications (optional: tests that build this service by hand have none)
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.plotline.backend.push.PushService push;
+
+    private void sendPush(String username, String title, String body, String destination) {
+        if (push != null) push.send(username, new com.plotline.backend.push.PushService.Message(title, body, destination));
+    }
+
     private static final Logger log = LoggerFactory.getLogger(GroceryListService.class);
 
 
@@ -758,6 +767,7 @@ public class GroceryListService {
         s3Client.putObject(PutObjectRequest.builder().bucket(BUCKET_NAME).key(inviteReceivedPath(normTo, inviteId)).build(),
                 RequestBody.fromBytes(bytes));
 
+        sendPush(normTo, "Grocery list shared", normFrom + " shared \"" + list.getName() + "\" with you.", "grocery");
         return invite;
     }
 

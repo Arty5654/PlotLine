@@ -28,6 +28,15 @@ import static com.plotline.backend.util.UsernameUtils.normalize;
 @RequestMapping(path = "/chat", produces = MediaType.APPLICATION_JSON_VALUE)
 public class ChatController {
 
+    // phone notifications (optional: tests that build this service by hand have none)
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.plotline.backend.push.PushService push;
+
+    private void sendPush(String username, String title, String body, String destination) {
+        if (push != null) push.send(username, new com.plotline.backend.push.PushService.Message(title, body, destination));
+    }
+
+
     private final ChatMessageService chatService;
     private final FriendsService friendsService;
 
@@ -63,7 +72,10 @@ public class ChatController {
                                    @RequestBody Map<String,String> body) throws IOException {
         requireOwnOrFriend(owner);
         String emoji = body.get("emoji");
-        return chatService.addReaction(owner, messageId, emoji);
+        ChatMessage updated = chatService.addReaction(owner, messageId, emoji);
+        String me = CurrentUser.require();
+        if (!CurrentUser.is(owner)) sendPush(owner, "New reaction", me + " reacted " + emoji + " to your post.", "friends");
+        return updated;
     }
 
     //removes a reaction from post
@@ -91,7 +103,12 @@ public class ChatController {
         if (userId == null || text == null) { 
           throw new IllegalArgumentException("Missing userId or text");
         }
-      return chatService.addReply(owner, messageId, userId, text);
+      ChatMessage updated = chatService.addReply(owner, messageId, userId, text);
+      if (!CurrentUser.is(owner)) {
+          String preview = text.length() > 80 ? text.substring(0, 77) + "..." : text;
+          sendPush(owner, "New reply", CurrentUser.require() + " replied: " + preview, "friends");
+      }
+      return updated;
     }
 
     // removes reply from post

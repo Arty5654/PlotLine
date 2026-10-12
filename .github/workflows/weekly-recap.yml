@@ -1,0 +1,26 @@
+name: Weekly budget recap
+
+# The server sleeps when nobody is using the app, so it can't wake itself up on Sunday evening.
+# This pings it every half hour from Sunday 6 PM in the easternmost US time zone until Sunday
+# 8 PM in Hawaii; the server sends each person's recap once, between 6 and 8 PM their time.
+# (Scheduled runs only happen on the default branch, and GitHub can start them a few minutes late.)
+on:
+  schedule:
+    - cron: "0,30 21-23 * * 0"   # Sunday 21:00-23:59 UTC
+    - cron: "0,30 0-7 * * 1"     # Monday 00:00-07:59 UTC (Sunday evening in the US)
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ask the server to send recaps
+        env:
+          CRON_TOKEN: ${{ secrets.CRON_TOKEN }}
+        run: |
+          curl --fail --silent --show-error --max-time 120 --retry 2 --retry-delay 10 \
+            -X POST -H "X-Cron-Token: $CRON_TOKEN" \
+            https://backend-small-dream-2434.fly.dev/internal/weekly-recap

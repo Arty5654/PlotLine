@@ -182,7 +182,7 @@ extension Trophy {
 
     /// one-time trophies (a first profile picture) have a single level: no "Diamond" for them
     static func isOneTime(_ id: String) -> Bool {
-        ["all-around", "llm-investor", "first-profile-picture"].contains(id)
+        ["all-around", "llm-investor", "first-profile-picture", "getting-started"].contains(id)
     }
 }
 

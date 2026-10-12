@@ -136,6 +136,9 @@ public class UserProfileService {
     0, 0, new int[]{0, 0, 0, 1}, ZonedDateTime.now(ZoneOffset.UTC).format(formatter)), 
 
     new Trophy("first-profile-picture", "Picture Perfect", "Uploaded a profile picture!", 
+    0, 0, new int[]{0, 0, 0, 1}, ZonedDateTime.now(ZoneOffset.UTC).format(formatter)),
+
+    new Trophy("getting-started", "Getting Started", "Finished the Get Started checklist!",
     0, 0, new int[]{0, 0, 0, 1}, ZonedDateTime.now(ZoneOffset.UTC).format(formatter))
 
   );

@@ -35,6 +35,7 @@ struct BudgetView: View {
         VStack(spacing: 0) {
             Picker("View", selection: $selectedTab) {
                 Text("Budgeting").tag("Budgeting")
+                Text("Plan").tag("Plan")
                 Text("Stocks").tag("Stocks")
             }
             .pickerStyle(.segmented)
@@ -51,6 +52,8 @@ struct BudgetView: View {
                             .padding(.horizontal, PLSpacing.lg)
                             .padding(.vertical, PLSpacing.lg)
                     }
+                } else if selectedTab == "Plan" {
+                    PlanView()
                 } else {
                     InvestmentHomeView()
                 }

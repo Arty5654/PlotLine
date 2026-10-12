@@ -24,8 +24,10 @@ public class PlaidAccountsController {
     this.tokenStore = tokenStore;
   }
 
+  /** `current`: what's in it (depository/investment) or owed on it (credit/loan), as Plaid last saw it */
   public static record AccountOut(
-      String id, String name, String mask, String type, String subtype, String itemId
+      String id, String name, String mask, String type, String subtype, String itemId,
+      Double current, Double available, String currency
   ) {}
 
   @GetMapping("/accounts")
@@ -54,13 +56,17 @@ public class PlaidAccountsController {
         String type    = a.getType()    != null ? a.getType().getValue()    : null;
         String subtype = a.getSubtype() != null ? a.getSubtype().getValue() : null;
 
+        var balances = a.getBalances();
         out.add(new AccountOut(
             a.getAccountId(),
             a.getName(),
             a.getMask(),
             type,
             subtype,
-            itemId
+            itemId,
+            balances != null ? balances.getCurrent() : null,
+            balances != null ? balances.getAvailable() : null,
+            balances != null ? balances.getIsoCurrencyCode() : null
         ));
       }
     }

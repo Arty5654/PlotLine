@@ -72,7 +72,6 @@ struct SubsView: View {
         }
         .navigationTitle("Subscriptions")
         .onAppear {
-            requestNotificationPermission()
             loadDismissedPrompts()
             Task {
                 await calendarVM.reloadEvents() // subscriptions are matched against these
@@ -340,6 +339,7 @@ struct SubsView: View {
             checkCostWarning()
             ensureCalendarEvent(for: newSub)
             scheduleMonthlyReminder(for: newSub)
+            Task { await NotificationPermission.ensure(for: "subscription reminders") }
         }
         newName = ""
         newCost = ""
@@ -684,9 +684,6 @@ struct SubsView: View {
         UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [id])
     }
 
-    private func requestNotificationPermission() {
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) { _, _ in }
-    }
 
     // MARK: - Local Storage for Dismissed Prompts
 

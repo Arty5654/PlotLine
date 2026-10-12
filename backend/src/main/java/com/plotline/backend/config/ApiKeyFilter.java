@@ -34,7 +34,8 @@ public class ApiKeyFilter extends OncePerRequestFilter {
             || path.startsWith("/.well-known/")
             || path.equals("/terms")     // opened in a browser and linked from App Store Connect
             || path.equals("/privacy")
-            || path.equals("/api/payments/apple/notifications"); // sent by Apple, which can't add our key
+            || path.equals("/api/payments/apple/notifications") // sent by Apple, which can't add our key
+            || path.equals("/internal/weekly-recap");            // the recap timer, checked with CRON_TOKEN
     }
 
     @Override

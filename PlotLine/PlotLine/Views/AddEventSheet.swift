@@ -371,8 +371,17 @@ struct AddEventSheet: View {
                         Toggle(isOn: Binding<Bool>(
                             get: { selectedReminders.contains(opt.secondsBefore) },
                             set: { isOn in
-                                if isOn { selectedReminders.insert(opt.secondsBefore) }
-                                else { selectedReminders.remove(opt.secondsBefore) }
+                                if isOn {
+                                    selectedReminders.insert(opt.secondsBefore)
+                                    // asks the first time; if notifications are off, explains how to turn them on
+                                    Task {
+                                        if !(await NotificationPermission.ensure(for: "event reminders")) {
+                                            selectedReminders.remove(opt.secondsBefore)
+                                        }
+                                    }
+                                } else {
+                                    selectedReminders.remove(opt.secondsBefore)
+                                }
                             }
                         )) {
                             Text(opt.label)
@@ -383,7 +392,6 @@ struct AddEventSheet: View {
             .tint(.blue)
             .scrollDismissesKeyboard(.interactively)
             .onAppear {
-                requestNotificationPermission()
                 if friendVM.friends.isEmpty {
                     let username = UserDefaults.standard.string(forKey: "loggedInUsername") ?? ""
                     Task { await friendVM.loadFriends(for: username) }
@@ -495,9 +503,6 @@ private extension AddEventSheet {
         #endif
     }
 
-    func requestNotificationPermission() {
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
-    }
 
 }
 

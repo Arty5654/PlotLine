@@ -15,6 +15,8 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.test.mock.mockito.SpyBean;
+import com.plotline.backend.push.PushService;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
@@ -61,6 +63,8 @@ abstract class FeatureTestBase {
     @MockBean protected OpenAIService openAIService;
     @MockBean protected PlaidApi plaidApi;
     @MockBean protected ExternalDataClient externalDataClient; // never call the real NewsAPI / USDA from tests
+    @SpyBean protected PushService pushService; // real, but tests can check what would be pushed
+    @MockBean protected com.plotline.backend.push.ApnsClient apnsClient; // never send real pushes from tests
 
     @Autowired protected MockMvc mockMvc;
     @Autowired protected AuthService authService;

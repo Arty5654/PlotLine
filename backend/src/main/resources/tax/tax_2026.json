@@ -1,0 +1,1010 @@
+{
+ "year": 2026,
+ "filingStatus": "single",
+ "sources": [
+  "IRS Rev. Proc. 2025-32 (2026 federal brackets, standard deduction)",
+  "SSA: 2026 Social Security wage base $184,500",
+  "IRS: 2026 401(k) limit $24,500",
+  "Tax Foundation, 2026 State Individual Income Tax Rates and Brackets (single filers)",
+  "2026 changes after January 1: GA HB 463, UT SB 60, SC H.4216, AR special session, WV SB 392"
+ ],
+ "federal": {
+  "standardDeduction": 16100,
+  "brackets": [
+   {
+    "over": 0,
+    "rate": 0.1
+   },
+   {
+    "over": 12400,
+    "rate": 0.12
+   },
+   {
+    "over": 50400,
+    "rate": 0.22
+   },
+   {
+    "over": 105700,
+    "rate": 0.24
+   },
+   {
+    "over": 201775,
+    "rate": 0.32
+   },
+   {
+    "over": 256225,
+    "rate": 0.35
+   },
+   {
+    "over": 640600,
+    "rate": 0.37
+   }
+  ]
+ },
+ "fica": {
+  "socialSecurityRate": 0.062,
+  "socialSecurityWageBase": 184500,
+  "medicareRate": 0.0145,
+  "additionalMedicareRate": 0.009,
+  "additionalMedicareThreshold": 200000
+ },
+ "k401Limit": 24500,
+ "states": {
+  "AL": {
+   "name": "Alabama",
+   "brackets": [
+    {
+     "over": 0,
+     "rate": 0.02
+    },
+    {
+     "over": 500,
+     "rate": 0.04
+    },
+    {
+     "over": 3000,
+     "rate": 0.05
+    }
+   ],
+   "standardDeduction": 3000,
+   "exemption": 1500
+  },
+  "AK": {
+   "name": "Alaska",
+   "brackets": []
+  },
+  "AZ": {
+   "name": "Arizona",
+   "brackets": [
+    {
+     "over": 0,
+     "rate": 0.025
+    }
+   ],
+   "standardDeduction": 8350
+  },
+  "AR": {
+   "name": "Arkansas",
+   "brackets": [
+    {
+     "over": 0,
+     "rate": 0
+    },
+    {
+     "over": 5600,
+     "rate": 0.02
+    },
+    {
+     "over": 11200,
+     "rate": 0.03
+    },
+    {
+     "over": 16000,
+     "rate": 0.034
+    },
+    {
+     "over": 26400,
+     "rate": 0.037
+    }
+   ],
+   "standardDeduction": 2470,
+   "credit": 29,
+   "note": "3.7% top rate from the May 2026 special session (retroactive to January 1)"
+  },
+  "CA": {
+   "name": "California",
+   "brackets": [
+    {
+     "over": 0,
+     "rate": 0.01
+    },
+    {
+     "over": 11079,
+     "rate": 0.02
+    },
+    {
+     "over": 26264,
+     "rate": 0.04
+    },
+    {
+     "over": 41452,
+     "rate": 0.06
+    },
+    {
+     "over": 57542,
+     "rate": 0.08
+    },
+    {
+     "over": 72724,
+     "rate": 0.093
+    },
+    {
+     "over": 371479,
+     "rate": 0.103
+    },
+    {
+     "over": 445771,
+     "rate": 0.113
+    },
+    {
+     "over": 742953,
+     "rate": 0.123
+    },
+    {
+     "over": 1000000,
+     "rate": 0.133
+    }
+   ],
+   "standardDeduction": 5540,
+   "credit": 153
+  },
+  "CO": {
+   "name": "Colorado",
+   "brackets": [
+    {
+     "over": 0,
+     "rate": 0.044
+    }
+   ],
+   "standardDeduction": 16100
+  },
+  "CT": {
+   "name": "Connecticut",
+   "brackets": [
+    {
+     "over": 0,
+     "rate": 0.02
+    },
+    {
+     "over": 10000,
+     "rate": 0.045
+    },
+    {
+     "over": 50000,
+     "rate": 0.055
+    },
+    {
+     "over": 100000,
+     "rate": 0.06
+    },
+    {
+     "over": 200000,
+     "rate": 0.065
+    },
+    {
+     "over": 250000,
+     "rate": 0.069
+    },
+    {
+     "over": 500000,
+     "rate": 0.0699
+    }
+   ],
+   "exemption": 15000,
+   "exemptionPhaseout": {
+    "start": 30000,
+    "end": 45000
+   }
+  },
+  "DE": {
+   "name": "Delaware",
+   "brackets": [
+    {
+     "over": 0,
+     "rate": 0
+    },
+    {
+     "over": 2000,
+     "rate": 0.022
+    },
+    {
+     "over": 5000,
+     "rate": 0.039
+    },
+    {
+     "over": 10000,
+     "rate": 0.048
+    },
+    {
+     "over": 20000,
+     "rate": 0.052
+    },
+    {
+     "over": 25000,
+     "rate": 0.0555
+    },
+    {
+     "over": 60000,
+     "rate": 0.066
+    }
+   ],
+   "standardDeduction": 3250,
+   "credit": 110
+  },
+  "DC": {
+   "name": "Washington, DC",
+   "brackets": [
+    {
+     "over": 0,
+     "rate": 0.04
+    },
+    {
+     "over": 10000,
+     "rate": 0.06
+    },
+    {
+     "over": 40000,
+     "rate": 0.065
+    },
+    {
+     "over": 60000,
+     "rate": 0.085
+    },
+    {
+     "over": 250000,
+     "rate": 0.0925
+    },
+    {
+     "over": 500000,
+     "rate": 0.0975
+    },
+    {
+     "over": 1000000,
+     "rate": 0.1075
+    }
+   ],
+   "standardDeduction": 16100
+  },
+  "FL": {
+   "name": "Florida",
+   "brackets": []
+  },
+  "GA": {
+   "name": "Georgia",
+   "brackets": [
+    {
+     "over": 0,
+     "rate": 0.0499
+    }
+   ],
+   "standardDeduction": 12000,
+   "note": "4.99% from HB 463 (signed May 2026, retroactive to January 1)"
+  },
+  "HI": {
+   "name": "Hawaii",
+   "brackets": [
+    {
+     "over": 0,
+     "rate": 0.014
+    },
+    {
+     "over": 9600,
+     "rate": 0.032
+    },
+    {
+     "over": 14400,
+     "rate": 0.055
+    },
+    {
+     "over": 19200,
+     "rate": 0.064
+    },
+    {
+     "over": 24000,
+     "rate": 0.068
+    },
+    {
+     "over": 36000,
+     "rate": 0.072
+    },
+    {
+     "over": 48000,
+     "rate": 0.076
+    },
+    {
+     "over": 125000,
+     "rate": 0.079
+    },
+    {
+     "over": 175000,
+     "rate": 0.0825
+    },
+    {
+     "over": 225000,
+     "rate": 0.09
+    },
+    {
+     "over": 275000,
+     "rate": 0.1
+    },
+    {
+     "over": 325000,
+     "rate": 0.11
+    }
+   ],
+   "standardDeduction": 4400,
+   "exemption": 1144
+  },
+  "ID": {
+   "name": "Idaho",
+   "brackets": [
+    {
+     "over": 0,
+     "rate": 0
+    },
+    {
+     "over": 4811,
+     "rate": 0.053
+    }
+   ],
+   "standardDeduction": 16100
+  },
+  "IL": {
+   "name": "Illinois",
+   "brackets": [
+    {
+     "over": 0,
+     "rate": 0.0495
+    }
+   ],
+   "exemption": 2925
+  },
+  "IN": {
+   "name": "Indiana",
+   "brackets": [
+    {
+     "over": 0,
+     "rate": 0.0295
+    }
+   ],
+   "exemption": 1000,
+   "note": "county income tax not included"
+  },
+  "IA": {
+   "name": "Iowa",
+   "brackets": [
+    {
+     "over": 0,
+     "rate": 0.038
+    }
+   ],
+   "standardDeduction": 16100,
+   "credit": 40
+  },
+  "KS": {
+   "name": "Kansas",
+   "brackets": [
+    {
+     "over": 0,
+     "rate": 0.052
+    },
+    {
+     "over": 23000,
+     "rate": 0.0558
+    }
+   ],
+   "standardDeduction": 3605,
+   "exemption": 9160
+  },
+  "KY": {
+   "name": "Kentucky",
+   "brackets": [
+    {
+     "over": 0,
+     "rate": 0.035
+    }
+   ],
+   "standardDeduction": 3360
+  },
+  "LA": {
+   "name": "Louisiana",
+   "brackets": [
+    {
+     "over": 0,
+     "rate": 0.03
+    }
+   ],
+   "standardDeduction": 12875
+  },
+  "ME": {
+   "name": "Maine",
+   "brackets": [
+    {
+     "over": 0,
+     "rate": 0.058
+    },
+    {
+     "over": 27399,
+     "rate": 0.0675
+    },
+    {
+     "over": 64849,
+     "rate": 0.0715
+    }
+   ],
+   "standardDeduction": 8350,
+   "exemption": 5300
+  },
+  "MD": {
+   "name": "Maryland",
+   "brackets": [
+    {
+     "over": 0,
+     "rate": 0.02
+    },
+    {
+     "over": 1000,
+     "rate": 0.03
+    },
+    {
+     "over": 2000,
+     "rate": 0.04
+    },
+    {
+     "over": 3000,
+     "rate": 0.0475
+    },
+    {
+     "over": 100000,
+     "rate": 0.05
+    },
+    {
+     "over": 125000,
+     "rate": 0.0525
+    },
+    {
+     "over": 150000,
+     "rate": 0.055
+    },
+    {
+     "over": 250000,
+     "rate": 0.0575
+    },
+    {
+     "over": 500000,
+     "rate": 0.0625
+    },
+    {
+     "over": 1000000,
+     "rate": 0.065
+    }
+   ],
+   "standardDeduction": 3350,
+   "exemption": 3200,
+   "note": "county income tax (about 2.25%-3.3%) not included"
+  },
+  "MA": {
+   "name": "Massachusetts",
+   "brackets": [
+    {
+     "over": 0,
+     "rate": 0.05
+    },
+    {
+     "over": 1083150,
+     "rate": 0.09
+    }
+   ],
+   "exemption": 4400
+  },
+  "MI": {
+   "name": "Michigan",
+   "brackets": [
+    {
+     "over": 0,
+     "rate": 0.0425
+    }
+   ],
+   "exemption": 5900,
+   "note": "city income tax not included"
+  },
+  "MN": {
+   "name": "Minnesota",
+   "brackets": [
+    {
+     "over": 0,
+     "rate": 0.0535
+    },
+    {
+     "over": 33310,
+     "rate": 0.068
+    },
+    {
+     "over": 109430,
+     "rate": 0.0785
+    },
+    {
+     "over": 203150,
+     "rate": 0.0985
+    }
+   ],
+   "standardDeduction": 15300
+  },
+  "MS": {
+   "name": "Mississippi",
+   "brackets": [
+    {
+     "over": 0,
+     "rate": 0
+    },
+    {
+     "over": 10000,
+     "rate": 0.04
+    }
+   ],
+   "standardDeduction": 2300,
+   "exemption": 6000
+  },
+  "MO": {
+   "name": "Missouri",
+   "brackets": [
+    {
+     "over": 0,
+     "rate": 0
+    },
+    {
+     "over": 1348,
+     "rate": 0.02
+    },
+    {
+     "over": 2696,
+     "rate": 0.025
+    },
+    {
+     "over": 4044,
+     "rate": 0.03
+    },
+    {
+     "over": 5392,
+     "rate": 0.035
+    },
+    {
+     "over": 6740,
+     "rate": 0.04
+    },
+    {
+     "over": 8088,
+     "rate": 0.045
+    },
+    {
+     "over": 9436,
+     "rate": 0.047
+    }
+   ],
+   "standardDeduction": 16100
+  },
+  "MT": {
+   "name": "Montana",
+   "brackets": [
+    {
+     "over": 0,
+     "rate": 0.047
+    },
+    {
+     "over": 47500,
+     "rate": 0.0565
+    }
+   ],
+   "standardDeduction": 16100
+  },
+  "NE": {
+   "name": "Nebraska",
+   "brackets": [
+    {
+     "over": 0,
+     "rate": 0.0246
+    },
+    {
+     "over": 4130,
+     "rate": 0.0351
+    },
+    {
+     "over": 24760,
+     "rate": 0.0455
+    }
+   ],
+   "standardDeduction": 8850,
+   "credit": 176
+  },
+  "NV": {
+   "name": "Nevada",
+   "brackets": []
+  },
+  "NH": {
+   "name": "New Hampshire",
+   "brackets": []
+  },
+  "NJ": {
+   "name": "New Jersey",
+   "brackets": [
+    {
+     "over": 0,
+     "rate": 0.014
+    },
+    {
+     "over": 20000,
+     "rate": 0.0175
+    },
+    {
+     "over": 35000,
+     "rate": 0.035
+    },
+    {
+     "over": 40000,
+     "rate": 0.0553
+    },
+    {
+     "over": 75000,
+     "rate": 0.0637
+    },
+    {
+     "over": 500000,
+     "rate": 0.0897
+    },
+    {
+     "over": 1000000,
+     "rate": 0.1075
+    }
+   ],
+   "exemption": 1000
+  },
+  "NM": {
+   "name": "New Mexico",
+   "brackets": [
+    {
+     "over": 0,
+     "rate": 0.015
+    },
+    {
+     "over": 5500,
+     "rate": 0.032
+    },
+    {
+     "over": 16500,
+     "rate": 0.043
+    },
+    {
+     "over": 33500,
+     "rate": 0.047
+    },
+    {
+     "over": 66500,
+     "rate": 0.049
+    },
+    {
+     "over": 210000,
+     "rate": 0.059
+    }
+   ],
+   "standardDeduction": 16100
+  },
+  "NY": {
+   "name": "New York",
+   "brackets": [
+    {
+     "over": 0,
+     "rate": 0.039
+    },
+    {
+     "over": 8500,
+     "rate": 0.044
+    },
+    {
+     "over": 11700,
+     "rate": 0.0515
+    },
+    {
+     "over": 13900,
+     "rate": 0.054
+    },
+    {
+     "over": 80650,
+     "rate": 0.059
+    },
+    {
+     "over": 215400,
+     "rate": 0.0685
+    },
+    {
+     "over": 1077550,
+     "rate": 0.0965
+    },
+    {
+     "over": 5000000,
+     "rate": 0.103
+    },
+    {
+     "over": 25000000,
+     "rate": 0.109
+    }
+   ],
+   "standardDeduction": 8000,
+   "note": "New York City and Yonkers tax not included"
+  },
+  "NC": {
+   "name": "North Carolina",
+   "brackets": [
+    {
+     "over": 0,
+     "rate": 0.0399
+    }
+   ],
+   "standardDeduction": 12750
+  },
+  "ND": {
+   "name": "North Dakota",
+   "brackets": [
+    {
+     "over": 0,
+     "rate": 0
+    },
+    {
+     "over": 48475,
+     "rate": 0.0195
+    },
+    {
+     "over": 244825,
+     "rate": 0.025
+    }
+   ],
+   "standardDeduction": 16100
+  },
+  "OH": {
+   "name": "Ohio",
+   "brackets": [
+    {
+     "over": 0,
+     "rate": 0
+    },
+    {
+     "over": 26050,
+     "rate": 0.0275
+    }
+   ],
+   "exemption": 2400,
+   "note": "city income tax not included"
+  },
+  "OK": {
+   "name": "Oklahoma",
+   "brackets": [
+    {
+     "over": 0,
+     "rate": 0
+    },
+    {
+     "over": 3750,
+     "rate": 0.025
+    },
+    {
+     "over": 4900,
+     "rate": 0.035
+    },
+    {
+     "over": 7200,
+     "rate": 0.045
+    }
+   ],
+   "standardDeduction": 6350,
+   "exemption": 1000
+  },
+  "OR": {
+   "name": "Oregon",
+   "brackets": [
+    {
+     "over": 0,
+     "rate": 0.0475
+    },
+    {
+     "over": 4550,
+     "rate": 0.0675
+    },
+    {
+     "over": 11400,
+     "rate": 0.0875
+    },
+    {
+     "over": 125000,
+     "rate": 0.099
+    }
+   ],
+   "standardDeduction": 2910,
+   "credit": 256
+  },
+  "PA": {
+   "name": "Pennsylvania",
+   "brackets": [
+    {
+     "over": 0,
+     "rate": 0.0307
+    }
+   ],
+   "deduct401k": false,
+   "note": "local earned income tax not included"
+  },
+  "RI": {
+   "name": "Rhode Island",
+   "brackets": [
+    {
+     "over": 0,
+     "rate": 0.0375
+    },
+    {
+     "over": 82050,
+     "rate": 0.0475
+    },
+    {
+     "over": 186450,
+     "rate": 0.0599
+    }
+   ],
+   "standardDeduction": 11200,
+   "exemption": 5250
+  },
+  "SC": {
+   "name": "South Carolina",
+   "brackets": [
+    {
+     "over": 0,
+     "rate": 0.0199
+    },
+    {
+     "over": 30000,
+     "rate": 0.0521
+    }
+   ],
+   "standardDeduction": 15000,
+   "note": "H.4216 (signed March 2026, applies to all of 2026)"
+  },
+  "SD": {
+   "name": "South Dakota",
+   "brackets": []
+  },
+  "TN": {
+   "name": "Tennessee",
+   "brackets": []
+  },
+  "TX": {
+   "name": "Texas",
+   "brackets": []
+  },
+  "UT": {
+   "name": "Utah",
+   "brackets": [
+    {
+     "over": 0,
+     "rate": 0.0445
+    }
+   ],
+   "credit": 966,
+   "creditPhaseout": {
+    "start": 18213,
+    "rate": 0.013
+   },
+   "note": "4.45% from SB 60 (signed March 2026, retroactive to January 1)"
+  },
+  "VT": {
+   "name": "Vermont",
+   "brackets": [
+    {
+     "over": 0,
+     "rate": 0.0335
+    },
+    {
+     "over": 49400,
+     "rate": 0.066
+    },
+    {
+     "over": 119700,
+     "rate": 0.076
+    },
+    {
+     "over": 249700,
+     "rate": 0.0875
+    }
+   ],
+   "standardDeduction": 7650,
+   "exemption": 5300
+  },
+  "VA": {
+   "name": "Virginia",
+   "brackets": [
+    {
+     "over": 0,
+     "rate": 0.02
+    },
+    {
+     "over": 3000,
+     "rate": 0.03
+    },
+    {
+     "over": 5000,
+     "rate": 0.05
+    },
+    {
+     "over": 17000,
+     "rate": 0.0575
+    }
+   ],
+   "standardDeduction": 8750,
+   "exemption": 930
+  },
+  "WA": {
+   "name": "Washington",
+   "brackets": []
+  },
+  "WV": {
+   "name": "West Virginia",
+   "brackets": [
+    {
+     "over": 0,
+     "rate": 0.0211
+    },
+    {
+     "over": 10000,
+     "rate": 0.0281
+    },
+    {
+     "over": 25000,
+     "rate": 0.0316
+    },
+    {
+     "over": 40000,
+     "rate": 0.0422
+    },
+    {
+     "over": 60000,
+     "rate": 0.0458
+    }
+   ],
+   "exemption": 2000,
+   "note": "5% cut from SB 392 (retroactive to January 1, 2026)"
+  },
+  "WI": {
+   "name": "Wisconsin",
+   "brackets": [
+    {
+     "over": 0,
+     "rate": 0.035
+    },
+    {
+     "over": 15110,
+     "rate": 0.044
+    },
+    {
+     "over": 51950,
+     "rate": 0.053
+    },
+    {
+     "over": 332720,
+     "rate": 0.0765
+    }
+   ],
+   "standardDeduction": 13960,
+   "exemption": 700
+  },
+  "WY": {
+   "name": "Wyoming",
+   "brackets": []
+  }
+ }
+}

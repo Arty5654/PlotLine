@@ -25,6 +25,15 @@ import static com.plotline.backend.util.UsernameUtils.normalize;
 
 @Service
 public class CalendarAccessService {
+
+    // phone notifications (optional: tests that build this service by hand have none)
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.plotline.backend.push.PushService push;
+
+    private void sendPush(String username, String title, String body, String destination) {
+        if (push != null) push.send(username, new com.plotline.backend.push.PushService.Message(title, body, destination));
+    }
+
     private static final Logger log = LoggerFactory.getLogger(CalendarAccessService.class);
 
 
@@ -97,6 +106,7 @@ public class CalendarAccessService {
             lock.unlock();
         }
 
+        sendPush(to, "Calendar invite", from + " wants to share calendars with you.", "calendar");
         return invite;
     }
 

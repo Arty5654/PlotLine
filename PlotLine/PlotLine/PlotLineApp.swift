@@ -56,6 +56,9 @@ struct PlotLineApp: App {
                 .environmentObject(calendarVM)
                 .environmentObject(friendsVM)
                 .environmentObject(chatVM)
+                // opening the app with the lock on asks for Face ID right away (scene changes can
+                // start before this view is watching them)
+                .onAppear { AppLock.shared.sceneChanged(to: .active) }
                 // keep the widgets' copy of the login token current (sign-in, refresh)
                 .onChange(of: session.authToken) { _, token in
                     if token != nil { WidgetDataWriter.writeCredentials() }
@@ -76,6 +79,7 @@ struct PlotLineApp: App {
                 }
         }
         .onChange(of: scenePhase) { _, phase in
+            AppLock.shared.sceneChanged(to: phase) // Face ID lock and the app-switcher cover
             // the icon is visible again once the app is in the background: recount what's waiting
             if phase == .background {
                 BadgeManager.refreshInBackground()
@@ -96,6 +100,7 @@ struct PlotLineApp: App {
             calendarVM.syncAppleCalendarIfConnected()
             Task { await friendsVM.loadFriends(for: username) }
             TrophyAlerts.shared.appBecameActive()
+            PushRegistration.refreshIfAllowed() // keeps this phone's push address and time zone current
         }
     }
 }

@@ -96,6 +96,6 @@ struct ReminderListSection: View {
             reminder.date = GoalReminder.dayFormatter.string(from: tomorrow)
         }
         reminders.append(reminder)
-        Task { _ = await GoalReminders.requestPermission() }
+        Task { await NotificationPermission.ensure(for: "goal reminders") }
     }
 }

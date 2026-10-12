@@ -16,7 +16,8 @@ public final class PublicEndpoints {
             "/auth/apple-signin",
             "/auth/change-password-code",   // forgot-password flow (proves ownership with an SMS code)
             "/sms/send-verification",       // sends that code
-            "/api/payments/apple/notifications" // from Apple's servers; checked by Apple's signature instead
+            "/api/payments/apple/notifications", // from Apple's servers; checked by Apple's signature instead
+            "/internal/weekly-recap"            // the recap timer; checked with the CRON_TOKEN secret instead
     );
 
     private static final Set<String> PUBLIC_GETS = Set.of(
