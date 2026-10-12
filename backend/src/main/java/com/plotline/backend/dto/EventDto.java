@@ -8,6 +8,12 @@ public class EventDto {
     private String id;
     private String title;
     private String description;
+    private String location; // "Starbucks, 123 Main St" (optional)
+    // repeating: an imported rule ("FREQ=WEEKLY;BYDAY=MO,WE"), the last day ("2026-12-31"), and dates
+    // taken out of the series ("2026-10-12": changed or deleted on their own)
+    private String recurrenceRule;
+    private String recurrenceEnd;
+    private List<String> excludedDates = new java.util.ArrayList<>();
     private String startDate; // stored as string
     private String endDate;   // stored as string
     private String eventType;
@@ -107,5 +113,54 @@ public class EventDto {
 
     public Map<String, String> getInviteStatuses() { return inviteStatuses; }
     public void setInviteStatuses(Map<String, String> inviteStatuses) { this.inviteStatuses = inviteStatuses; }
-}
 
+    public String getLocation() {
+        return location;
+    }
+
+    public void setLocation(String location) {
+        this.location = location;
+    }
+
+    public String getRecurrenceRule() {
+        return recurrenceRule;
+    }
+
+    public void setRecurrenceRule(String recurrenceRule) {
+        this.recurrenceRule = recurrenceRule;
+    }
+
+    public String getRecurrenceEnd() {
+        return recurrenceEnd;
+    }
+
+    public void setRecurrenceEnd(String recurrenceEnd) {
+        this.recurrenceEnd = recurrenceEnd;
+    }
+
+    public List<String> getExcludedDates() {
+        return excludedDates;
+    }
+
+    public void setExcludedDates(List<String> excludedDates) {
+        this.excludedDates = excludedDates == null ? new java.util.ArrayList<>() : excludedDates;
+    }
+
+    /** the place and how it repeats, e.g. onto an invited friend's copy */
+    public void copyDetailsFrom(EventDto other) {
+        this.location = other.location;
+        this.recurrenceRule = other.recurrenceRule;
+        this.recurrenceEnd = other.recurrenceEnd;
+        this.excludedDates = new java.util.ArrayList<>(other.getExcludedDates());
+    }
+
+    /** same title, time, place and repeat (what an import can change) */
+    public boolean sameDetails(EventDto other) {
+        return java.util.Objects.equals(title, other.title) && java.util.Objects.equals(description, other.description)
+                && java.util.Objects.equals(startDate, other.startDate) && java.util.Objects.equals(endDate, other.endDate)
+                && java.util.Objects.equals(location, other.location) && java.util.Objects.equals(recurrence, other.recurrence)
+                && java.util.Objects.equals(recurrenceRule, other.recurrenceRule)
+                && java.util.Objects.equals(recurrenceEnd, other.recurrenceEnd)
+                && java.util.Objects.equals(getExcludedDates(), other.getExcludedDates());
+    }
+}

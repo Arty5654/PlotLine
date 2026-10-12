@@ -125,6 +125,101 @@ class CalendarFeatureTest extends FeatureTestBase {
     }
 
     @Test
+    @DisplayName("Location is saved on create and edit, reaches an invited friend, and comes in with Google and Apple events")
+    void eventLocation() throws Exception {
+        User me = newUser();
+        User friend = newUser();
+        befriend(me, friend);
+
+        Map<String, Object> lunch = event(me.name(), "Lunch");
+        lunch.put("location", "Cafe Rio, 5 Elm St");
+        lunch.put("invitedFriends", new ArrayList<>(List.of(friend.name())));
+        String id = (String) lunch.get("id");
+        ok(postJson(me, "/calendar/create-event", lunch));
+        assertThat(find(events(me), id).get("location").asText()).isEqualTo("Cafe Rio, 5 Elm St");
+        assertThat(find(events(friend), id).get("location").asText()).isEqualTo("Cafe Rio, 5 Elm St");
+
+        lunch.put("location", "Chipotle");
+        ok(postJson(me, "/calendar/update-event", lunch));
+        assertThat(find(events(me), id).get("location").asText()).isEqualTo("Chipotle");
+        assertThat(find(events(friend), id).get("location").asText()).isEqualTo("Chipotle");
+
+        Map<String, Object> google = event(me.name(), "Soccer");
+        google.put("id", "gcal_abc");
+        google.put("location", "Field 3");
+        ok(postJson(me, "/calendar/batch-sync-gcal", Map.of("username", me.name(), "events", List.of(google))));
+        Map<String, Object> apple = event(me.name(), "Dentist");
+        apple.put("id", "apple_xyz");
+        apple.put("location", "Smile Dental");
+        ok(postJson(me, "/calendar/batch-sync-apple", Map.of("username", me.name(), "events", List.of(apple))));
+        assertThat(find(events(me), "gcal_abc").get("location").asText()).isEqualTo("Field 3");
+        assertThat(find(events(me), "apple_xyz").get("location").asText()).isEqualTo("Smile Dental");
+    }
+
+    @Test
+    @DisplayName("Repeating events keep their rule, end day and removed dates, also on an invited friend's copy")
+    void repeatingEventDetails() throws Exception {
+        User me = newUser();
+        User friend = newUser();
+        befriend(me, friend);
+
+        Map<String, Object> standup = event(me.name(), "Standup");
+        standup.put("recurrence", "weekdays");
+        standup.put("recurrenceEnd", "2026-12-31");
+        standup.put("excludedDates", List.of("2026-10-14"));
+        standup.put("invitedFriends", new ArrayList<>(List.of(friend.name())));
+        String id = (String) standup.get("id");
+        ok(postJson(me, "/calendar/create-event", standup));
+
+        for (JsonNode e : List.of(find(events(me), id), find(events(friend), id))) {
+            assertThat(e.get("recurrence").asText()).isEqualTo("weekdays");
+            assertThat(e.get("recurrenceEnd").asText()).isEqualTo("2026-12-31");
+            assertThat(e.get("excludedDates").toString()).contains("2026-10-14");
+        }
+
+        // one more date taken out ("delete this event only")
+        standup.put("excludedDates", List.of("2026-10-14", "2026-10-15"));
+        ok(postJson(me, "/calendar/update-event", standup));
+        assertThat(find(events(friend), id).get("excludedDates").toString()).contains("2026-10-15");
+    }
+
+    @Test
+    @DisplayName("Imported events: syncing keeps who can see them and who's invited; friends' copies follow changes and removals")
+    void importedEventKeepsPlotLineSettings() throws Exception {
+        User me = newUser();
+        User friend = newUser();
+        befriend(me, friend);
+
+        Map<String, Object> yoga = event(me.name(), "Yoga");
+        yoga.put("id", "apple_yoga");
+        yoga.put("recurrence", "custom");
+        yoga.put("recurrenceRule", "FREQ=WEEKLY;BYDAY=TU,TH");
+        ok(postJson(me, "/calendar/batch-sync-apple", Map.of("username", me.name(), "events", List.of(yoga))));
+        assertThat(find(events(me), "apple_yoga").get("recurrenceRule").asText()).isEqualTo("FREQ=WEEKLY;BYDAY=TU,TH");
+
+        // set in PlotLine: hidden from friends, one friend invited
+        Map<String, Object> edited = new java.util.HashMap<>(yoga);
+        edited.put("friendsCanSee", false);
+        edited.put("invitedFriends", new ArrayList<>(List.of(friend.name())));
+        ok(postJson(me, "/calendar/update-event", edited));
+        assertThat(find(events(friend), "apple_yoga")).isNotNull();
+
+        // the next sync (moved to 7pm in Apple Calendar) keeps both, and the friend's copy moves too
+        yoga.put("startDate", "2026-10-10T23:00:00Z");
+        yoga.put("endDate", "2026-10-11T00:00:00Z");
+        ok(postJson(me, "/calendar/batch-sync-apple", Map.of("username", me.name(), "events", List.of(yoga))));
+        JsonNode mine = find(events(me), "apple_yoga");
+        assertThat(mine.get("friendsCanSee").asBoolean()).isFalse();
+        assertThat(mine.get("invitedFriends").toString()).contains(friend.name());
+        assertThat(find(events(friend), "apple_yoga").get("startDate").asText()).isEqualTo("2026-10-10T23:00:00Z");
+
+        // deleted in Apple Calendar: gone from both calendars
+        ok(postJson(me, "/calendar/batch-sync-apple", Map.of("username", me.name(), "events", List.of())));
+        assertThat(find(events(me), "apple_yoga")).isNull();
+        assertThat(find(events(friend), "apple_yoga")).isNull();
+    }
+
+    @Test
     @DisplayName("Invite a friend: they get a pending invite; accepting updates your RSVP list")
     void inviteFriendAccept() throws Exception {
         User me = newUser();

@@ -52,5 +52,7 @@ enum BackendConfig {
         if let token = KeychainManager.loadToken() {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
+        // every request goes through here, and many earn trophies on the server
+        TrophyAlerts.requestMade(to: request.url)
     }
 }

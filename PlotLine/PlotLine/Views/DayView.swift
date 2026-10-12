@@ -58,34 +58,29 @@ struct DayView: View {
         }
         .sheet(isPresented: $showingAddEventSheet) {
             let publishable = viewModel.accessData.receivedAccess.filter { $0.level == "add" }.map { $0.friendUsername }
-            AddEventSheet(defaultDate: day, existingEvents: viewModel.events, publishableFriendCalendars: publishable) { eventId, title, description, start, end, recur, friends, eventType, friendsCanSee, publishTo in
+            AddEventSheet(defaultDate: day, existingEvents: viewModel.events, publishableFriendCalendars: publishable) { draft in
                 viewModel.createEvent(
-                    id: eventId,
-                    title: title,
-                    description: description,
-                    startDate: start,
-                    endDate: end,
-                    eventType: eventType,
-                    recurrence: recur,
-                    invitedFriends: friends,
-                    friendsCanSee: friendsCanSee,
-                    publishToCalendars: publishTo
+                    id: draft.id,
+                    title: draft.title,
+                    description: draft.description,
+                    startDate: draft.start,
+                    endDate: draft.end,
+                    eventType: draft.eventType,
+                    recurrence: draft.recurrence,
+                    invitedFriends: draft.invitedFriends,
+                    friendsCanSee: draft.friendsCanSee,
+                    publishToCalendars: draft.publishTo,
+                    location: draft.location.isEmpty ? nil : draft.location,
+                    recurrenceEnd: draft.recurrenceEnd,
+                    reminders: draft.reminders
                 )
             }.environmentObject(friendVM)
         }
 
         .sheet(item: $selectedEvent) { eventToEdit in
-            AddEventSheet(existingEvent: eventToEdit, existingEvents: viewModel.events) { _, newTitle, newDesc, newStart, newEnd, newRecurrence, newFriends, newEventType, newFriendsCanSee, _ in
-                var updatedEvent = eventToEdit
-                updatedEvent.title = newTitle
-                updatedEvent.description = newDesc
-                updatedEvent.startDate = newStart
-                updatedEvent.endDate = newEnd
-                updatedEvent.recurrence = newRecurrence
-                updatedEvent.invitedFriends = newFriends
-                updatedEvent.eventType = newEventType
-                updatedEvent.friendsCanSee = newFriendsCanSee
-                viewModel.updateEvent(event: updatedEvent)
+            AddEventSheet(existingEvent: eventToEdit, existingEvents: viewModel.events) { draft in
+                viewModel.saveEdit(original: eventToEdit, edited: draft.applied(to: eventToEdit), scope: draft.scope,
+                                   reminders: draft.reminders)
             }.environmentObject(friendVM)
         }
     }
@@ -106,7 +101,7 @@ struct DayView: View {
         offsets.forEach { index in
             let eventToDelete = dayEvents[index]
             if eventToDelete.eventType == "user" || eventToDelete.eventType.hasPrefix("subscription") {
-                viewModel.deleteEvent(eventToDelete.id)
+                viewModel.deleteEvent(eventToDelete.seriesKey)
             }
         }
     }
@@ -127,6 +122,7 @@ private struct DayEventsList: View {
     @State private var showDuplicateDatePicker = false
     @State private var duplicateTargetDate = Date()
     @State private var selectedFriendEvent: IdentifiableFriendEvent? = nil
+    @State private var repeatChoice: RepeatChoice? = nil
 
     var body: some View {
         List {
@@ -172,6 +168,7 @@ private struct DayEventsList: View {
         }
         .listStyle(InsetGroupedListStyle())
         .scrollContentBackground(.hidden)
+        .repeatScopeDialog($repeatChoice)
         .sheet(item: $selectedFriendEvent) { item in
             FriendEventDetailSheet(event: item.event, friend: item.friend, color: item.color)
         }
@@ -227,42 +224,21 @@ private struct DayEventsList: View {
 
     private func delete(at offsets: IndexSet) {
         offsets.forEach { index in
-            viewModel.deleteEvent(events[index].id)
+            let event = events[index]
+            if event.addedBy != nil {
+                viewModel.deleteEvent(event.seriesKey) // a friend's event on this calendar
+            } else {
+                viewModel.requestDelete(event) { repeatChoice = $0 }
+            }
         }
     }
 
     private func duplicateEvent(_ event: Event, to newDate: Date) {
-        let cal = Calendar.current
-        let duration = event.endDate.timeIntervalSince(event.startDate)
-        let timeComps = cal.dateComponents([.hour, .minute], from: event.startDate)
-        var dateComps = cal.dateComponents([.year, .month, .day], from: newDate)
-        dateComps.hour = timeComps.hour
-        dateComps.minute = timeComps.minute
-        guard let newStart = cal.date(from: dateComps) else { return }
-        viewModel.createEvent(
-            title: event.title,
-            description: event.description,
-            startDate: newStart,
-            endDate: newStart.addingTimeInterval(duration),
-            eventType: event.eventType,
-            recurrence: event.recurrence,
-            invitedFriends: event.invitedFriends,
-            friendsCanSee: event.friendsCanSee
-        )
+        viewModel.duplicate(event, to: newDate)
     }
 
     private func moveEvent(_ event: Event, to newDate: Date) {
-        let cal = Calendar.current
-        let duration = event.endDate.timeIntervalSince(event.startDate)
-        let timeComps = cal.dateComponents([.hour, .minute], from: event.startDate)
-        var dateComps = cal.dateComponents([.year, .month, .day], from: newDate)
-        dateComps.hour = timeComps.hour
-        dateComps.minute = timeComps.minute
-        guard let newStart = cal.date(from: dateComps) else { return }
-        var updated = event
-        updated.startDate = newStart
-        updated.endDate = newStart.addingTimeInterval(duration)
-        viewModel.updateEvent(event: updated)
+        viewModel.move(event, to: newDate) // a repeating event: just this date
     }
 
     @ViewBuilder
@@ -272,7 +248,7 @@ private struct DayEventsList: View {
                 EventRow(event: event)
                 Spacer()
                 Button {
-                    viewModel.respondToEventInvite(eventId: event.id, accept: true)
+                    viewModel.respondToEventInvite(eventId: event.seriesKey, accept: true)
                 } label: {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundColor(.green)
@@ -280,7 +256,7 @@ private struct DayEventsList: View {
                 }
                 .buttonStyle(PlainButtonStyle())
                 Button {
-                    viewModel.respondToEventInvite(eventId: event.id, accept: false)
+                    viewModel.respondToEventInvite(eventId: event.seriesKey, accept: false)
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundColor(.red)
@@ -295,10 +271,10 @@ private struct DayEventsList: View {
                     Button(role: .destructive) {
                         if event.status == "accepted" {
                             // Event invite: notify creator it was removed
-                            viewModel.respondToEventInvite(eventId: event.id, accept: false)
+                            viewModel.respondToEventInvite(eventId: event.seriesKey, accept: false)
                         } else {
                             // Calendar-sharing event ("pending"/"approved"): just delete
-                            viewModel.deleteEvent(event.id)
+                            viewModel.deleteEvent(event.seriesKey)
                         }
                     } label: {
                         Label("Remove from My Calendar", systemImage: "calendar.badge.minus")
@@ -323,12 +299,14 @@ private struct DayEventsList: View {
                     } label: {
                         Label("Edit", systemImage: "pencil")
                     }
-                    Button {
-                        eventToMove = event
-                        moveTargetDate = event.startDate
-                        showMoveDatePicker = true
-                    } label: {
-                        Label("Move to Date", systemImage: "calendar.badge.plus")
+                    if event.importedFrom == nil {
+                        Button {
+                            eventToMove = event
+                            moveTargetDate = event.startDate
+                            showMoveDatePicker = true
+                        } label: {
+                            Label("Move to Date", systemImage: "calendar.badge.plus")
+                        }
                     }
                     Button {
                         eventToDuplicate = event
@@ -337,10 +315,12 @@ private struct DayEventsList: View {
                     } label: {
                         Label("Duplicate", systemImage: "doc.on.doc")
                     }
-                    Button(role: .destructive) {
-                        viewModel.deleteEvent(event.id)
-                    } label: {
-                        Label("Delete", systemImage: "trash")
+                    if event.importedFrom == nil {
+                        Button(role: .destructive) {
+                            viewModel.requestDelete(event) { repeatChoice = $0 }
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
                     }
                 } label: {
                     Image(systemName: "ellipsis")
@@ -393,6 +373,10 @@ private struct EventRow: View {
                     .foregroundColor(.secondary)
             }
 
+            if let location = event.location, !location.isEmpty {
+                EventLocationLink(location: location)
+            }
+
             // Show multi-day info
             if !Calendar.current.isDate(event.startDate, inSameDayAs: event.endDate) {
                 Text("\(format(event.startDate)) through \(format(event.endDate))")
@@ -400,8 +384,8 @@ private struct EventRow: View {
                     .foregroundColor(PLColor.textSecondary)
             }
 
-            if event.recurrence != "none" {
-                Text("Occurs \(event.recurrence)")
+            if let rule = event.repeatRule {
+                Label(rule.summary, systemImage: "repeat")
                     .font(.subheadline)
                     .foregroundColor(PLColor.textSecondary)
             }
@@ -499,8 +483,7 @@ private struct FriendEventDetailSheet: View {
         self.event = event
         self.friend = friend
         self.color = color
-        let saved = UserDefaults.standard.array(forKey: "event_reminders_\(event.id)") as? [Double] ?? []
-        _selectedReminders = State(initialValue: Set(saved.map { TimeInterval($0) }))
+        _selectedReminders = State(initialValue: EventReminders.saved(for: event))
     }
 
     var body: some View {
@@ -527,6 +510,12 @@ private struct FriendEventDetailSheet: View {
                     Section(header: Text("Description")) {
                         Text(event.description)
                             .foregroundColor(.primary)
+                    }
+                }
+
+                if let location = event.location, !location.isEmpty {
+                    Section(header: Text("Location")) {
+                        EventLocationLink(location: location, font: .body)
                     }
                 }
 
@@ -569,32 +558,8 @@ private struct FriendEventDetailSheet: View {
     }
 
     private func saveAndSchedule() {
-        UserDefaults.standard.set(Array(selectedReminders), forKey: "event_reminders_\(event.id)")
-        let center = UNUserNotificationCenter.current()
-        let allIds = reminderOptions.map { "reminder_\(event.id)_\(Int($0.secondsBefore))" }
-        center.removePendingNotificationRequests(withIdentifiers: allIds)
-
-        for opt in reminderOptions where selectedReminders.contains(opt.secondsBefore) {
-            let triggerDate = event.startDate.addingTimeInterval(-opt.secondsBefore)
-            guard triggerDate > Date() else { continue }
-            var comps = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: triggerDate)
-            comps.second = 0
-            let content = UNMutableNotificationContent()
-            content.title = "Upcoming Event"
-            content.body = switch opt.secondsBefore {
-                case 0:         "\(event.title) is starting now!"
-                case 15 * 60:  "\(event.title) starts in 15 minutes"
-                case 60 * 60:  "\(event.title) starts in 1 hour"
-                default:        "\(event.title) starts in 24 hours"
-            }
-            content.sound = .default
-            let request = UNNotificationRequest(
-                identifier: "reminder_\(event.id)_\(Int(opt.secondsBefore))",
-                content: content,
-                trigger: UNCalendarNotificationTrigger(dateMatching: comps, repeats: false)
-            )
-            center.add(request)
-        }
+        EventReminders.set(selectedReminders, for: event) // every date, if it repeats
+        EventReminders.refresh()
     }
 }
 

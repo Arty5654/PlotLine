@@ -18,7 +18,10 @@ class CalendarViewModel: ObservableObject {
 
     @Published var currentDate: Date = Date()
     @Published var displayMode: DisplayMode = .month
+    /// what the calendar shows: each date of a repeating event is its own entry (see Recurrence.swift)
     @Published var events: [Event] = []
+    /// events as saved: a repeating event once, by id
+    private(set) var seriesById: [String: Event] = [:]
 
     @Published var selectedDay: Date? = nil
     @Published var navigateToDayView: Date? = nil
@@ -31,13 +34,17 @@ class CalendarViewModel: ObservableObject {
 
     private let friendColorPalette: [Color] = [.purple, .orange, .pink, .teal, .indigo, .mint]
 
+    // one entry per event to approve or answer, not one per date of a repeating one
     var pendingEvents: [Event] {
-        events.filter { $0.status == "pending" }
+        seriesById.values.filter { $0.status == "pending" }.sorted { $0.startDate < $1.startDate }
     }
 
     var pendingInviteEvents: [Event] {
-        events.filter { $0.status == "invite-pending" }
+        seriesById.values.filter { $0.status == "invite-pending" }.sorted { $0.startDate < $1.startDate }
     }
+
+    /// for repeating events: change or delete one date, or the whole series
+    enum RepeatScope { case thisEvent, allEvents }
 
     enum DisplayMode {
         case month
@@ -177,7 +184,9 @@ class CalendarViewModel: ObservableObject {
     func createEvent(id: String = UUID().uuidString, title: String, description: String,
                      startDate: Date, endDate: Date, eventType: String, recurrence: String,
                      invitedFriends: [String], friendsCanSee: Bool = true,
-                     publishToCalendars: [String] = []) {
+                     publishToCalendars: [String] = [], location: String? = nil, recurrenceEnd: String? = nil,
+                     reminders: Set<TimeInterval> = []) {
+        EventReminders.set(reminders, forKey: id)
         Task {
             do {
                 let newEvent = Event(
@@ -189,7 +198,9 @@ class CalendarViewModel: ObservableObject {
                     eventType: eventType,
                     recurrence: recurrence,
                     invitedFriends: invitedFriends,
-                    friendsCanSee: friendsCanSee
+                    friendsCanSee: friendsCanSee,
+                    location: location,
+                    recurrenceEnd: recurrenceEnd
                 )
                 let saved = try await CalendarAPI.createEvent(newEvent, username: username)
                 events.append(saved)
@@ -208,7 +219,9 @@ class CalendarViewModel: ObservableObject {
                         invitedFriends: [],
                         friendsCanSee: friendsCanSee,
                         addedBy: username,
-                        status: "pending"
+                        status: "pending",
+                        location: location,
+                        recurrenceEnd: recurrenceEnd
                     )
                     do {
                         _ = try await CalendarAPI.createEvent(publishEvent, username: friend.lowercased())
@@ -224,7 +237,8 @@ class CalendarViewModel: ObservableObject {
                 AppBanner.report("save your event", error, retry: { [weak self] in
                     self?.createEvent(id: id, title: title, description: description, startDate: startDate, endDate: endDate,
                                       eventType: eventType, recurrence: recurrence, invitedFriends: invitedFriends,
-                                      friendsCanSee: friendsCanSee, publishToCalendars: publishToCalendars)
+                                      friendsCanSee: friendsCanSee, publishToCalendars: publishToCalendars,
+                                      location: location, recurrenceEnd: recurrenceEnd, reminders: reminders)
                 })
             }
         }
@@ -248,24 +262,138 @@ class CalendarViewModel: ObservableObject {
             } catch {
                 AppBanner.report("save your changes to the event", error, retry: { [weak self] in self?.updateEvent(event: event) })
             }
+            await reloadEvents(quiet: true) // repeating events are laid out again from the saved series
         }
-        fetchEvents()
     }
     
+    /// Deletes a saved event (every date of it, if it repeats) and its reminders.
     @MainActor
     func deleteEvent(_ eventID: String) {
+        EventReminders.cancel(eventId: eventID, series: true) // a deleted event kept sending its reminders
+        events.removeAll { $0.seriesKey == eventID }
         Task {
             do {
                 try await CalendarAPI.deleteEvent(eventID, username: username)
-                
-                // remove the event locally
-                events.removeAll { $0.id == eventID }
-                print("Deleted event with ID: \(eventID)")
             } catch {
                 AppBanner.report("delete the event", error, retry: { [weak self] in self?.deleteEvent(eventID) })
             }
+            await reloadEvents(quiet: true)
         }
-        fetchEvents()
+    }
+
+    /// Deletes one date of a repeating event (`.thisEvent`) or the whole event.
+    @MainActor
+    func delete(_ event: Event, scope: RepeatScope = .allEvents) {
+        guard scope == .thisEvent, event.isRepeating, var series = seriesById[event.seriesKey] else {
+            deleteEvent(event.seriesKey)
+            return
+        }
+        let day = Recurrence.dayKey(event.occurrenceStart ?? event.startDate)
+        if !series.excludedDates.contains(day) { series.excludedDates.append(day) }
+        EventReminders.cancel(eventId: event.id)
+        events.removeAll { $0.id == event.id }
+        updateEvent(event: series)
+    }
+
+    /// Saves an edit. For a date of a repeating event, `.thisEvent` takes that date out of the series
+    /// and makes it a one-off event with the changes; `.allEvents` changes the series (a new time or
+    /// day moves every date by the same amount).
+    /// `reminders`: chosen in the editor (nil: unchanged, e.g. a move)
+    @MainActor
+    func saveEdit(original: Event, edited: Event, scope: RepeatScope, reminders: Set<TimeInterval>? = nil) {
+        if let reminders, scope == .allEvents || !original.isRepeating {
+            EventReminders.set(reminders, for: original) // a repeating event: every date
+        }
+        guard original.isRepeating, let series = seriesById[original.seriesKey] else {
+            var updated = edited
+            updated.id = original.seriesKey
+            updated.seriesId = nil
+            updated.occurrenceStart = nil
+            updateEvent(event: updated)
+            return
+        }
+        let occurrenceStart = original.occurrenceStart ?? original.startDate
+
+        switch scope {
+        case .thisEvent:
+            var updatedSeries = series
+            let day = Recurrence.dayKey(occurrenceStart)
+            if !updatedSeries.excludedDates.contains(day) { updatedSeries.excludedDates.append(day) }
+
+            var single = edited
+            single.id = UUID().uuidString
+            single.recurrence = "none"
+            single.recurrenceRule = nil
+            single.recurrenceEnd = nil
+            single.excludedDates = []
+            single.seriesId = nil
+            single.occurrenceStart = nil
+            // the new one-off event gets the reminders picked for it (or the series' ones)
+            EventReminders.set(reminders ?? EventReminders.saved(for: original), forKey: single.id)
+            EventReminders.cancel(eventId: original.id)
+            Task {
+                do {
+                    _ = try await CalendarAPI.updateEvent(updatedSeries, username: username)
+                    _ = try await CalendarAPI.createEvent(single, username: username)
+                } catch {
+                    AppBanner.report("save your changes to the event", error, retry: { [weak self] in
+                        self?.saveEdit(original: original, edited: edited, scope: scope, reminders: reminders)
+                    })
+                }
+                await reloadEvents(quiet: true)
+            }
+
+        case .allEvents:
+            updateEvent(event: Self.seriesAfterEdit(series: series, occurrenceStart: occurrenceStart, edited: edited))
+        }
+    }
+
+    /// The series after one of its dates (`occurrenceStart`) was edited "for all events".
+    static func seriesAfterEdit(series: Event, occurrenceStart: Date, edited: Event) -> Event {
+        var updated = edited
+        updated.id = series.id
+        updated.seriesId = nil
+        updated.occurrenceStart = nil
+        let duration = edited.endDate.timeIntervalSince(edited.startDate)
+        if edited.repeatRule == nil {
+            // no longer repeats: it stays on the date that was being edited
+            updated.startDate = edited.startDate
+            updated.excludedDates = []
+        } else {
+            // a new time (or day) moves every date by the same amount
+            updated.startDate = series.startDate.addingTimeInterval(edited.startDate.timeIntervalSince(occurrenceStart))
+            let sameRepeat = edited.recurrence == series.recurrence && edited.recurrenceRule == series.recurrenceRule
+                && edited.recurrenceEnd == series.recurrenceEnd
+            // dates taken out stay out, unless the dates themselves changed
+            updated.excludedDates = sameRepeat && updated.startDate == series.startDate ? series.excludedDates : []
+        }
+        updated.endDate = updated.startDate.addingTimeInterval(duration)
+        return updated
+    }
+
+    /// A copy of an event on another day (a repeating one keeps repeating from there).
+    @MainActor
+    func duplicate(_ event: Event, start: Date) {
+        var copy = seriesById[event.seriesKey] ?? event
+        copy.id = UUID().uuidString
+        copy.endDate = start.addingTimeInterval(event.endDate.timeIntervalSince(event.startDate))
+        copy.startDate = start
+        copy.excludedDates = []
+        copy.seriesId = nil
+        copy.occurrenceStart = nil
+        copy.invitedFriends = []
+        copy.inviteStatuses = [:]
+        copy.status = "approved"
+        copy.addedBy = nil
+        if copy.importedFrom != nil { copy.id = UUID().uuidString } // the copy is a PlotLine event
+        Task {
+            do {
+                _ = try await CalendarAPI.createEvent(copy, username: username)
+            } catch {
+                AppBanner.report("duplicate the event", error, retry: { [weak self] in self?.duplicate(event, start: start) })
+            }
+            await reloadEvents(quiet: true)
+        }
     }
     
     @MainActor
@@ -283,70 +411,20 @@ class CalendarViewModel: ObservableObject {
         }
     }
     
-    private func expandRecurringEvents(_ masterEvents: [Event]) -> [Event] {
-        // expand for 6 months
-        let sixMonthsFromNow = Calendar.current.date(byAdding: .month, value: 6, to: Date()) ?? Date()
-        
-        var allEvents: [Event] = []
-        
-        for event in masterEvents {
-            
-            if event.recurrence == "none" {
-                allEvents.append(event)
-            } else {
-                
-                allEvents.append(event)
-                
-                let expansions = generateRecurringInstances(for: event, until: sixMonthsFromNow)
-                allEvents.append(contentsOf: expansions)
-            }
-        }
-        
-        return allEvents
+    /// how far the calendar lays out repeating events
+    static func repeatWindow(now: Date = Date()) -> (from: Date, to: Date) {
+        let cal = Calendar.current
+        return (cal.date(byAdding: .year, value: -2, to: now)!, cal.date(byAdding: .year, value: 1, to: now)!)
     }
 
-    
-
-    private func generateRecurringInstances(for event: Event, until limitDate: Date) -> [Event] {
-        var result: [Event] = []
-        let cal = Calendar.current
-        
-        var cursor = event.startDate
-        
-        while cursor < limitDate {
-            switch event.recurrence {
-            case "weekly":
-                guard let next = cal.date(byAdding: .weekOfYear, value: 1, to: cursor) else { break }
-                cursor = next
-                
-            case "biweekly":
-                guard let next = cal.date(byAdding: .weekOfYear, value: 2, to: cursor) else { break }
-                cursor = next
-                
-            case "monthly":
-                guard let next = cal.date(byAdding: .month, value: 1, to: cursor) else { break }
-                cursor = next
-                
-            default:
-                // can add new cases if relevant
-                break
-            }
-            
-
-            if cursor <= limitDate {
-                // build copy of original event with new dates
-                let dayDelta = event.endDate.timeIntervalSince(event.startDate)
-                let nextEnd = cursor.addingTimeInterval(dayDelta)
-                
-                var newOccur = event
-                newOccur.startDate = cursor
-                newOccur.endDate = nextEnd
-                
-                result.append(newOccur)
-            }
-        }
-        
-        return result
+    @MainActor
+    private func expandRecurringEvents(_ masterEvents: [Event]) -> [Event] {
+        seriesById = Dictionary(masterEvents.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let window = Self.repeatWindow()
+        let expanded = masterEvents.flatMap { $0.occurrences(from: window.from, to: window.to) }
+        // reminders for events that are gone (deleted here, on another phone, or in Apple/Google) stop
+        EventReminders.sync(ownEvents: expanded, friendEvents: friendCalendars)
+        return expanded
     }
 
     // MARK: - Calendar Access
@@ -403,8 +481,10 @@ class CalendarViewModel: ObservableObject {
             colors[friend] = friendColorPalette[next % friendColorPalette.count]
             next += 1
         }
-        friendCalendars = calendars
+        let window = Self.repeatWindow()
+        friendCalendars = calendars.mapValues { events in events.flatMap { $0.occurrences(from: window.from, to: window.to) } }
         friendColors = colors
+        EventReminders.sync(ownEvents: events, friendEvents: friendCalendars) // reminders on friends' events
     }
 
     func sendCalendarInvite(to friend: String, level: String, requireApproval: Bool) {
@@ -581,17 +661,8 @@ class CalendarViewModel: ObservableObject {
     func syncGoogleCalendar(quiet: Bool = false) async {
         do {
             let token = try await GoogleCalendarAPI.requestCalendarAccess()
-            let now = Date()
-            let cal = Calendar.current
-            let from = cal.date(byAdding: .month, value: -1, to: now)!
-            let to   = cal.date(byAdding: .month, value: 6, to: now)!
-            let googleEvents = try await GoogleCalendarAPI.fetchEvents(accessToken: token, from: from, to: to)
-
-            let gcalPlotlineEvents = googleEvents.map { e in
-                Event(id: "gcal_\(e.id)", title: e.title, description: e.description,
-                      startDate: e.start, endDate: e.end,
-                      eventType: "user", recurrence: "none", invitedFriends: [])
-            }
+            let window = ImportedSeries.window()
+            let gcalPlotlineEvents = try await GoogleCalendarAPI.plotLineEvents(accessToken: token, from: window.from, to: window.to)
 
             let allEvents = try await CalendarAPI.batchSyncGcal(gcalPlotlineEvents, username: username)
             self.events = expandRecurringEvents(allEvents)
@@ -679,7 +750,11 @@ class CalendarViewModel: ObservableObject {
             hasher.combine(e.id)
             hasher.combine(e.title)
             hasher.combine(e.description)
+            hasher.combine(e.startDate)
             hasher.combine(e.endDate)
+            hasher.combine(e.location)
+            hasher.combine(e.recurrenceRule)
+            hasher.combine(e.excludedDates)
         }
         return hasher.finalize()
     }

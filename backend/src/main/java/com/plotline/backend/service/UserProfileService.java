@@ -5,6 +5,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -34,6 +35,7 @@ import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
+import software.amazon.awssdk.services.s3.model.S3Exception;
 import software.amazon.awssdk.services.s3.model.ObjectCannedACL;
 
 @Service
@@ -87,7 +89,7 @@ public class UserProfileService {
     new Trophy("receipt-photo", "Paper Photographer", "Upload Pictures of Receipts!", 
     0, 0, new int[]{10, 20, 50, 100}, ZonedDateTime.now(ZoneOffset.UTC).format(formatter)),
 
-    new Trophy("subcription-spender", "Subscription Maxxer", "Has a lot of subscriptions!", 
+    new Trophy("subscription-spender", "Subscription Maxxer", "Has a lot of subscriptions!", 
     0, 0, new int[]{5, 7, 10, 12}, ZonedDateTime.now(ZoneOffset.UTC).format(formatter)),
 
     new Trophy("healthy-eater", "Healthy Eater", "Shifted spend toward groceries and away from eating out!", 
@@ -102,13 +104,6 @@ public class UserProfileService {
 
     new Trophy("meal-prepper", "Meal Prepper", "Created Recipes based on the Meal!", 
     0, 0, new int[]{3, 10, 20, 50}, ZonedDateTime.now(ZoneOffset.UTC).format(formatter)),
-
-  //sleep
-    new Trophy("sleep-tracker", "Someone's Sleepy", "Logged sleep data!",
-    0, 0, new int[]{3, 10, 30, 100}, ZonedDateTime.now(ZoneOffset.UTC).format(formatter)),
-
-    new Trophy("sleep-goal", "Well Rested", "Slept for over 8 hours!",
-    0, 0, new int[]{5, 15, 25, 100}, ZonedDateTime.now(ZoneOffset.UTC).format(formatter)),
 
   //nutrition
     new Trophy("nutrition-logger", "Calorie Counter", "Log food to your nutrition diary!",
@@ -239,7 +234,27 @@ public class UserProfileService {
         // first profile picture trophy awarded
         incrementTrophy(username, "first-profile-picture", 1);
 
-        return "https://" + bucketName + ".s3.amazonaws.com/" + fileName;
+        return profilePictureUrl(username);
+  }
+
+  /**
+   * The picture's address, ending in its version ("?v=<time it was saved>"). The file is always
+   * saved under the same name, so without the version the app kept showing the old picture from its
+   * image cache after a new one was saved.
+   */
+  public String profilePictureUrl(String username) {
+        String normUser = normalize(username);
+        String key = "users/" + normUser + "/profile_pictures/" + normUser + ".jpg";
+        String url = "https://" + bucketName + ".s3.amazonaws.com/" + key;
+        try {
+            Instant saved = s3Client.headObject(b -> b.bucket(bucketName).key(key)).lastModified();
+            return saved == null ? url : url + "?v=" + saved.getEpochSecond();
+        } catch (NoSuchKeyException e) {
+            return url; // no picture yet: the app shows the placeholder
+        } catch (S3Exception e) {
+            if (e.statusCode() != 404) log.warn("Profile picture lookup failed ({})", e.toString());
+            return url;
+        }
   }
 
   // TROPHY FUNCTIONS
@@ -259,8 +274,21 @@ public class UserProfileService {
       List<Trophy> trophies = objectMapper.readValue(content, new TypeReference<List<Trophy>>() {});
       log.debug("Trophies: {}", trophies);
 
+      // this trophy was created as "subcription-spender" but awarded as "subscription-spender", so it never counted
+      boolean changed = false;
+      for (Trophy trophy : trophies) {
+        if ("subcription-spender".equals(trophy.getId())) {
+          trophy.setId("subscription-spender");
+          changed = true;
+        }
+      }
+      // sleep tracking was an old feature: its trophies can't be earned any more
+      changed |= trophies.removeIf(trophy -> trophy.getId().startsWith("sleep-"));
+      if (changed) saveTrophies(username, trophies);
+
       // if new trophies were added since this user created their default trophies, add here
-      if (trophies.size() < DEFAULT_TROPHIES.size()) {
+      if (!trophies.stream().map(Trophy::getId).collect(Collectors.toSet())
+              .containsAll(DEFAULT_TROPHIES.stream().map(Trophy::getId).toList())) {
         Set<String> userTrophyIds = trophies.stream()
           .map(Trophy::getId)
           .collect(Collectors.toSet());
@@ -343,38 +371,30 @@ public class UserProfileService {
 
             if (newLevel > previousLevel) {
               trophy.setEarnedDate(ZonedDateTime.now(ZoneOffset.UTC).format(formatter));
-
-              try {
-                  String content = String.format("Earned the %s level of '%s' trophy!", levelName, trophy.getName());
-                  chatService.postMessage(username, new com.plotline.backend.dto.ChatMessage(null, username, null, content));
-              } catch (JsonProcessingException e) {
-                  // log and continue
-                  log.error("incrementTrophy failed", e);
-              }
+              announce(username, String.format("Earned the %s level of '%s' trophy!", levelName, trophy.getName()));
             }
 
             break;
         }
+    }
+    checkAllAround(username, trophies);
+    saveTrophies(username, trophies);
+    return trophies;
+  }
 
-        // check for special trophy
-        if (trophy.getId().equals("all-around") && trophy.getLevel() == 0) {
-          if (checkAllAroundAchiever(trophies)) {
+  /**
+   * All-Around Achiever: a trophy from every category. Checked after any trophy changes (it used to be
+   * checked only when the loop above happened to pass it, so it was almost never awarded).
+   */
+  private void checkAllAround(String username, List<Trophy> trophies) {
+    for (Trophy trophy : trophies) {
+        if (trophy.getId().equals("all-around") && trophy.getLevel() == 0 && checkAllAroundAchiever(trophies)) {
             trophy.setLevel(4);
             trophy.setProgress(1);
             trophy.setEarnedDate(ZonedDateTime.now(ZoneOffset.UTC).format(formatter));
-
-            try {
-              String content = String.format("Earned the 'All Around Achiever' trophy!", trophy.getName());
-              chatService.postMessage(username, new com.plotline.backend.dto.ChatMessage(null, username, null, content));
-            } catch (JsonProcessingException e) {
-              // log and continue
-              log.error("incrementTrophy failed", e);
-            }
-          }
+            announce(username, "Earned the 'All-Around Achiever' trophy!");
         }
     }
-    saveTrophies(username, trophies);
-    return trophies;
   }
 
   public List<Trophy> createDefaultTrophies(String username) throws IOException {
@@ -391,12 +411,12 @@ public class UserProfileService {
         return "calendar";
     } else if (trophyId.startsWith("weekly-budget") || trophyId.startsWith("monthly-budget") ||
                trophyId.startsWith("investing") || trophyId.startsWith("watchlist") ||
-               trophyId.startsWith("subcription")) {
+               trophyId.startsWith("subscription") || trophyId.startsWith("budget-pacer") ||
+               trophyId.startsWith("monthly-spending") || trophyId.startsWith("healthy-eater") ||
+               trophyId.startsWith("receipt") || trophyId.startsWith("llm-investor")) {
         return "budget";
     } else if (trophyId.startsWith("grocery") || trophyId.startsWith("meal-prepper")) {
         return "groceries";
-    } else if (trophyId.startsWith("sleep")) {
-        return "sleep";
     } else if (trophyId.startsWith("nutrition")) {
         return "nutrition";
     }
@@ -416,15 +436,20 @@ public class UserProfileService {
         }
     }
     Set<String> requiredCategories = Set.of(
-        "goals", "calendar", "budget", "groceries", "sleep", "nutrition"
+        "goals", "calendar", "budget", "groceries", "nutrition"
     );
     return earnedCategories.containsAll(requiredCategories);
   }
 
+  /**
+   * Sets a trophy's progress to a count (e.g. how many subscriptions you have). A level reached for the
+   * first time is announced like any other; going down and back up isn't announced again.
+   */
   public void setTrophyProgress(String username, String trophyId, int newProgress) throws IOException {
     List<Trophy> trophies = getTrophies(username);
     for (Trophy trophy : trophies) {
         if (trophy.getId().equals(trophyId)) {
+            int previousLevel = trophy.getLevel();
             trophy.setProgress(newProgress);
             int newLevel = 0;
             for (int i = 0; i < trophy.getThresholds().length; i++) {
@@ -432,15 +457,29 @@ public class UserProfileService {
                     newLevel = i + 1;
                 }
             }
-            trophy.setLevel(newLevel);
-            if (newLevel > 0 && trophy.getEarnedDate() == null) {
+            if (newLevel > previousLevel) {
                 trophy.setEarnedDate(ZonedDateTime.now(ZoneOffset.UTC).format(formatter));
+                announce(username, String.format("Earned the %s level of '%s' trophy!", LEVEL_NAMES[newLevel], trophy.getName()));
             }
+            // keep the best level reached: removing a subscription doesn't take a trophy away
+            trophy.setLevel(Math.max(previousLevel, newLevel));
             break;
         }
     }
+    checkAllAround(username, trophies);
     saveTrophies(username, trophies);
 }
+
+  private static final String[] LEVEL_NAMES = {"", "Bronze", "Silver", "Gold", "Diamond"};
+
+  /** "Earned the Gold level of …" in the person's chat */
+  private void announce(String username, String content) {
+    try {
+        chatService.postMessage(username, new com.plotline.backend.dto.ChatMessage(null, username, null, content));
+    } catch (JsonProcessingException e) {
+        log.error("Trophy announcement failed", e); // the trophy itself is still saved
+    }
+  }
 
   
 }

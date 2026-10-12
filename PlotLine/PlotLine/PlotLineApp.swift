@@ -95,6 +95,7 @@ struct PlotLineApp: App {
             calendarVM.fetchEvents(quiet: true) // background refresh: errors show when they open the calendar
             calendarVM.syncAppleCalendarIfConnected()
             Task { await friendsVM.loadFriends(for: username) }
+            TrophyAlerts.shared.appBecameActive()
         }
     }
 }

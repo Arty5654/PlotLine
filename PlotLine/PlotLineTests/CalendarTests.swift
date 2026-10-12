@@ -88,3 +88,52 @@ struct AppleCalendarTests {
         #expect(AppleCalendar.isOnByDefault(calendar, googleLinked: true)) // not a Google account
     }
 }
+
+/// Google Calendar import: shared calendars, untitled and declined events, locations.
+struct GoogleCalendarImportTests {
+    private func item(_ extra: [String: Any]) -> [String: Any] {
+        ["id": "evt1", "start": ["dateTime": "2026-10-12T15:00:00Z"], "end": ["dateTime": "2026-10-12T16:00:00Z"]]
+            .merging(extra) { $1 }
+    }
+
+    @Test("Calendars ticked in Google Calendar are read, including ones a friend shared; hidden or unticked ones aren't")
+    func shownCalendars() {
+        let ids = GoogleCalendarAPI.shownCalendarIds(in: [
+            ["id": "me@gmail.com", "primary": true, "selected": true],
+            ["id": "friend@gmail.com", "selected": true],                       // shared by a friend
+            ["id": "team@group.calendar.google.com", "selected": false],
+            ["id": "old@group.calendar.google.com", "selected": true, "hidden": true],
+        ])
+        #expect(ids == ["primary", "friend@gmail.com"])
+    }
+
+    @Test("Location comes through; an untitled (free/busy) event is kept as Busy; a declined invite is skipped")
+    func parse() {
+        let party = GoogleCalendarAPI.parseEvent(item(["summary": "Party", "location": " Joe's Pizza, 12 Main St "]))
+        #expect(party?.title == "Party")
+        #expect(party?.location == "Joe's Pizza, 12 Main St")
+
+        let busy = GoogleCalendarAPI.parseEvent(item([:]))
+        #expect(busy?.title == "Busy")
+        #expect(busy?.location == nil)
+
+        let declined = GoogleCalendarAPI.parseEvent(item(["summary": "Meeting",
+            "attendees": [["email": "me@gmail.com", "self": true, "responseStatus": "declined"]]]))
+        #expect(declined == nil)
+    }
+
+    @Test("Events keep their location through the server's JSON; older events without one still load")
+    func eventLocationJSON() throws {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let withPlace = try decoder.decode(Event.self, from: Data("""
+            {"id":"1","title":"Lunch","startDate":"2026-10-12T15:00:00Z","endDate":"2026-10-12T16:00:00Z","location":"Cafe Rio"}
+            """.utf8))
+        #expect(withPlace.location == "Cafe Rio")
+        let old = try decoder.decode(Event.self, from: Data("""
+            {"id":"2","title":"Gym","startDate":"2026-10-12T15:00:00Z","endDate":"2026-10-12T16:00:00Z"}
+            """.utf8))
+        #expect(old.location == nil)
+        #expect(EventLocationLink.mapsURL(for: "Cafe Rio, 5 Elm St")?.absoluteString == "https://maps.apple.com/?q=Cafe%20Rio,%205%20Elm%20St")
+    }
+}

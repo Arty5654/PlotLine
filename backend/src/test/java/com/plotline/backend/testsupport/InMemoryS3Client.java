@@ -162,6 +162,7 @@ public class InMemoryS3Client implements S3Client {
         if (data == null) {
             throw noSuchKey(request.key());
         }
-        return HeadObjectResponse.builder().contentLength((long) data.length).build();
+        return HeadObjectResponse.builder().contentLength((long) data.length)
+                .lastModified(lastModified.get(request.key())).build();
     }
 }

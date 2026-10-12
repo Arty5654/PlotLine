@@ -8,7 +8,7 @@ struct GoogleCalendarImportView: View {
 
 
     @State private var state: ImportState = .idle
-    @State private var fetchedEvents: [GoogleCalendarEvent] = []
+    @State private var fetchedEvents: [Event] = []
     @State private var importedCount: Int = 0
     @State private var errorMessage: String? = nil
     @State private var rangeOption: RangeOption = .upcoming
@@ -134,7 +134,7 @@ struct GoogleCalendarImportView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(event.title)
                             .font(.subheadline.bold())
-                        Text(formatDate(event.start))
+                        Text(formatDate(event.startDate) + (event.repeatRule.map { " · " + $0.summary } ?? ""))
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
@@ -257,7 +257,7 @@ struct GoogleCalendarImportView: View {
                     token = try await GoogleCalendarAPI.signInWithCalendarScope()
                 }
                 let range = rangeOption.dateRange
-                let events = try await GoogleCalendarAPI.fetchEvents(accessToken: token, from: range.from, to: range.to)
+                let events = try await GoogleCalendarAPI.plotLineEvents(accessToken: token, from: range.from, to: range.to)
                 await MainActor.run {
                     fetchedEvents = events
                     state = events.isEmpty ? .done : .preview
@@ -276,11 +276,7 @@ struct GoogleCalendarImportView: View {
         state = .importing
         Task {
             do {
-                let gcalEvents = fetchedEvents.map { e in
-                    Event(id: "gcal_\(e.id)", title: e.title, description: e.description,
-                          startDate: e.start, endDate: e.end,
-                          eventType: "user", recurrence: "none", invitedFriends: [])
-                }
+                let gcalEvents = fetchedEvents
                 // One request: backend replaces all gcal_ events atomically
                 _ = try await CalendarAPI.batchSyncGcal(gcalEvents, username: calendarVM.username)
                 await calendarVM.reloadEvents()

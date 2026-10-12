@@ -100,12 +100,12 @@ struct CalendarView: View {
                                     }
                                     Spacer()
                                     Button("Join") {
-                                        viewModel.respondToEventInvite(eventId: event.id, accept: true)
+                                        viewModel.respondToEventInvite(eventId: event.seriesKey, accept: true)
                                     }
                                     .buttonStyle(.borderedProminent)
                                     .tint(PLColor.success)
                                     Button("Decline") {
-                                        viewModel.respondToEventInvite(eventId: event.id, accept: false)
+                                        viewModel.respondToEventInvite(eventId: event.seriesKey, accept: false)
                                     }
                                     .buttonStyle(.bordered)
                                 }
@@ -137,12 +137,12 @@ struct CalendarView: View {
                                     }
                                     Spacer()
                                     Button("Approve") {
-                                        viewModel.approveCalendarEvent(eventId: event.id)
+                                        viewModel.approveCalendarEvent(eventId: event.seriesKey)
                                     }
                                     .buttonStyle(.borderedProminent)
                                     .tint(PLColor.success)
                                     Button("Decline") {
-                                        viewModel.rejectCalendarEvent(eventId: event.id)
+                                        viewModel.rejectCalendarEvent(eventId: event.seriesKey)
                                     }
                                     .buttonStyle(.bordered)
                                 }
@@ -189,18 +189,21 @@ struct CalendarView: View {
             }
             .sheet(isPresented: $showingAddEventSheet) {
                 let publishable = viewModel.accessData.receivedAccess.filter { $0.level == "add" }.map { $0.friendUsername }
-                AddEventSheet(defaultDate: viewModel.selectedDay ?? viewModel.currentDate, existingEvents: viewModel.events, publishableFriendCalendars: publishable) { eventId, title, description, start, end, recurrence, friends, eventType, friendsCanSee, publishTo in
+                AddEventSheet(defaultDate: viewModel.selectedDay ?? viewModel.currentDate, existingEvents: viewModel.events, publishableFriendCalendars: publishable) { draft in
                     viewModel.createEvent(
-                        id: eventId,
-                        title: title,
-                        description: description,
-                        startDate: start,
-                        endDate: end,
-                        eventType: eventType,
-                        recurrence: recurrence,
-                        invitedFriends: friends,
-                        friendsCanSee: friendsCanSee,
-                        publishToCalendars: publishTo
+                        id: draft.id,
+                        title: draft.title,
+                        description: draft.description,
+                        startDate: draft.start,
+                        endDate: draft.end,
+                        eventType: draft.eventType,
+                        recurrence: draft.recurrence,
+                        invitedFriends: draft.invitedFriends,
+                        friendsCanSee: draft.friendsCanSee,
+                        publishToCalendars: draft.publishTo,
+                        location: draft.location.isEmpty ? nil : draft.location,
+                        recurrenceEnd: draft.recurrenceEnd,
+                    reminders: draft.reminders
                     )
                 }.environmentObject(friendVM)
             }
@@ -363,6 +366,7 @@ struct WeekContent: View {
     @Environment(\.colorScheme) var colorScheme
 
     @State private var selectedEvent: Event? = nil
+    @State private var repeatChoice: RepeatChoice? = nil
     @State private var eventToMove: Event? = nil
     @State private var showMoveDatePicker = false
     @State private var moveTargetDate = Date()
@@ -425,12 +429,14 @@ struct WeekContent: View {
                                     } label: {
                                         Label("Edit", systemImage: "pencil")
                                     }
+                                    if event.importedFrom == nil {
                                     Button {
                                         eventToMove = event
                                         moveTargetDate = event.startDate
                                         showMoveDatePicker = true
                                     } label: {
                                         Label("Move to Date", systemImage: "calendar.badge.plus")
+                                    }
                                     }
                                     Button {
                                         eventToDuplicate = event
@@ -439,10 +445,12 @@ struct WeekContent: View {
                                     } label: {
                                         Label("Duplicate", systemImage: "doc.on.doc")
                                     }
+                                    if event.importedFrom == nil {
                                     Button(role: .destructive) {
-                                        viewModel.deleteEvent(event.id)
+                                        viewModel.requestDelete(event) { repeatChoice = $0 }
                                     } label: {
                                         Label("Delete", systemImage: "trash")
+                                    }
                                     }
                                 } label: {
                                     Image(systemName: "ellipsis")
@@ -458,18 +466,11 @@ struct WeekContent: View {
                 .plCard()
             }
         }
+        .repeatScopeDialog($repeatChoice)
         .sheet(item: $selectedEvent) { eventToEdit in
-            AddEventSheet(existingEvent: eventToEdit, existingEvents: viewModel.events) { _, newTitle, newDesc, newStart, newEnd, newRecurrence, newFriends, newEventType, newFriendsCanSee, _ in
-                var updatedEvent = eventToEdit
-                updatedEvent.title = newTitle
-                updatedEvent.description = newDesc
-                updatedEvent.startDate = newStart
-                updatedEvent.endDate = newEnd
-                updatedEvent.recurrence = newRecurrence
-                updatedEvent.invitedFriends = newFriends
-                updatedEvent.eventType = newEventType
-                updatedEvent.friendsCanSee = newFriendsCanSee
-                viewModel.updateEvent(event: updatedEvent)
+            AddEventSheet(existingEvent: eventToEdit, existingEvents: viewModel.events) { draft in
+                viewModel.saveEdit(original: eventToEdit, edited: draft.applied(to: eventToEdit), scope: draft.scope,
+                                   reminders: draft.reminders)
             }.environmentObject(friendVM)
         }
         .sheet(isPresented: $showMoveDatePicker) {
@@ -523,37 +524,11 @@ struct WeekContent: View {
     }
 
     private func duplicateEvent(_ event: Event, to newDate: Date) {
-        let cal = Calendar.current
-        let duration = event.endDate.timeIntervalSince(event.startDate)
-        let timeComps = cal.dateComponents([.hour, .minute], from: event.startDate)
-        var dateComps = cal.dateComponents([.year, .month, .day], from: newDate)
-        dateComps.hour = timeComps.hour
-        dateComps.minute = timeComps.minute
-        guard let newStart = cal.date(from: dateComps) else { return }
-        viewModel.createEvent(
-            title: event.title,
-            description: event.description,
-            startDate: newStart,
-            endDate: newStart.addingTimeInterval(duration),
-            eventType: event.eventType,
-            recurrence: event.recurrence,
-            invitedFriends: event.invitedFriends,
-            friendsCanSee: event.friendsCanSee
-        )
+        viewModel.duplicate(event, to: newDate)
     }
 
     private func moveEvent(_ event: Event, to newDate: Date) {
-        let cal = Calendar.current
-        let duration = event.endDate.timeIntervalSince(event.startDate)
-        let timeComps = cal.dateComponents([.hour, .minute], from: event.startDate)
-        var dateComps = cal.dateComponents([.year, .month, .day], from: newDate)
-        dateComps.hour = timeComps.hour
-        dateComps.minute = timeComps.minute
-        guard let newStart = cal.date(from: dateComps) else { return }
-        var updated = event
-        updated.startDate = newStart
-        updated.endDate = newStart.addingTimeInterval(duration)
-        viewModel.updateEvent(event: updated)
+        viewModel.move(event, to: newDate) // a repeating event: just this date
     }
 
     // Helpers

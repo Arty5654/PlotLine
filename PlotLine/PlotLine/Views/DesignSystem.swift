@@ -54,13 +54,24 @@ struct PrimaryButton: ButtonStyle {
     var color: Color = PLColor.accent
 
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.headline)
-            .foregroundColor(.white)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .background(color.opacity(configuration.isPressed ? 0.85 : 1))
-            .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
+        Filled(configuration: configuration, color: color)
+    }
+
+    // a disabled button looked exactly like an enabled one; it's faded now
+    private struct Filled: View {
+        let configuration: Configuration
+        let color: Color
+        @Environment(\.isEnabled) private var isEnabled
+
+        var body: some View {
+            configuration.label
+                .font(.headline)
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .background(color.opacity(!isEnabled ? 0.4 : configuration.isPressed ? 0.85 : 1))
+                .clipShape(RoundedRectangle(cornerRadius: PLRadius.md))
+        }
     }
 }
 
