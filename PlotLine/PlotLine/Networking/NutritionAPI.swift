@@ -67,8 +67,10 @@ class NutritionAPI {
 
     // MARK: - Analyze food photo via backend (GPT-4o Vision)
 
-    func analyzeFoodPhoto(_ image: UIImage) async throws -> [FoodItem] {
-        guard let imageData = image.jpegData(compressionQuality: 0.8) else {
+    /// The foods in a meal photo. `note` is optional detail from the person ("cooked in olive oil").
+    func analyzeFoodPhoto(_ image: UIImage, note: String? = nil) async throws -> [PhotoFood] {
+        // ~1600 px is plenty for the analysis and uploads much faster than a full-size photo
+        guard let imageData = Self.resized(image, maxSide: 1600).jpegData(compressionQuality: 0.75) else {
             throw URLError(.cannotDecodeContentData)
         }
 
@@ -82,14 +84,14 @@ class NutritionAPI {
         BackendConfig.addApiKey(to: &request)
         request.httpMethod = "POST"
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-        request.timeoutInterval = 30
+        request.timeoutInterval = 90 // the AI looks closely, then each food is matched to USDA data
 
         var body = Data()
-        // Add username field for trophy tracking
-        body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"username\"\r\n\r\n".data(using: .utf8)!)
-        body.append("\(username)\r\n".data(using: .utf8)!)
-        // Add image field
+        func field(_ name: String, _ value: String) {
+            body.append("--\(boundary)\r\nContent-Disposition: form-data; name=\"\(name)\"\r\n\r\n\(value)\r\n".data(using: .utf8)!)
+        }
+        field("username", username) // trophy tracking
+        if let note = note?.trimmingCharacters(in: .whitespacesAndNewlines), !note.isEmpty { field("note", note) }
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
         body.append("Content-Disposition: form-data; name=\"image\"; filename=\"food.jpg\"\r\n".data(using: .utf8)!)
         body.append("Content-Type: image/jpeg\r\n\r\n".data(using: .utf8)!)
@@ -102,8 +104,17 @@ class NutritionAPI {
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
             throw URLError(.badServerResponse)
         }
+        return try JSONDecoder().decode([PhotoFood].self, from: data)
+    }
 
-        return try JSONDecoder().decode([FoodItem].self, from: data)
+    static func resized(_ image: UIImage, maxSide: CGFloat) -> UIImage {
+        let longest = max(image.size.width, image.size.height)
+        guard longest > maxSide else { return image }
+        let scale = maxSide / longest
+        let size = CGSize(width: (image.size.width * scale).rounded(), height: (image.size.height * scale).rounded())
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        return UIGraphicsImageRenderer(size: size, format: format).image { _ in image.draw(in: CGRect(origin: .zero, size: size)) }
     }
 
     // MARK: - Barcode lookup via Open Food Facts (free, no API key needed)
@@ -156,85 +167,23 @@ class NutritionAPI {
     // Covers whole foods, raw/cooked meats, produce, and branded products. The server makes the
     // USDA request (its key never ships in the app) and passes USDA's answer through.
 
-    func searchFoods(_ query: String) async throws -> [FoodItem] {
+    /// Food search: detailed generic USDA foods first, then store brands (the server ranks them).
+    func searchFoods(_ query: String) async throws -> [SearchFood] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        var components = URLComponents(string: "\(BackendConfig.baseURLString)/api/nutrition/food-search")
+        var components = URLComponents(string: "\(BackendConfig.baseURLString)/api/nutrition/foods")
         components?.queryItems = [URLQueryItem(name: "q", value: trimmed)]
-        guard !trimmed.isEmpty, let url = components?.url else {
-            return []
-        }
+        guard !trimmed.isEmpty, let url = components?.url else { return [] }
 
         var request = URLRequest(url: url)
         BackendConfig.addApiKey(to: &request)
-        request.timeoutInterval = 15
+        request.timeoutInterval = 20
 
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
             throw URLError(.badServerResponse)
         }
-        let result = try JSONDecoder().decode(USDASearchResponse.self, from: data)
-
-        let lowerQuery = trimmed.lowercased()
-
-        return result.foods
-            .compactMap { food -> FoodItem? in
-                let name = food.description.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !name.isEmpty else { return nil }
-
-                let nutrients = food.foodNutrients
-                // SR Legacy / Foundation nutrients are per 100g.
-                // Branded foods in the search endpoint also return per-100g values.
-                let cal  = nutrients.first(where: { $0.nutrientName?.contains("Energy") == true && $0.unitName == "KCAL" })?.value ?? 0
-                let pro  = nutrients.first(where: { $0.nutrientName?.contains("Protein") == true })?.value ?? 0
-                let carb = nutrients.first(where: { $0.nutrientName?.contains("Carbohydrate") == true })?.value ?? 0
-                let fat  = nutrients.first(where: { $0.nutrientName?.contains("Total lipid") == true })?.value ?? 0
-
-                guard cal > 0 || pro > 0 else { return nil }
-
-                return FoodItem(
-                    name: name,
-                    servingSize: "100g",
-                    servings: 1,
-                    calories: round(cal  * 10) / 10,
-                    protein:  round(pro  * 10) / 10,
-                    carbs:    round(carb * 10) / 10,
-                    fat:      round(fat  * 10) / 10,
-                    source: .search
-                )
-            }
-            .reduce(into: [FoodItem]()) { acc, item in
-                if !acc.contains(where: { $0.name.lowercased() == item.name.lowercased() }) {
-                    acc.append(item)
-                }
-            }
-            .sorted { a, b in
-                let aLower = a.name.lowercased()
-                let bLower = b.name.lowercased()
-                let aContains = aLower.contains(lowerQuery)
-                let bContains = bLower.contains(lowerQuery)
-                if aContains != bContains { return aContains }
-                return aLower < bLower
-            }
-    }
-
-    // MARK: - USDA FDC Decodable types (search endpoint)
-
-    private struct USDASearchResponse: Decodable {
-        let foods: [USDAFood]
-    }
-
-    private struct USDAFood: Decodable {
-        let description: String
-        let dataType: String?
-        let foodNutrients: [USDANutrient]
-        let servingSize: Double?
-        let servingSizeUnit: String?
-    }
-
-    private struct USDANutrient: Decodable {
-        let nutrientName: String?
-        let unitName: String?
-        let value: Double?
+        struct Response: Decodable { let foods: [SearchFood] }
+        return try JSONDecoder().decode(Response.self, from: data).foods
     }
 
     // MARK: - Favorites & Saved Meals

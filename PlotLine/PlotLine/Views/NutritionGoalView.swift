@@ -6,6 +6,8 @@
 import SwiftUI
 
 struct NutritionGoalView: View {
+    /// the term whose explanation is showing (the ⓘ next to BMR and TDEE)
+    @State private var explainedTerm: TermInfo?
     @Binding var goals: NutritionGoals?
     let onSave: (NutritionGoals) -> Void
     @Environment(\.dismiss) var dismiss
@@ -45,6 +47,12 @@ struct NutritionGoalView: View {
                     // No goal or retaking quiz — show quiz
                     quizView
                 }
+            }
+            .alert(explainedTerm?.title ?? "", isPresented: Binding(get: { explainedTerm != nil }, set: { if !$0 { explainedTerm = nil } }),
+                   presenting: explainedTerm) { _ in
+                Button("Got It", role: .cancel) { }
+            } message: { term in
+                Text(term.text)
             }
             .navigationBarTitle(goals != nil && goals!.calorieGoal > 0 && !showRetakeQuiz ? "Your Goal" : "Calorie Quiz", displayMode: .inline)
             .navigationBarItems(
@@ -470,9 +478,31 @@ struct NutritionGoalView: View {
         HStack {
             Text(label)
                 .foregroundColor(.secondary)
+            if let info = Self.termInfo[label] {
+                Button { explainedTerm = TermInfo(term: label, title: info.title, text: info.text) } label: {
+                    Image(systemName: "info.circle")
+                        .foregroundColor(PLColor.tint)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("What is \(label)?")
+            }
             Spacer()
             Text(value)
                 .bold()
         }
     }
+
+    struct TermInfo: Identifiable {
+        let term: String
+        let title: String
+        let text: String
+        var id: String { term }
+    }
+
+    static let termInfo: [String: (title: String, text: String)] = [
+        "BMR": ("BMR: Basal Metabolic Rate",
+                "The calories your body burns at complete rest, just to keep you alive: breathing, circulation, keeping warm. It's worked out from your age, sex, height and weight, and doesn't include any movement."),
+        "TDEE": ("TDEE: Total Daily Energy Expenditure",
+                 "The calories you burn in a typical day: your BMR plus everything you do, from walking around to workouts, based on your activity level. Eating about your TDEE keeps your weight steady; eating less loses weight, more gains it. Your calorie goal starts from this number."),
+    ]
 }

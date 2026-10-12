@@ -27,6 +27,11 @@ struct FoodItem: Codable, Identifiable {
     var fat: Double          // grams
     var source: FoodSource   // how the food was added
     var mealType: MealType?  // which meal section (nil = snack for backward compat)
+    /// foods added together (a saved meal, a meal photo) share a group, shown as one row in the log
+    var groupId: String? = nil
+    var groupName: String? = nil
+    /// the store brand of a branded search result; brands go on grocery lists as they are
+    var brand: String? = nil
 
     enum FoodSource: String, Codable {
         case manual
@@ -58,6 +63,80 @@ struct FoodItem: Codable, Identifiable {
             case .snack: return "leaf"
             }
         }
+    }
+}
+
+// Tolerant decoding: a food missing a field (an older save, an AI answer) still loads with
+// sensible defaults instead of failing the whole list. In an extension so the memberwise init stays.
+extension FoodItem {
+    enum CodingKeys: String, CodingKey {
+        case id, name, servingSize, servings, calories, protein, carbs, fat, source, mealType, groupId, groupName, brand
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        func number(_ key: CodingKeys) -> Double? {
+            if let d = try? c.decode(Double.self, forKey: key) { return d }
+            if let s = try? c.decode(String.self, forKey: key) { return Double(s) }
+            return nil
+        }
+        self.init(
+            id: (try? c.decode(String.self, forKey: .id)) ?? UUID().uuidString,
+            name: try c.decode(String.self, forKey: .name),
+            servingSize: (try? c.decode(String.self, forKey: .servingSize)) ?? "1 serving",
+            servings: number(.servings) ?? 1,
+            calories: number(.calories) ?? 0,
+            protein: number(.protein) ?? 0,
+            carbs: number(.carbs) ?? 0,
+            fat: number(.fat) ?? 0,
+            source: (try? c.decode(FoodSource.self, forKey: .source)) ?? .manual,
+            mealType: try? c.decode(MealType.self, forKey: .mealType),
+            groupId: try? c.decode(String.self, forKey: .groupId),
+            groupName: try? c.decode(String.self, forKey: .groupName),
+            brand: try? c.decode(String.self, forKey: .brand)
+        )
+    }
+}
+
+/// One food found in a meal photo, before it's logged. Changing `grams` rescales the numbers.
+struct PhotoFood: Decodable, Identifiable {
+    let id: String
+    var name: String
+    let estimatedGrams: Double   // what the analysis found; the numbers below are for this weight
+    let servingSize: String
+    let calories: Double
+    let protein: Double
+    let carbs: Double
+    let fat: Double
+    let basis: String?           // "usda" (USDA data for the estimated weight) or "estimate" (AI)
+    let usdaName: String?
+    var grams: Double            // what the person says they ate
+
+    enum CodingKeys: String, CodingKey { case id, name, grams, servingSize, calories, protein, carbs, fat, basis, usdaName }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = (try? c.decode(String.self, forKey: .id)) ?? UUID().uuidString
+        name = try c.decode(String.self, forKey: .name)
+        estimatedGrams = (try? c.decode(Double.self, forKey: .grams)) ?? 0
+        grams = estimatedGrams
+        servingSize = (try? c.decode(String.self, forKey: .servingSize)) ?? "1 serving"
+        calories = (try? c.decode(Double.self, forKey: .calories)) ?? 0
+        protein = (try? c.decode(Double.self, forKey: .protein)) ?? 0
+        carbs = (try? c.decode(Double.self, forKey: .carbs)) ?? 0
+        fat = (try? c.decode(Double.self, forKey: .fat)) ?? 0
+        basis = try? c.decode(String.self, forKey: .basis)
+        usdaName = try? c.decode(String.self, forKey: .usdaName)
+    }
+
+    private var scale: Double { estimatedGrams > 0 ? grams / estimatedGrams : 1 }
+
+    /// the food as it goes into the log, for the weight now entered
+    func foodItem(mealType: FoodItem.MealType) -> FoodItem {
+        let portion = estimatedGrams > 0 && grams != estimatedGrams ? "\(Int(grams.rounded())) g" : servingSize
+        return FoodItem(name: name, servingSize: portion, servings: 1,
+                        calories: (calories * scale).rounded(), protein: protein * scale,
+                        carbs: carbs * scale, fat: fat * scale, source: .photo, mealType: mealType)
     }
 }
 

@@ -65,7 +65,8 @@ class FreshAccountTest extends FeatureTestBase {
             "/api/plaid/link_token",
             "/api/plaid/accounts",
             "/api/news",
-            "/api/nutrition/food-search");
+            "/api/nutrition/food-search",
+            "/api/nutrition/foods");
 
     // 404 means "nothing saved yet" here, and the app treats it that way (no error banner):
     // budgets show the default categories or the quiz, portfolio and food log show empty

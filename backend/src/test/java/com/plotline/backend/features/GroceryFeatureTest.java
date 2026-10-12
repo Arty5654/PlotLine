@@ -130,6 +130,38 @@ class GroceryFeatureTest extends FeatureTestBase {
         assertThat(restored.get("spentAmount").isNull()).isTrue(); // the app already asked about it
     }
 
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private org.springframework.jdbc.core.JdbcTemplate jdbc;
+
+    private double price(User me, String item, int quantity, String location) throws Exception {
+        return ok(postJson(me, "/api/groceryLists/estimate-grocery-cost-live", Map.of("location", location,
+                "items", java.util.List.of(Map.of("name", item, "quantity", quantity))))).asDouble();
+    }
+
+    @Test
+    @DisplayName("Grocery prices are shared and consistent: one AI estimate per item and state, refreshed after two weeks")
+    void pricesAreCached() throws Exception {
+        String item = "Oat Milk " + java.util.UUID.randomUUID().toString().substring(0, 6); // unique per run
+        when(openAIService.estimateGroceryCost(org.mockito.ArgumentMatchers.argThat(r -> r != null && r.getItems() != null
+                && r.getItems().size() == 1 && r.getItems().get(0).getName().equals(item)
+                && r.getItems().get(0).getQuantity() == 1)))
+                .thenReturn(3.49, 4.29);
+        User me = newUser();
+        User neighbor = newUser();
+
+        assertThat(price(me, item, 2, "Columbus, Ohio")).isEqualTo(6.98);           // asks the AI once
+        assertThat(price(neighbor, item.toUpperCase(), 1, "Dayton, Ohio")).isEqualTo(3.49); // same item, same state: cached
+        org.mockito.Mockito.verify(openAIService, org.mockito.Mockito.times(1))
+                .estimateGroceryCost(org.mockito.ArgumentMatchers.argThat(r -> r != null && r.getItems() != null
+                        && r.getItems().get(0).getName().equalsIgnoreCase(item)));
+
+        // three weeks later the price is estimated again
+        jdbc.update("update grocery_prices set updated_at = now() - interval '21 days' where item = ?", item.toLowerCase());
+        assertThat(price(me, item, 1, "Columbus, Ohio")).isEqualTo(4.29);
+    }
+
+
     private static Map<String, Boolean> checked(JsonNode list) {
         Map<String, Boolean> result = new java.util.HashMap<>();
         for (JsonNode item : list.get("items")) result.put(item.get("name").asText(), item.get("checked").asBoolean());
