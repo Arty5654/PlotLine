@@ -268,6 +268,42 @@ public class OpenAIService {
     return objectMapper.readTree(response.body()).path("choices").path(0).path("message").path("content").asText();
   }
 
+  /**
+   * A small JSON answer from gpt-4o-mini (temperature 0, so the same question gets the same answer):
+   * used for cached price estimates like a state's gas price or a city's transit fare.
+   */
+  public String estimateJson(String instructions, String question) throws Exception {
+    return estimateJson(instructions, question, 300);
+  }
+
+  /** the same, with room for a longer answer (sorting a batch of merchants) */
+  public String estimateJson(String instructions, String question, int maxTokens) throws Exception {
+    String apiKey = resolveEnv(Dotenv.configure().ignoreIfMissing().load(), "OPENAI_API_KEY");
+    if (apiKey == null || apiKey.isBlank()) throw new java.io.IOException("OpenAI is not configured");
+    Map<String, Object> requestMap = Map.of(
+        "model", "gpt-4o-mini",
+        "temperature", 0,
+        "response_format", Map.of("type", "json_object"),
+        "max_tokens", maxTokens,
+        "messages", List.of(
+            Map.of("role", "system", "content", instructions),
+            Map.of("role", "user", "content", question)));
+    java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
+        .uri(java.net.URI.create("https://api.openai.com/v1/chat/completions"))
+        .timeout(java.time.Duration.ofSeconds(30))
+        .header("Content-Type", "application/json")
+        .header("Authorization", "Bearer " + apiKey)
+        .POST(java.net.http.HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(requestMap)))
+        .build();
+    java.net.http.HttpResponse<String> response = java.net.http.HttpClient.newHttpClient()
+        .send(request, java.net.http.HttpResponse.BodyHandlers.ofString());
+    if (response.statusCode() != 200) {
+      log.error("OpenAI estimate error: {} - {}", response.statusCode(), response.body());
+      throw new java.io.IOException("OpenAI answered " + response.statusCode());
+    }
+    return objectMapper.readTree(response.body()).path("choices").path(0).path("message").path("content").asText();
+  }
+
   // Response for Estimating Groccery Costs
   public String generateResponseGC(String userMessage) {
     if (openAIClient == null) {

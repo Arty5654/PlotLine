@@ -17,23 +17,7 @@ import UIKit
 // Reusable Card + Primary Button
 
 // MARK: - View
-// Common categories available across budget views
-private let commonCategories = [
-    // Defaults
-    "Rent", "Groceries", "Subscriptions", "Eating Out",
-    "Entertainment", "Utilities", "Savings", "Miscellaneous",
-    "Transportation", "Roth IRA", "Car Insurance",
-    "Health Insurance", "Brokerage",
-    // Additional common
-    "Gas", "Phone", "Internet", "Gym", "Clothing",
-    "Personal Care", "Education", "Childcare", "Pet Care",
-    "Home Maintenance", "Gifts", "Donations", "Travel",
-    "Baby Supplies", "Hobbies", "Shopping", "Coffee",
-    "Alcohol & Bars", "Home Decor", "Electronics",
-    "Medical", "Dental", "Vision", "Therapy",
-    "Parking", "Tolls", "Laundry", "Haircuts",
-    "Streaming Services", "Gaming", "Music", "Books"
-]
+private let commonCategories = CategoryOptions.common
 
 struct WeeklyMonthlyCostView: View {
     @State private var selectedTab = "Costs"
@@ -121,6 +105,12 @@ struct WeeklyMonthlyCostView: View {
     
     // Feedback
     @State private var monthlyFeedback: MonthlyFeedback?
+    @State private var feedbackCompare: FeedbackCompare = .three
+    /// a utilities bill reminder: open this day with this category ready to fill in
+    @ObservedObject private var costsRouter = CostsRouter.shared
+    @State private var pendingLogCategory: String?
+    @State private var logPrompt: String?
+    @FocusState private var focusedCategory: String?
     
     // Sync flow UI state
     @State private var showAccountPicker = false
@@ -130,7 +120,15 @@ struct WeeklyMonthlyCostView: View {
     @State private var showCategorizer = false
     @State private var showSyncDone = false
     @State private var isSyncing = false
-    @State private var lastSyncStats: (added: Int, modified: Int, uncategorized: Int) = (0, 0, 0)
+    @State private var lastSyncStats: (added: Int, modified: Int, uncategorized: Int, removed: Int) = (0, 0, 0, 0)
+    /// new ones, plus charges the bank took back (they're taken out of Monthly Costs)
+    private var syncDoneMessage: String {
+        let s = lastSyncStats
+        var lines: [String] = []
+        if s.added > 0 || s.modified > 0 { lines.append("\(s.added + s.modified) new transaction(s) synced and categorized.") }
+        if s.removed > 0 { lines.append("\(s.removed) charge(s) your bank reversed or replaced were taken out.") }
+        return lines.isEmpty ? "No new transactions found. Your bank data is already up to date." : lines.joined(separator: " ")
+    }
     @State private var showResetConfirmation = false
     @State private var isResetting = false
     
@@ -152,11 +150,18 @@ struct WeeklyMonthlyCostView: View {
         return commonCategories.filter { !current.contains($0.lowercased()) }.sorted()
     }
 
-    // Categories not yet added — shown in the "Add Category" dropdown
+    // Categories not yet added — shown in the "Add Category" dropdown (hidden budget categories can come back)
     private var availableCategories: [String] {
         let current = Set(costItems.map { $0.category.lowercased() })
-        return commonCategories.filter { !current.contains($0.lowercased()) }.sorted()
+        var seen = Set<String>()
+        let fixedNames = Set(fixedCosts.map { $0.category.lowercased() }) // counted every month already
+        return (commonCategories + Array(hiddenCategories))
+            .filter { !current.contains($0.lowercased()) && !fixedNames.contains($0.lowercased()) && seen.insert($0.lowercased()).inserted }
+            .sorted()
     }
+
+    /// budget categories removed from this page: hidden from then on (they stay in the budget)
+    @State private var hiddenCategories: Set<String> = []
     
     @EnvironmentObject var calendarVM: CalendarViewModel
     
@@ -198,7 +203,10 @@ struct WeeklyMonthlyCostView: View {
                 dismissButton: .default(Text("OK"))
             )
         }
+        .onChange(of: costsRouter.request) { _, _ in openRequestedBill() }
         .onAppear {
+            openRequestedBill()
+            loadHiddenCategories()
             loadBudgetLimits()
             loadMonthlyData()
             fetchFixedCosts()
@@ -291,6 +299,7 @@ struct WeeklyMonthlyCostView: View {
                                     ForEach(availableSyncCategories, id: \.self) { cat in
                                         Button(cat) {
                                             self.costItems.append(BudgetItem(category: cat, amount: ""))
+                                            self.unhide(cat)
                                             if let idx = pendingAssignments.indices.last {
                                                 pendingAssignments[idx].category = cat
                                             }
@@ -350,11 +359,7 @@ struct WeeklyMonthlyCostView: View {
         .alert("Sync Complete", isPresented: $showSyncDone) {
             Button("OK", role: .cancel) {}
         } message: {
-            if lastSyncStats.added == 0 && lastSyncStats.modified == 0 {
-                Text("No new transactions found. Your bank data is already up to date.")
-            } else {
-                Text("\(lastSyncStats.added) new transaction(s) synced and categorized.")
-            }
+            Text(syncDoneMessage)
         }
         .sheet(isPresented: $showRecurringPrompt) {
             RecurringPromptSheet(
@@ -471,6 +476,17 @@ struct WeeklyMonthlyCostView: View {
                     Text(costsViewMode == "Daily" ? "Costs for \(selectedDayDisplayText)" : "Monthly Costs")
                         .font(.headline)
                         .foregroundColor(PLColor.textPrimary)
+                    if let logPrompt, costsViewMode == "Daily" {
+                        Label(logPrompt, systemImage: "bolt.fill")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundColor(PLColor.tint)
+                    }
+                    if costsViewMode == "Monthly" {
+                        // the month adds itself up: spending is entered by day, or as a fixed cost below
+                        Text("This month's totals. To add spending, switch to Daily and pick the day, or add a fixed cost below.")
+                            .font(.caption)
+                            .foregroundColor(PLColor.textSecondary)
+                    }
 
                     LazyVStack(spacing: PLSpacing.sm) {
                         ForEach($costItems) { $item in
@@ -478,6 +494,8 @@ struct WeeklyMonthlyCostView: View {
                                 CostRow(
                                     item: $item,
                                     budgetLimit: budgetLimits[item.category],
+                                    readOnly: costsViewMode == "Monthly",
+                                    focus: $focusedCategory,
                                     onRemove: { removeCategory(item: item) },
                                     onChangeAmount: { newVal in
                                         item.amount = sanitizeAmount(newVal)
@@ -487,12 +505,14 @@ struct WeeklyMonthlyCostView: View {
                         }
                     }
 
-                    // Add category
+                    // Add category (spending is entered by day)
+                    if costsViewMode == "Daily" {
                     VStack(spacing: PLSpacing.xs) {
                         Menu {
                             ForEach(availableCategories, id: \.self) { cat in
                                 Button(cat) {
                                     costItems.append(BudgetItem(category: cat, amount: ""))
+                                    unhide(cat)
                                 }
                             }
                             Divider()
@@ -519,6 +539,7 @@ struct WeeklyMonthlyCostView: View {
                             Button("Cancel", role: .cancel) { newCategory = "" }
                         }
                     }
+                    }
                 }
                 .plCard()
 
@@ -527,10 +548,12 @@ struct WeeklyMonthlyCostView: View {
                     fixedCostsSection
                 }
 
-                // Save
-                Button("Save Costs", action: saveCosts)
-                    .buttonStyle(PrimaryButton())
-                    .padding(.top, -PLSpacing.sm)
+                // Save (a day's costs; the month is read-only)
+                if costsViewMode == "Daily" {
+                    Button("Save Costs", action: saveCosts)
+                        .buttonStyle(PrimaryButton())
+                        .padding(.top, -PLSpacing.sm)
+                }
 
                 // Sync
                 HStack(spacing: 12) {
@@ -611,30 +634,13 @@ struct WeeklyMonthlyCostView: View {
     // MARK: - Feedback Tab
     private var feedbackTab: some View {
         ScrollView {
-            VStack(spacing: PLSpacing.lg) {
-                if let fb = monthlyFeedback {
-                    MonthlyFeedbackCard(fb: fb, budgetHint: budgetTotal)
-                        .plCard()
-                } else {
-                    VStack(spacing: PLSpacing.md) {
-                        Image(systemName: "chart.bar.xaxis")
-                            .font(.system(size: 40))
-                            .foregroundColor(PLColor.textSecondary)
-                        Text("No Feedback Yet")
-                            .font(.headline)
-                        Text("Complete at least one prior month of tracking to see how you're doing. Up to 6 months are averaged for a more accurate baseline.")
-                            .font(.subheadline)
-                            .foregroundColor(PLColor.textSecondary)
-                            .multilineTextAlignment(.center)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 40)
-                    .plCard()
-                }
-            }
-            .padding(.horizontal, PLSpacing.lg)
-            .padding(.vertical, PLSpacing.lg)
+            SpendingFeedbackView(feedback: monthlyFeedback, compare: $feedbackCompare, budget: budgetLimits,
+                                 spent: monthlyTotals, month: selectedMonth,
+                                 fixed: Set(fixedCosts.map { $0.category.lowercased() }))
+                .padding(.horizontal, PLSpacing.lg)
+                .padding(.vertical, PLSpacing.lg)
         }
+        .onChange(of: feedbackCompare) { _, _ in fetchMonthlyFeedback(for: selectedMonth) }
     }
     
     // MARK: - Day Picker
@@ -705,7 +711,7 @@ struct WeeklyMonthlyCostView: View {
                 }
             }
 
-            Text("These amounts are automatically included every month.")
+            Text("Counted every month without entering them. Bank or card charges in these categories aren't added again.")
                 .font(.caption)
                 .foregroundColor(PLColor.textSecondary)
 
@@ -721,8 +727,13 @@ struct WeeklyMonthlyCostView: View {
             } else {
                 ForEach(fixedCosts) { fc in
                     HStack {
-                        Text(fc.category)
-                            .font(.body)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(fc.category)
+                                .font(.body)
+                            if fc.source == "quiz" {
+                                Text("From your budget quiz").font(.caption2).foregroundColor(PLColor.textSecondary)
+                            }
+                        }
                         Spacer()
                         Text("$\(fc.amount, specifier: "%.2f")")
                             .font(.body.monospacedDigit())
@@ -896,10 +907,51 @@ struct WeeklyMonthlyCostView: View {
         if !costItems.contains(where: { $0.category.caseInsensitiveCompare(trimmed) == .orderedSame }) {
             costItems.append(BudgetItem(category: trimmed, amount: ""))
         }
+        unhide(trimmed)
         newCategory = ""
+    }
+
+    // MARK: Hidden categories
+
+    private func loadHiddenCategories() {
+        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/costs/hidden/\(username)") else { return }
+        var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
+        URLSession.shared.dataTask(with: request) { data, _, _ in
+            struct Hidden: Decodable { let hidden: [String] }
+            guard let data, let decoded = try? JSONDecoder().decode(Hidden.self, from: data) else { return }
+            DispatchQueue.main.async {
+                self.hiddenCategories = Set(decoded.hidden)
+                if self.costsViewMode == "Daily" { self.loadDayCostsIntoCostItems() } else { self.loadMonthlyTotalsIntoCostItems() }
+            }
+        }.resume()
+    }
+
+    private func saveHiddenCategories() {
+        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/costs/hidden/\(username)"),
+              let body = try? JSONSerialization.data(withJSONObject: ["hidden": Array(hiddenCategories).sorted()]) else { return }
+        var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
+        request.httpMethod = "PUT"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = body
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            _ = AppBanner.reportIfFailed("save your categories", data, response, error)
+        }.resume()
+    }
+
+    private func unhide(_ category: String) {
+        guard let match = hiddenCategories.first(where: { $0.caseInsensitiveCompare(category) == .orderedSame }) else { return }
+        hiddenCategories.remove(match)
+        saveHiddenCategories()
     }
     private func removeCategory(item: BudgetItem) {
         costItems.removeAll { $0.id == item.id }
+        // a budget category would come back on its own: hide it from this page from now on
+        if budgetLimits.keys.contains(item.category) {
+            hiddenCategories.insert(item.category)
+            saveHiddenCategories()
+        }
     }
 
     // Keep only digits and a single decimal point
@@ -958,6 +1010,7 @@ struct WeeklyMonthlyCostView: View {
     }
 
     private func saveCosts() {
+        logPrompt = nil
         // Validate: reject non-numeric values but allow empty (treated as 0)
         let invalid = costItems.first { item in
             guard !trackerExclusions.contains(item.category) else { return false }
@@ -1067,11 +1120,9 @@ struct WeeklyMonthlyCostView: View {
         // Exclude fixed cost categories (they're shown in the fixed costs section)
         let fixedCatNames = Set(fixedCosts.map { $0.category.lowercased() })
 
-        // Only fall back to budget categories if there are no saved totals for this month
-        var keys = Set(totals.keys)
-        if keys.isEmpty {
-            keys = keys.union(budgetLimits.keys)
-        }
+        // every budget category is listed (blank until a cost is entered), except ones they removed here,
+        // plus anything spent on; it used to list the budget's only while the month had no costs at all
+        let keys = Set(totals.keys).union(Set(budgetLimits.keys).subtracting(hiddenCategories))
         let sorted = keys
             .subtracting(trackerExclusions)
             .filter { !fixedCatNames.contains($0.lowercased()) }
@@ -1088,10 +1139,7 @@ struct WeeklyMonthlyCostView: View {
         // Exclude fixed cost categories
         let fixedCatNames = Set(fixedCosts.map { $0.category.lowercased() })
 
-        var keys = Set(dayCosts.keys)
-        if keys.isEmpty {
-            keys = keys.union(budgetLimits.keys)
-        }
+        let keys = Set(dayCosts.keys).union(Set(budgetLimits.keys).subtracting(hiddenCategories))
         let sorted = keys
             .subtracting(trackerExclusions)
             .filter { !fixedCatNames.contains($0.lowercased()) }
@@ -1100,6 +1148,28 @@ struct WeeklyMonthlyCostView: View {
             let v = dayCosts[cat] ?? 0.0
             return BudgetItem(category: cat, amount: v == 0.0 ? "" : String(v))
         }
+        // a bill reminder brought them here: that category is on the day, ready to type in
+        if let category = pendingLogCategory, monthlyPeriod?.periodKey == monthYYYYMM(from: selectedDay) {
+            pendingLogCategory = nil
+            if !costItems.contains(where: { $0.category.caseInsensitiveCompare(category) == .orderedSame }) {
+                costItems.insert(BudgetItem(category: category, amount: ""), at: 0)
+            }
+            let name = costItems.first { $0.category.caseInsensitiveCompare(category) == .orderedSame }?.category ?? category
+            logPrompt = "Enter this month's \(name) bill, then Save."
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { focusedCategory = name }
+        }
+    }
+
+    /// from a utilities bill reminder: Daily, on the bill's day, with the category ready
+    private func openRequestedBill() {
+        guard let request = costsRouter.request else { return }
+        costsRouter.request = nil
+        selectedTab = "Costs"
+        selectedMonth = request.day
+        selectedDay = request.day
+        pendingLogCategory = request.category
+        costsViewMode = "Daily"
+        loadMonthlyData()
     }
     
     private func monthYYYYMM(from date: Date) -> String {
@@ -1329,7 +1399,7 @@ struct WeeklyMonthlyCostView: View {
     // MARK: - Feedback
     private func fetchMonthlyFeedback(for date: Date) {
         let month = monthYYYYMM(from: date)
-        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/costs/feedback/\(username)?month=\(month)")
+        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/costs/feedback/\(username)?month=\(month)&compare=\(feedbackCompare.rawValue)")
         else { return }
 
         var request = URLRequest(url: url)
@@ -1343,16 +1413,6 @@ struct WeeklyMonthlyCostView: View {
                 let decoded = try? JSONDecoder().decode(MonthlyFeedback.self, from: data),
                 decoded.month == month
             else { DispatchQueue.main.async { self.monthlyFeedback = nil }; return }
-
-            if decoded.totalPrevious == 0 {
-                DispatchQueue.main.async { self.monthlyFeedback = nil }
-                return
-            }
-
-            if decoded.totalCurrent == 0 && decoded.totalPrevious == 0 {
-                DispatchQueue.main.async { self.monthlyFeedback = nil }
-                return
-            }
 
             DispatchQueue.main.async { self.monthlyFeedback = decoded }
         }.resume()
@@ -1483,7 +1543,8 @@ struct WeeklyMonthlyCostView: View {
                 self.lastSyncStats = (
                     added: syncResp.added ?? 0,
                     modified: syncResp.modified ?? 0,
-                    uncategorized: self.uncategorized.count
+                    uncategorized: self.uncategorized.count,
+                    removed: syncResp.removed ?? 0
                 )
                 if uncategorized.isEmpty {
                     self.showSyncDone = true
@@ -1602,6 +1663,9 @@ struct WeeklyMonthlyCostView: View {
 private struct CostRow: View {
     @Binding var item: BudgetItem
     let budgetLimit: Double?
+    /// the monthly view: totals to read, not to type over
+    var readOnly = false
+    var focus: FocusState<String?>.Binding
     var onRemove: () -> Void
     var onChangeAmount: (String) -> Void
 
@@ -1620,13 +1684,21 @@ private struct CostRow: View {
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
-                TextField("$0", text: $item.amount)
-                    .keyboardType(.decimalPad)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 90)
-                    .onChange(of: item.amount) { _, newValue in
-                        onChangeAmount(newValue)
-                    }
+                if readOnly {
+                    Text(Double(item.amount).map { $0.dollars(cents: true) } ?? "—")
+                        .font(.subheadline.monospacedDigit())
+                        .foregroundColor(item.amount.isEmpty ? PLColor.textSecondary : PLColor.textPrimary)
+                        .frame(width: 90, alignment: .trailing)
+                } else {
+                    TextField("$0", text: $item.amount)
+                        .keyboardType(.decimalPad)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 90)
+                        .focused(focus, equals: item.category)
+                        .onChange(of: item.amount) { _, newValue in
+                            onChangeAmount(newValue)
+                        }
+                }
 
                 Button(action: onRemove) {
                     Image(systemName: "minus.circle.fill")
@@ -1685,6 +1757,7 @@ struct FixedCostItem: Codable, Identifiable {
     let id: String
     let category: String
     let amount: Double
+    var source: String? = nil   // "quiz": added by the budget quiz
 }
 
 // For the days of the week at the top
@@ -1812,7 +1885,7 @@ private struct RecurringPromptSheet: View {
 }
 
 // Models for Feedback
-private struct CategoryDelta: Codable, Identifiable {
+struct CategoryDelta: Codable, Identifiable {
     var id: String { category }
     let category: String
     let current: Double
@@ -1821,7 +1894,7 @@ private struct CategoryDelta: Codable, Identifiable {
     let pct: Double?         // nil means no prior-month baseline for this category
 }
 
-private struct MonthlyFeedback: Codable {
+struct MonthlyFeedback: Codable {
     let month: String
     let previousMonth: String
     let totalCurrent: Double
@@ -1832,203 +1905,15 @@ private struct MonthlyFeedback: Codable {
     let monthlyBudget: Double?
     let cutbacks: [CategoryDelta]?
     let monthsCompared: Int?
+    var compare: String? = nil            // "last", "3" or "6"
+    var history: [MonthTotal]? = nil      // the 6 months up to this one, oldest first
 }
 
-private struct FeedbackRow: View {
-    let label: String
-    let deltaText: String
-    let color: Color
-    var body: some View {
-        HStack {
-            Text(label)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            Text(deltaText)
-                .foregroundColor(color)
-                .font(.subheadline)
-        }
-    }
-}
-
-private struct MonthlyFeedbackCard: View {
-    let fb: MonthlyFeedback
-    let budgetHint: Double?
-
-    private var verdictText: String { fb.totalDelta <= 0 ? "You spent less 🎉" : "You spent more" }
-    private var verdictColor: Color { fb.totalDelta <= 0 ? PLColor.success : PLColor.danger }
-
-    private var resolvedBudget: Double? {
-        if let b = fb.monthlyBudget { return b }
-        return budgetHint
-    }
-
-    private var overBudgetFlag: Bool? {
-        if let flag = fb.overBudget { return flag }
-        if let budget = resolvedBudget { return fb.totalCurrent > budget }
-        return nil
-    }
-
-    private var overageText: String? {
-        guard overBudgetFlag == true,
-              let budget = resolvedBudget,
-              fb.totalCurrent > budget else { return nil }
-        let over = fb.totalCurrent - budget
-        let saveNext = over / 2.0
-        return "Over budget by \(currency(over)). Aim to save \(currency(saveNext)) next month to get back on pace."
-    }
-
-    private var kudosText: String? {
-        guard overBudgetFlag == false,
-              let budget = resolvedBudget else { return nil }
-        let cushion = max(0, budget - fb.totalCurrent)
-        return cushion > 0
-        ? "Nice work staying on track! You could invest/save an extra \(currency(cushion * 0.4)) next month."
-        : "Nice work staying on track! Consider investing a little extra next month."
-    }
-
-    private var currentTotalText: String { String(format: "$%.2f", fb.totalCurrent) }
-    private var previousTotalText: String { String(format: "$%.2f", fb.totalPrevious) }
-
-    // pre-sort once
-    private var sortedByMagnitude: [CategoryDelta] {
-        fb.deltas.sorted { abs($0.delta) > abs($1.delta) }
-    }
-    private var downs: [CategoryDelta] { Array(sortedByMagnitude.filter { $0.delta < 0 }.prefix(3)) }
-    private var ups:   [CategoryDelta] { Array(sortedByMagnitude.filter { $0.delta > 0 }.prefix(3)) }
-
-    // Helper to format a delta line like "-$35 (−12%)" or "+$20 (+8%)"
-    private func deltaLine(for d: CategoryDelta) -> String {
-        let absD = abs(d.delta)
-        let dollars = String(format: "$%.0f", absD)
-        if let pct = d.pct {
-            let pct100 = Int(round(pct * 100))
-            if d.delta < 0 {
-                return "-\(dollars) (\(pct100 <= 0 ? "\(abs(pct100))%" : "\(abs(pct100))%"))"
-            } else {
-                return "+\(dollars) (\(pct100)%"
-                    + ")"
-            }
-        } else {
-            return d.delta < 0 ? "-\(dollars)" : "+\(dollars)"
-        }
-    }
-
-    private var eatOutNudgeText: String? {
-        guard fb.totalDelta <= 0,
-              let eatOut = fb.deltas.first(where: { $0.category.lowercased().contains("eat") && $0.delta < 0 })
-        else { return nil }
-        let amt = String(format: "$%.0f", abs(eatOut.delta))
-        return "👏 Great job eating out less by \(amt)."
-    }
-    
-    private var cutbacks: [CategoryDelta] {
-        fb.cutbacks ?? []
-    }
-
-    private var comparisonLabel: String {
-        switch fb.monthsCompared ?? 1 {
-        case 1:  return "Last Month"
-        case let n: return "Avg of \(n) Months"
-        }
-    }
-
-    private var headerTitle: String {
-        (fb.monthsCompared ?? 1) <= 1 ? "This Month vs Last Month" : "This Month vs Your Average"
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: PLSpacing.sm) {
-            HStack {
-                Text(headerTitle)
-                    .font(.headline)
-                Spacer()
-                Text(verdictText)
-                    .font(.subheadline)
-                    .foregroundColor(verdictColor)
-            }
-
-            // Totals
-            HStack {
-                VStack(alignment: .leading) {
-                    Text("This Month")
-                        .font(.caption)
-                        .foregroundColor(PLColor.textSecondary)
-                    Text(currentTotalText)
-                        .font(.headline)
-                }
-                Spacer()
-                VStack(alignment: .trailing) {
-                    Text(comparisonLabel)
-                        .font(.caption)
-                        .foregroundColor(PLColor.textSecondary)
-                    Text(previousTotalText)
-                        .font(.headline)
-                }
-            }
-
-            if let overageText {
-                Text(overageText)
-                    .font(.subheadline)
-                    .foregroundColor(PLColor.danger)
-            } else if let kudosText {
-                Text(kudosText)
-                    .font(.subheadline)
-                    .foregroundColor(PLColor.success)
-            }
-            
-            if !cutbacks.isEmpty {
-                Divider().padding(.vertical, 2)
-                Text("Suggested cutbacks to catch up:")
-                    .font(.subheadline)
-                ForEach(cutbacks, id: \.category) { d in
-                    FeedbackRow(
-                        label: d.category,
-                        deltaText: "Cut \(currency(d.delta))",
-                        color: PLColor.danger
-                    )
-                }
-            }
-
-            // Spent less
-            if !downs.isEmpty {
-                Divider().padding(.vertical, 2)
-                Text("You spent less on:")
-                    .font(.subheadline)
-                ForEach(downs, id: \.category) { d in
-                    FeedbackRow(
-                        label: d.category,
-                        deltaText: deltaLine(for: d),
-                        color: PLColor.success
-                    )
-                }
-            }
-
-            // Spent more
-            if !ups.isEmpty {
-                Divider().padding(.vertical, 2)
-                Text("You spent more on:")
-                    .font(.subheadline)
-                ForEach(ups, id: \.category) { d in
-                    FeedbackRow(
-                        label: d.category,
-                        deltaText: deltaLine(for: d),
-                        color: PLColor.danger
-                    )
-                }
-            }
-
-            // Nudge
-            if let nudge = eatOutNudgeText {
-                Text(nudge)
-                    .font(.caption)
-                    .foregroundColor(PLColor.textSecondary)
-                    .padding(.top, 4)
-            }
-        }
-    }
-    
-    private func currency(_ v: Double) -> String {
-        String(format: "$%.0f", v)
-    }
+struct MonthTotal: Codable, Identifiable {
+    var id: String { month }
+    let month: String                     // "YYYY-MM"
+    let total: Double
+    let tracked: Bool
 }
 
 // Models that match backend JSON

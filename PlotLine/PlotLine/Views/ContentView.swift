@@ -23,6 +23,7 @@ struct ContentView: View {
     @State private var navigateToNutrition = false
     @State private var navigateToBudget = false
     @State private var navigateToGoals = false
+    @State private var navigateToCosts = false
     @State private var navigateToGrocery = false
     @State private var navigateToQuiz = false
     @StateObject private var getStarted = GetStartedModel()
@@ -120,6 +121,9 @@ struct ContentView: View {
             .navigationDestination(isPresented: $navigateToBudget) {
                 BudgetView().environmentObject(calendarVM)
             }
+            .navigationDestination(isPresented: $navigateToCosts) {
+                WeeklyMonthlyCostView().environmentObject(calendarVM)
+            }
             .navigationDestination(isPresented: $navigateToGoals) {
                 GoalsView().environmentObject(calendarVM)
             }
@@ -127,7 +131,11 @@ struct ContentView: View {
                 TopGroceryListView()
             }
             .navigationDestination(isPresented: $navigateToQuiz) {
-                BudgetQuizView().environmentObject(calendarVM)
+                // saved: on to the Budget page (once the quiz has closed)
+                BudgetQuizView(onFinished: {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { navigateToBudget = true }
+                })
+                .environmentObject(calendarVM)
             }
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("NavigateToCalendar"))) { notification in
                 if let userInfo = notification.userInfo,
@@ -156,6 +164,10 @@ struct ContentView: View {
             .onReceive(GoalsRouter.shared.$request) { request in
                 if request != nil { navigateToGoals = true }
             }
+            // a utilities bill reminder was tapped: Monthly Costs on that day
+            .onReceive(CostsRouter.shared.$request) { request in
+                if request != nil { navigateToCosts = true }
+            }
             .onReceive(NotificationCenter.default.publisher(for: .plotlineDeepLink)) { notification in
                 guard let destination = notification.userInfo?["destination"] as? String else { return }
                 switch destination {
@@ -179,6 +191,11 @@ struct ContentView: View {
             calendarVM.fetchEvents()
             await friendsVM.loadFriends(for: username)
             await getStarted.refresh(friendCount: friendsVM.friends.count)
+        }
+        // the quiz was just saved: tick it off right away (the refresh confirms it)
+        .onReceive(NotificationCenter.default.publisher(for: .budgetQuizCompleted)) { _ in
+            getStarted.markQuizDone()
+            Task { await getStarted.refresh(friendCount: friendsVM.friends.count) }
         }
         .onChange(of: friendsVM.friends.count) { _, count in
             Task { await getStarted.refresh(friendCount: count) }
@@ -258,7 +275,7 @@ struct CalendarWidget: View {
                                 Circle().frame(width: 6, height: 6).foregroundColor(PLColor.tint)
                                 Text(event.title).font(.body).lineLimit(1)
                                 Spacer()
-                                if event.eventType == "rent" {
+                                if event.eventType == "rent" || event.eventType == "bill" {
                                     Badge(text: "Due Today", color: PLColor.danger)
                                 } else if event.eventType.lowercased().hasPrefix("subscription") {
                                     Badge(text: "Billed", color: PLColor.warning)

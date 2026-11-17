@@ -164,6 +164,7 @@ struct AuthField<Field: Hashable>: View {
         .contentShape(Rectangle())
         .onTapGesture { focus.wrappedValue = field }
         .animation(.easeOut(duration: 0.15), value: isFocused)
+        .passwordEntryScreen(isSecure)
     }
 }
 

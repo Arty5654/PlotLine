@@ -20,7 +20,7 @@ final class GetStartedModel: ObservableObject {
         var title: String {
             switch self {
             case .quiz: return "Take the budget quiz"
-            case .bank: return "Link your bank"
+            case .bank: return "Link a bank or card"
             case .goal: return "Set your first goal"
             case .friends: return "Add a friend"
             case .notifications: return "Turn on notifications"
@@ -100,6 +100,12 @@ final class GetStartedModel: ObservableObject {
         if isDone { steps.insert(step) } else { steps.remove(step) }
     }
 
+    /// the budget quiz was just saved
+    func markQuizDone() {
+        done.insert(.quiz)
+        finishIfDone()
+    }
+
     /// the last step, here on the card
     func turnOnNotifications() async {
         if await NotificationPermission.ensure(for: "reminders, invites and your Sunday budget recap") {
@@ -156,7 +162,6 @@ struct GetStartedCard: View {
     let openFriends: () -> Void
 
     @State private var confirmSkip = false
-    @State private var showQuizFirst = false
 
     private var total: Int { GetStartedModel.Step.allCases.count }
 
@@ -194,12 +199,6 @@ struct GetStartedCard: View {
             }
         }
         .plCard()
-        .alert("Take the Budget Quiz First", isPresented: $showQuizFirst) {
-            Button("Take the Quiz") { openQuiz() }
-            Button("Not Now", role: .cancel) { }
-        } message: {
-            Text("Linking your bank adds your spending to your budget, so you'll need a budget first. The quiz builds one in a couple of minutes.")
-        }
         .confirmationDialog("Skip the Get Started checklist?", isPresented: $confirmSkip, titleVisibility: .visible) {
             Button("Skip Checklist") { model.hide() }
             Button("Keep It", role: .cancel) { }
@@ -211,29 +210,29 @@ struct GetStartedCard: View {
     private func row(_ step: GetStartedModel.Step) -> some View {
         let isDone = model.done.contains(step)
         let isNext = model.nextStep == step
-        // the bank adds spending to a budget: there has to be one first
-        let waitsForQuiz = step == .bank && !isDone && !model.done.contains(.quiz)
+        // before there's a budget, the bank is linked in the quiz's first step
+        let inQuiz = step == .bank && !isDone && !model.done.contains(.quiz)
         return Button {
             switch step {
             case .quiz: openQuiz()
-            case .bank: if waitsForQuiz { showQuizFirst = true } else { openBudget() }
+            case .bank: if inQuiz { openQuiz() } else { openBudget() }
             case .goal: openGoals()
             case .friends: openFriends()
             case .notifications: Task { await model.turnOnNotifications() }
             }
         } label: {
             HStack(spacing: 12) {
-                Image(systemName: isDone ? "checkmark.circle.fill" : waitsForQuiz ? "lock.fill" : step.icon)
+                Image(systemName: isDone ? "checkmark.circle.fill" : step.icon)
                     .font(.title3)
-                    .foregroundColor(isDone ? PLColor.success : isNext && !waitsForQuiz ? PLColor.tint : PLColor.textSecondary)
+                    .foregroundColor(isDone ? PLColor.success : isNext ? PLColor.tint : PLColor.textSecondary)
                     .frame(width: 28)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(step.title)
                         .font(.subheadline.weight(isNext ? .semibold : .regular))
                         .foregroundColor(isDone ? PLColor.textSecondary : PLColor.textPrimary)
                         .strikethrough(isDone, color: PLColor.textSecondary)
-                    if waitsForQuiz {
-                        Text("Take the budget quiz first.")
+                    if inQuiz {
+                        Text("Link it in the budget quiz (optional).")
                             .font(.caption)
                             .foregroundColor(PLColor.textSecondary)
                     } else if !isDone {
@@ -254,6 +253,6 @@ struct GetStartedCard: View {
         }
         .buttonStyle(.plain)
         .disabled(isDone)
-        .accessibilityLabel("\(step.title)\(isDone ? ", done" : waitsForQuiz ? ", take the budget quiz first" : "")")
+        .accessibilityLabel("\(step.title)\(isDone ? ", done" : inQuiz ? ", link it in the budget quiz" : "")")
     }
 }

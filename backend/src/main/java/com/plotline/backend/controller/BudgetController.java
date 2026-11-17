@@ -21,6 +21,9 @@ public class BudgetController {
     @Autowired
     private S3Service s3Service;
 
+    @Autowired
+    private com.plotline.backend.service.BudgetChanges budgetChanges;
+
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final String S3_BUCKET_PATH = "users/%s/%s-budget.json";
     private final String S3_BUCKET_PATH2 = "users/%s/%s-budget-edited.json";
@@ -70,6 +73,7 @@ public class BudgetController {
                 Map<String, Double> monthly = scaleBudget(budget, 4.0);
                 saveBudgetForType(username, "monthly", monthly);
             }
+            budgetChanges.record(username); // tune suggestions wait a full month after a change
 
             return ResponseEntity.ok("Budget data saved successfully.");
         } catch (Exception e) {

@@ -65,7 +65,16 @@ enum EventReminders {
         let start: Date
         let secondsBefore: TimeInterval
         let friend: String?
+        /// a bill that changes each month: tapping opens Monthly Costs to enter the amount
+        var logCategory: String? = nil
         var fireDate: Date { start.addingTimeInterval(-secondsBefore) }
+    }
+
+    /// bills from the budget quiz whose amount changes each month (they're not fixed costs)
+    static let variableBills: Set<String> = ["utilities"]
+
+    static func logCategory(for event: Event) -> String? {
+        event.eventType == "bill" && variableBills.contains(event.title.lowercased()) ? event.title : nil
     }
 
     static func identifier(eventId: String, secondsBefore: TimeInterval) -> String {
@@ -89,7 +98,8 @@ enum EventReminders {
             for event in events where event.startDate > now && event.startDate <= horizon {
                 for seconds in offsets(event) {
                     let planned = Planned(identifier: identifier(eventId: event.id, secondsBefore: seconds), eventId: event.id,
-                                          title: event.title, start: event.startDate, secondsBefore: seconds, friend: friend)
+                                          title: event.title, start: event.startDate, secondsBefore: seconds, friend: friend,
+                                          logCategory: friend == nil ? logCategory(for: event) : nil)
                     if planned.fireDate > now { result[planned.identifier] = planned }
                 }
             }
@@ -112,7 +122,8 @@ enum EventReminders {
             if request.userInfo["navigateTo"] == nil && request.userInfo["friend"] == nil { continue } // older friend reminder
             if let want = wanted[request.identifier],
                request.userInfo["eventDate"] as? String == iso.string(from: want.start),
-               request.userInfo["eventTitle"] as? String == want.title {
+               request.userInfo["eventTitle"] as? String == want.title,
+               request.userInfo["navigateTo"] as? String == (want.logCategory == nil ? "calendar" : "costs") {
                 upToDate.insert(request.identifier)
             } else {
                 remove.append(request.identifier) // event gone, moved, renamed, or reminder turned off
@@ -150,16 +161,21 @@ enum EventReminders {
 
     static func request(for item: Planned) -> UNNotificationRequest {
         let content = UNMutableNotificationContent()
-        content.title = "Upcoming Event"
+        content.title = item.logCategory == nil ? "Upcoming Event" : "\(item.title) bill"
         content.body = body(title: item.title, secondsBefore: item.secondsBefore)
+            + (item.logCategory == nil ? "" : " Tap to enter this month's amount.")
         content.sound = .default
         var info: [String: Any] = [
             "eventTitle": item.title,
             "eventDate": ISO8601DateFormatter().string(from: item.start),
-            "navigateTo": "calendar",
+            "navigateTo": item.logCategory == nil ? "calendar" : "costs",
             "secondsBefore": item.secondsBefore,
             "showDayView": item.secondsBefore < 24 * 60 * 60,
         ]
+        if let category = item.logCategory {
+            info["costsCategory"] = category
+            info["costsDay"] = Recurrence.dayKey(item.start)   // the due day
+        }
         if let friend = item.friend { info["friend"] = friend }
         content.userInfo = info
         var comps = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: item.fireDate)

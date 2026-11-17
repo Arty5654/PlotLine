@@ -5,23 +5,7 @@ import Foundation
 private let budgetAccent = Color(red: 0.32, green: 0.67, blue: 0.97)
 
 // ---------- View ----------
-// Common categories available across budget views
-private let budgetCommonCategories = [
-    // Defaults
-    "Rent", "Groceries", "Subscriptions", "Eating Out",
-    "Entertainment", "Utilities", "Savings", "Miscellaneous",
-    "Transportation", "Roth IRA", "Car Insurance",
-    "Health Insurance", "Brokerage",
-    // Additional common
-    "Gas", "Phone", "Internet", "Gym", "Clothing",
-    "Personal Care", "Education", "Childcare", "Pet Care",
-    "Home Maintenance", "Gifts", "Donations", "Travel",
-    "Baby Supplies", "Hobbies", "Shopping", "Coffee",
-    "Alcohol & Bars", "Home Decor", "Electronics",
-    "Medical", "Dental", "Vision", "Therapy",
-    "Parking", "Tolls", "Laundry", "Haircuts",
-    "Streaming Services", "Gaming", "Music", "Books"
-]
+private let budgetCommonCategories = CategoryOptions.common
 
 struct BudgetInputView: View {
     // MARK: State
@@ -40,6 +24,20 @@ struct BudgetInputView: View {
     @State private var aiLimitMessage: String = ""
     // saving replaces the whole budget, so it waits until the real one has loaded
     @State private var budgetLoaded = false
+    /// Regenerate: built like the quiz (saved answers, transactions), checked on the review screen
+    @StateObject private var regenModel = BudgetQuizModel()
+    @State private var regenReview: RegenReview?
+    @State private var regenError: String?
+    /// new categories still blank when Save is tapped
+    @State private var blankOnSave: [String] = []
+    @EnvironmentObject private var calendarVM: CalendarViewModel
+
+    private struct RegenReview: Identifiable {
+        let id = UUID()
+        let draft: BudgetQuizModel.Draft
+        let newCategories: [String]
+        let adjustable: Set<String>
+    }
     
     // Exclude from progress math (still visible as budget lines)
     private let trackerExclusions: Set<String> = ["401(k)", "401(k) Contribution"]
@@ -88,13 +86,6 @@ struct BudgetInputView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: PLSpacing.lg) {
-                
-                // Header
-                VStack(alignment: .leading, spacing: PLSpacing.sm) {
-                    Text("Create Your Monthly Budget")
-                        .font(.headline).bold()
-                }
-                .plCard()
                 
                 // Summary Card
                 VStack(alignment: .leading, spacing: PLSpacing.sm) {
@@ -154,8 +145,8 @@ struct BudgetInputView: View {
                         Menu {
                             ForEach(availableBudgetCategories, id: \.self) { cat in
                                 Button(cat) {
+                                    // starts blank: type an amount, or Regenerate to estimate it
                                     budgetItems.append(BudgetItem(category: cat, amount: ""))
-                                    regenerateBudgetFromUI(auto: true)
                                 }
                             }
                             Divider()
@@ -180,7 +171,7 @@ struct BudgetInputView: View {
                         }
                     }
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Tip: Leave a new category blank to auto-generate amounts. If you enter a number, it won’t regenerate unless you tap Regenerate.")
+                        Text("New categories start blank. Type an amount, or tap Regenerate to estimate them from your spending and quiz answers.")
                             .font(.footnote)
                             .foregroundColor(PLColor.textSecondary)
                         if isRegenerating {
@@ -201,8 +192,9 @@ struct BudgetInputView: View {
                         .buttonStyle(PrimaryButton(color: budgetAccent))
                         .disabled(isRegenerating)
                     Button("Regenerate with New Categories") {
-                        regenerateBudgetFromUI()
+                        Task { await regenerate() }
                     }
+                    .disabled(isRegenerating)
                         .buttonStyle(OutlineButton(tint: budgetAccent))
                     HStack(spacing: PLSpacing.sm) {
                         Button("Clear All", action: clearAllBudget)
@@ -261,6 +253,31 @@ struct BudgetInputView: View {
                 fetchBudgetData()
             }
         }
+        .sheet(item: $regenReview) { review in
+            BudgetReviewView(model: regenModel, draft: review.draft, newCategories: review.newCategories,
+                             adjustable: review.adjustable) {
+                regenReview = nil // saving refreshes this page (.budgetQuizCompleted)
+            }
+            .environmentObject(calendarVM)
+        }
+        .confirmationDialog(blankOnSave.count == 1 ? "\(blankOnSave[0]) has no amount yet" : "\(blankOnSave.count) categories have no amount yet",
+                            isPresented: Binding(get: { !blankOnSave.isEmpty }, set: { if !$0 { blankOnSave = [] } }),
+                            titleVisibility: .visible) {
+            Button("Regenerate to Estimate") { blankOnSave = []; Task { await regenerate() } }
+            Button("Save at $0") {
+                for index in budgetItems.indices where budgetItems[index].amount.trimmingCharacters(in: .whitespaces).isEmpty {
+                    budgetItems[index].amount = "0"
+                }
+                blankOnSave = []
+                attemptSaveBudget()
+            }
+            Button("Cancel", role: .cancel) { blankOnSave = [] }
+        }
+        .alert("Couldn't regenerate", isPresented: Binding(get: { regenError != nil }, set: { if !$0 { regenError = nil } })) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(regenError ?? "")
+        }
         .onReceive(NotificationCenter.default.publisher(for: .budgetQuizCompleted)) { _ in
             // Refresh budget data after quiz generates new budget
             fetchTakeHomeFromLastQuiz()
@@ -299,10 +316,10 @@ private struct BudgetRow: View {
 // ---------- Logic (unchanged APIs, tidied a bit) ----------
 extension BudgetInputView {
     private func attemptSaveBudget() {
-        // If any blanks, regenerate to fill them before saving
+        // blanks: ask whether to estimate them (Regenerate) or save them at $0
         let empties = budgetItems.filter { $0.amount.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         if !empties.isEmpty {
-            regenerateBudgetFromUI()
+            blankOnSave = empties.map(\.category)
             return
         }
         generateBudgetingWarnings()
@@ -318,8 +335,6 @@ extension BudgetInputView {
         guard !trimmed.isEmpty else { return }
         if !budgetItems.contains(where: { $0.category.caseInsensitiveCompare(trimmed) == .orderedSame }) {
             budgetItems.append(BudgetItem(category: trimmed, amount: ""))
-            // If the new field is blank (default), auto-regenerate to include it
-            regenerateBudgetFromUI(auto: true)
         }
         newCategory = ""
     }
@@ -330,68 +345,38 @@ extension BudgetInputView {
         budgetItems.remove(atOffsets: offsets)
     }
 
-    // Call backend to regenerate using last quiz + current categories/known costs
-    private func regenerateBudgetFromUI(auto: Bool = false) {
+    /// Like the quiz: the saved answers, their transactions, and the categories on this page. Amounts
+    /// already here stay as they are for the AI; blank (new) categories are estimated from real spending.
+    /// The review screen shows it before anything is saved, and what to lower if it doesn't fit.
+    private func regenerate() async {
         isRegenerating = true
-        let cats = budgetItems.map { $0.category }
-        var known: [String: Double] = [:]
+        defer { isRegenerating = false }
+        await regenModel.loadSavedQuiz()
+        guard regenModel.hasSavedQuiz else {
+            regenError = "Take the budget quiz first; regenerating starts from its answers."
+            return
+        }
+        await regenModel.checkBank()
+        await regenModel.loadPlan()
+        if regenModel.hasCar && regenModel.commute.fuelPrice <= 0 { await regenModel.loadGasPrice() }
+        var typed: [String: Double] = [:]
         for item in budgetItems {
-            if let v = Double(item.amount) {
-                known[item.category] = v
+            if let value = Double(item.amount.trimmingCharacters(in: .whitespaces)) { typed[item.category] = value }
+        }
+        let added = budgetItems.map(\.category).filter { typed[$0] == nil }
+        regenModel.exactCategories = budgetItems.map(\.category)
+        regenModel.newCategories = added
+        do {
+            let draft = try await regenModel.build(overrides: typed)
+            regenReview = RegenReview(draft: draft, newCategories: added, adjustable: Set(typed.keys))
+        } catch {
+            if let limit = error as? AILimitError {
+                aiLimitMessage = limit.message
+                activeAlert2 = .aiLimit
+            } else {
+                regenError = "Please try again in a moment."
             }
         }
-        let payload: [String: Any] = [
-            "username": username,
-            "categories": cats,
-            "knownCosts": known
-        ]
-        guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
-        var req = URLRequest(url: URL(string: "\(BackendConfig.baseURLString)/api/llm/budget/regen")!)
-        BackendConfig.addApiKey(to: &req)
-        req.httpMethod = "POST"
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = data
-
-        URLSession.shared.dataTask(with: req) { data, response, error in
-            if let limit = AILimitError.from(data, response) {
-                DispatchQueue.main.async {
-                    self.isRegenerating = false
-                    self.aiLimitMessage = limit.message
-                    self.activeAlert2 = .aiLimit
-                }
-                return
-            }
-            guard !AppBanner.reportIfFailed("regenerate your budget", data, response, error),
-                  let data = data,
-                  let decoded = try? JSONDecoder().decode([String: Double].self, from: data)
-            else {
-                DispatchQueue.main.async { self.isRegenerating = false }
-                return
-            }
-            DispatchQueue.main.async {
-                // Ensure all requested categories are present (LLM may omit)
-                var merged: [BudgetItem] = []
-                for cat in cats {
-                    if let val = decoded[cat] {
-                        merged.append(BudgetItem(category: cat, amount: String(format: "%.2f", val)))
-                    } else {
-                        // Keep existing amount (likely blank) to let user fill or regen later
-                        if let existing = self.budgetItems.first(where: { $0.category == cat }) {
-                            merged.append(existing)
-                        } else {
-                            merged.append(BudgetItem(category: cat, amount: ""))
-                        }
-                    }
-                }
-                // Include any extra keys returned by the backend that weren't in cats (except 401k)
-                let extra = decoded.filter { key, _ in !cats.contains(key) && !is401kKey(key) }
-                for (k,v) in extra {
-                    merged.append(BudgetItem(category: k, amount: String(format: "%.2f", v)))
-                }
-                self.budgetItems = merged
-                self.isRegenerating = false
-            }
-        }.resume()
     }
 
     // Keep only digits and a single decimal point

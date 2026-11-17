@@ -55,6 +55,29 @@ struct RecurrenceTests {
         #expect(run(.named("monthly")!, from: date(2026, 1, 31), until: date(2026, 5, 31)) == ["2026-01-31", "2026-03-31", "2026-05-31"])
     }
 
+    @Test("Every 6 months (car insurance), and its name for the editor")
+    func everySixMonths() {
+        let rule = RecurrenceRule.named("every-6-months")!
+        #expect(run(rule, from: date(2026, 2, 14), until: date(2027, 9, 1)) == ["2026-02-14", "2026-08-14", "2027-02-14", "2027-08-14"])
+        #expect(rule.name == "every-6-months")
+    }
+
+    @Test("Bills and subscriptions on the 31st land on the last day of shorter months; other events skip")
+    func billsClampToMonthEnd() {
+        let start = Calendar.current.date(from: DateComponents(year: 2026, month: 1, day: 31, hour: 9))!
+        let end = Calendar.current.date(from: DateComponents(year: 2026, month: 5, day: 31, hour: 23))!
+        func dates(_ type: String) -> [String] {
+            Event(id: "r", title: "Rent", description: "", startDate: start, endDate: start, eventType: type,
+                  recurrence: "monthly", invitedFriends: [])
+                .occurrences(from: start, to: end).map { Recurrence.dayKey($0.startDate) }
+        }
+        let clamped = ["2026-01-31", "2026-02-28", "2026-03-31", "2026-04-30", "2026-05-31"]
+        #expect(dates("rent") == clamped)
+        #expect(dates("bill") == clamped)
+        #expect(dates("subscription") == clamped)
+        #expect(dates("user") == ["2026-01-31", "2026-03-31", "2026-05-31"])
+    }
+
     @Test("Imported rules: every 3 weeks on Mon and Wed, 5 times; the 2nd Tuesday; the last Friday")
     func importedRules() throws {
         let start = date(2026, 10, 12)

@@ -130,13 +130,13 @@ class CalendarViewModel: ObservableObject {
         }
         
         // sort to show:
-        // 1. rent if it exists
+        // 1. rent and other bills from the budget quiz
         // 2. subscriptions
         // TODO: 3. goals
         // 4. all others
         let sortedEvents = allEvents.sorted { a, b in
             func priority(for event: Event) -> Int {
-                if event.eventType == "rent" {
+                if event.eventType == "rent" || event.eventType == "bill" {
                     return 0
                 } else if event.eventType.hasPrefix("subscription") {
                     return 1

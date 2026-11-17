@@ -69,7 +69,7 @@ struct BudgetView: View {
 struct BudgetSection: View {
     @EnvironmentObject var calendarVM: CalendarViewModel
     @State private var chartType = "Weekly" // or "Monthly"
-    @StateObject private var plaidCoordinator = PlaidLinkCoordinator()
+    @StateObject private var bankLinker = BankLinker()
     
     @State private var hasQuiz: Bool? = nil
 
@@ -91,6 +91,9 @@ struct BudgetSection: View {
                 .buttonStyle(PrimaryButton())
 
             } else {
+                // suggestions from real spending once a bank has a month of it (hidden otherwise)
+                RetuneCard()
+
                 // Trend chart card
                 VStack(alignment: .leading, spacing: PLSpacing.md) {
                     HStack {
@@ -109,7 +112,7 @@ struct BudgetSection: View {
 
                 // Tools
                 VStack(spacing: PLSpacing.sm) {
-                    ActionRow(title: "Take the AI Powered Budget Quiz Again", system: "sparkles") {
+                    ActionRow(title: "Update My Budget Quiz", system: "sparkles") {
                         BudgetQuizView().environmentObject(calendarVM)
                     }
                     .buttonStyle(AdaptivePrimaryButton())
@@ -122,7 +125,7 @@ struct BudgetSection: View {
                     }
                     .buttonStyle(AdaptivePrimaryButton())
                     ActionRow(title: "Monthly Budget", system: "list.bullet.rectangle.portrait") {
-                        BudgetInputView()
+                        BudgetInputView().environmentObject(calendarVM)
                     }
                     .buttonStyle(AdaptivePrimaryButton())
                     ActionRow(title: "Track Subscriptions", system: "calendar.badge.clock") {
@@ -130,7 +133,7 @@ struct BudgetSection: View {
                     }
                     .buttonStyle(AdaptivePrimaryButton())
                     ActionRow(title: "Compare New Income/Location Budget", system: "arrow.2.squarepath") {
-                        BudgetCompareView()
+                        BudgetCompareView().environmentObject(calendarVM)
                     }
                     .buttonStyle(AdaptivePrimaryButton())
                     Button {
@@ -195,56 +198,9 @@ struct BudgetSection: View {
     }
 
     private func startPlaidLink() async {
-        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/plaid/link_token?username=\(currentUsername())")
-        else { print("Failed to build link_token URL"); return }
-        var linkReq = URLRequest(url: url)
-        BackendConfig.addApiKey(to: &linkReq)
-        do {
-            let (data, response) = try await URLSession.shared.data(for: linkReq)
-            if let http = response as? HTTPURLResponse {
-                print("Plaid link_token response status: \(http.statusCode)")
-            }
-            if let str = String(data: data, encoding: .utf8) {
-                print("Plaid link_token response: \(str)")
-            }
-            guard let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let linkToken = obj["link_token"] as? String
-            else {
-                AppBanner.report("start connecting your bank", AILimitError.from(data, response) ?? URLError(.badServerResponse))
-                return
-            }
-
-            await presentPlaidLink(linkToken: linkToken, coordinator: plaidCoordinator) { publicToken, accountIds in
-                Task { await exchange(publicToken: publicToken, selectedAccountIds: accountIds) }
-            }
-        } catch {
-            AppBanner.report("start connecting your bank", error)
-        }
+        await bankLinker.link()
     }
 
-    private func exchange(publicToken: String, selectedAccountIds: [String]) async {
-        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/plaid/exchange") else { return }
-        var req = URLRequest(url: url)
-        BackendConfig.addApiKey(to: &req)
-        req.httpMethod = "POST"
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-
-        let payload: [String: Any] = [
-            "username": currentUsername(),
-            "public_token": publicToken,
-            "account_ids": selectedAccountIds
-        ]
-        req.httpBody = try? JSONSerialization.data(withJSONObject: payload)
-        do {
-            let (data, response) = try await URLSession.shared.data(for: req)
-            AppBanner.reportIfFailed("finish connecting your bank", data, response, nil)
-        } catch {
-            AppBanner.report("finish connecting your bank", error)
-        }
-
-        await MainActor.run { plaidCoordinator.handler = nil }
-    }
-    
     private func currentUsername() -> String {
         UserDefaults.standard.string(forKey: "loggedInUsername") ?? "UnknownUser"
     }

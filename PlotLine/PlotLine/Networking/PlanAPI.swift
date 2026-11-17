@@ -38,6 +38,42 @@ struct TaxState: Decodable, Identifiable, Hashable {
     var id: String { code }
 }
 
+/// Budgeting → Tune your budget (see RetuneAdvisor on the server)
+struct Retune: Decodable {
+    struct Suggestion: Decodable, Identifiable, Equatable {
+        struct Alternative: Decodable, Equatable {
+            let label: String
+            let message: String
+            let changes: [String: Double]
+        }
+        let id: String
+        let category: String
+        let kind: String           // rebalance, partial, slowDown, lower
+        let title: String
+        let message: String
+        let changes: [String: Double]
+        let alternative: Alternative?
+    }
+    var bankLinked: Bool = false
+    var ready: Bool = false
+    var monthsUsed: [String] = []
+    var warnings: [String] = []
+    var suggestions: [Suggestion] = []
+
+    enum CodingKeys: String, CodingKey { case bankLinked, ready, monthsUsed, warnings, suggestions }
+
+    init() { }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        bankLinked = (try? c.decode(Bool.self, forKey: .bankLinked)) ?? false
+        ready = (try? c.decode(Bool.self, forKey: .ready)) ?? false
+        monthsUsed = (try? c.decode([String].self, forKey: .monthsUsed)) ?? []
+        warnings = (try? c.decode([String].self, forKey: .warnings)) ?? []
+        suggestions = (try? c.decode([Suggestion].self, forKey: .suggestions)) ?? []
+    }
+}
+
 enum PlanAPI {
     private static var username: String { UserDefaults.standard.string(forKey: "loggedInUsername") ?? "" }
 
@@ -103,8 +139,10 @@ enum PlanAPI {
         for item in json["debts"] as? [[String: Any]] ?? [] {
             guard let balance = number(item["principal"]), balance > 0 else { continue }
             let name = (item["name"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "Debt"
+            // the quiz saves "minPayment" (older ones: "minMonthly")
+            let minimum = number(item["minPayment"]) ?? number(item["minMonthly"])
             answers.debts.append(Debt(name: name, balance: balance, apr: number(item["apr"]) ?? 0,
-                                      minPayment: number(item["minMonthly"]) ?? max(25, balance * 0.02)))
+                                      minPayment: minimum.flatMap { $0 > 0 ? $0 : nil } ?? max(25, balance * 0.02)))
         }
         return answers
     }
@@ -117,6 +155,30 @@ enum PlanAPI {
         let data = try await load(request("/api/tools/take-home", method: "POST",
                                           body: try JSONSerialization.data(withJSONObject: body))) ?? Data()
         return try JSONDecoder().decode(TakeHome.self, from: data)
+    }
+
+    /// the prices a commute estimate needs (see CommutePrices on the server): {"gas": {"pricePerGallon": 3.19}, ...}
+    static func commutePrices(mode: CommuteMode, homeState: String, homeCity: String, workPlace: String,
+                              electric: Bool, routeHasTolls: Bool) async throws -> [String: [String: Double]] {
+        let body: [String: Any] = ["mode": mode.rawValue, "homeState": homeState, "homeCity": homeCity,
+                                   "workPlace": workPlace, "electric": electric, "routeHasTolls": routeHasTolls]
+        let request = try request("/api/tools/commute-prices", method: "POST", body: try JSONSerialization.data(withJSONObject: body))
+        let (data, response) = try await URLSession.shared.data(for: request)
+        if let limit = AILimitError.from(data, response) { throw limit }
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else { throw URLError(.badServerResponse) }
+        return try JSONDecoder().decode([String: [String: Double]].self, from: data)
+    }
+
+    // MARK: - Tune the budget
+
+    static func retune() async throws -> Retune {
+        let data = try await load(request("/api/budget/\(username)/retune")) ?? Data("{}".utf8)
+        return try JSONDecoder().decode(Retune.self, from: data)
+    }
+
+    static func applyRetune(_ changes: [String: Double]) async throws {
+        _ = try await load(request("/api/budget/\(username)/retune/apply", method: "POST",
+                                   body: try JSONEncoder().encode(["changes": changes])))
     }
 
     static func states() async throws -> [TaxState] {

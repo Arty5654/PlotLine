@@ -40,6 +40,15 @@ public class BudgetQuizController {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    @Autowired
+    private com.plotline.backend.categorize.Categorizer categorizer;
+
+    @Autowired
+    private com.plotline.backend.service.FixedCosts fixedCosts;
+
+    @Autowired
+    private com.plotline.backend.service.BudgetChanges budgetChanges;
+
     // take-home pay with the current year's tax rules (shared with the paycheck calculator)
     @Autowired
     private TakeHomeCalculator takeHome;
@@ -68,7 +77,31 @@ public class BudgetQuizController {
                 .stream()
                 .map(String::valueOf)
                 .collect(Collectors.toCollection(ArrayList::new));
-            Map<String, Double> knownCosts = toDoubleMap(quizData.get("knownCosts"));
+            Map<String, Double> knownCosts = new LinkedHashMap<>(toDoubleMap(quizData.get("knownCosts")));
+
+            // rent/roommates/utilities, the commute, and insurance taken out of the paycheck
+            QuizDetails details = QuizDetails.from(quizData);
+            // Regenerate on the budget page: exactly its categories (lines they removed there stay removed)
+            boolean exact = Boolean.TRUE.equals(quizData.get("exactCategories"));
+            Set<String> requested = new HashSet<>(categories);
+            details.applyTo(categories, knownCosts);
+            // amounts changed on the review screen before "Rebuild with AI": they stay exactly as typed
+            Map<String, Double> overrides = toDoubleMap(quizData.get("reviewOverrides"));
+            overrides.forEach((category, amount) -> {
+                if (amount == null || is401kKey(category)) return;
+                knownCosts.put(category, amount);
+                if (!category.startsWith("Debt - ") && !categories.contains(category)) categories.add(category);
+                requested.add(category);
+            });
+            if (exact) {
+                categories.removeIf(c -> !requested.contains(c));
+                knownCosts.keySet().removeIf(c -> !requested.contains(c) && !c.startsWith("Debt - "));
+            }
+            // categories just added on the budget page: sized from real spending, not from what's left over
+            List<String> added = toStringList(quizData.get("newCategories"));
+            String addedNote = added.isEmpty() ? "" : "\n- They just added these categories: " + String.join(", ", added)
+                    + ". Estimate each from what they really spend (their transactions, if listed) or a typical amount for someone like them."
+                    + " Don't size them to fill leftover money. The total still has to fit their take-home: lower flexible categories to make room.";
 
             // Parse debt
             boolean hasDebt = Boolean.parseBoolean(String.valueOf(quizData.getOrDefault("hasDebt", false)));
@@ -76,7 +109,9 @@ public class BudgetQuizController {
 
             // Get mins for debts
             Map<String, Double> debtFixed = new LinkedHashMap<>();
+            java.time.LocalDate today = java.time.LocalDate.now();
             for (DebtItem d : debts) {
+                if (d.startsLater(today)) continue; // no payment this month yet: the app reminds them before it starts
                 double minDue = computeDebtMinimum(d);
                 if (minDue > 0) {
                     debtFixed.put(debtLabel(d), minDue);
@@ -86,6 +121,7 @@ public class BudgetQuizController {
             // Augment categories so LLM is allowed to output debt lines
             List<String> categoriesAug = new ArrayList<>(categories);
             for (DebtItem d : debts) {
+                if (d.startsLater(today)) continue;
                 String label = debtLabel(d);
                 if (!categoriesAug.contains(label)) {
                     categoriesAug.add(label);
@@ -117,11 +153,12 @@ public class BudgetQuizController {
             // Create debt text for prompt
             String debtsSection = debts.isEmpty() ? "None"
             : debts.stream().map(d -> String.format(
-                "- %s | Principal: $%.2f%s%s",
+                "- %s | Principal: $%.2f%s%s%s",
                 d.name,
                 d.principal,
-                (d.apr != null ? (", APR: " + round2(d.apr) + "%%") : ""),
-                (d.dueDay != null ? (", Due Day: " + d.dueDay) : "")
+                (d.apr != null ? (", APR: " + round2(d.apr) + "%") : ""), // an argument, not the format: one %
+                (d.dueDay != null ? (", Due Day: " + d.dueDay) : ""),
+                (d.startsLater(today) ? ", payments don't start until " + d.nextDue + " (do NOT budget for it this month)" : "")
             )).collect(Collectors.joining("\n"));
 
 
@@ -129,7 +166,7 @@ public class BudgetQuizController {
             // 401(k) and taxes with the current year's rules (the standard deduction and the state's
             // deductions are taken off first; this used 2024 tables without them)
             TakeHomeCalculator.Result pay = takeHome.calculate(grossYearlyIncome,
-                    takeHome.knowsState(state) ? state : takeHome.stateCode(state), retirment, 0);
+                    takeHome.knowsState(state) ? state : takeHome.stateCode(state), retirment, details.insuranceYearly());
             double k401Defferal = pay.k401();
             double taxableIncome = Math.max(0.0, grossYearlyIncome - k401Defferal);
             double federalTax = pay.federalTax();
@@ -147,21 +184,8 @@ public class BudgetQuizController {
                     username, federalTax, state, stateTax, localTax, fica, afterTaxYearly));
 
             double monthlyIncome = grossYearlyIncome / 12;
-            double budgetCap;
-
-            switch (spendingStyle.toLowerCase()) {
-                case "low":
-                    budgetCap = monthlyNet* 0.75;
-                    break;
-                case "medium":
-                    budgetCap = monthlyNet * 0.88;
-                    break;
-                case "high":
-                    budgetCap = monthlyNet * 0.97;
-                    break;
-                default:
-                    budgetCap = monthlyNet * 0.85;
-            }
+            BudgetingStyle style = BudgetingStyle.from(quizData);
+            double budgetCap = monthlyNet * style.share(spendingStyle);
 
 
             
@@ -170,13 +194,15 @@ public class BudgetQuizController {
 
             Generate a JSON object for a monthly budget for someone living in %s, %s,
             earning $%.2f **after Traditional 401(k) contriubtion, federal, state, local/municipal, and FICA (Social Security + Medicare) tax** yearly,
-            supporting %d dependents, with a %s spending style.
+            supporting %d dependents.
+            How they like to budget: %s
 
             Their primary financial goal is: %s.
             Their savings priority is: %s.
             Housing situation: %s.
             Car ownership: %s.
             Eating-out frequency: %s.
+            %s
 
             Use ONLY these categories: %s.
 
@@ -202,27 +228,27 @@ public class BudgetQuizController {
 
             You **must allocate money to all user-provided categories**, even if they are not mentioned in the rules (e.g., hobbies like "Tennis"). Make sure each category has a reasonable allocation unless it clearly shouldn't apply.
 
-            Output format:
+            Output format (JSON only):
             {
-                "Category1": amount,
-                "Category2": amount,
-                ...
+                "budget": {"Category1": amount, "Category2": amount, ...},
+                "why": {"Category1": "one short plain sentence: why this amount, naming what it's based on (e.g. 2 people, cooks most nights, Virginia prices)", ...}
             }
 
-            Try to keep the total budget around $%.2f (%.0f%%%% of take-home monthly income), but this is a recommendation — the **only hard rule is that the total must not exceed the user's monthly income** ($%.2f). Round each category to whole dollars.
+            Try to keep the total budget around $%.2f (%.0f%% of take-home monthly income), but this is a recommendation — the **only hard rule is that the total must not exceed the user's monthly income** ($%.2f). Round each category to whole dollars.
 
-            Ensure that savings and investments are separated, and combined they should follow the range based on spending style and savings priority.
+            Ensure that savings and investments are separated, and combined they should follow how they like to budget and their savings priority.
             """,
                 city,
                 state,
                 afterTaxYearly,
                 dependents,
-                spendingStyle,
+                style.rules(monthlyNet),
                 primaryGoal,
                 savingsPriority,
                 housingSituation,
                 carOwnership,
                 eatingOutFrequency,
+                details.promptNotes() + addedNote,
                 categoriesList,
                 knownAllocations,
                 debtsSection,
@@ -238,8 +264,13 @@ public class BudgetQuizController {
             // Extract clean JSON block from OpenAI response
             String jsonOnly = extractJsonBlock(rawResponse);
 
-            // Parse response to map
-            Map<String, Double> monthly = objectMapper.readValue(jsonOnly, new TypeReference<>() {});
+            // {"budget": {...}, "why": {...}} (or just the amounts)
+            com.fasterxml.jackson.databind.JsonNode answer = objectMapper.readTree(jsonOnly);
+            com.fasterxml.jackson.databind.JsonNode amounts = answer.has("budget") ? answer.get("budget") : answer;
+            Map<String, Double> monthly = new LinkedHashMap<>();
+            amounts.fields().forEachRemaining(e -> { if (e.getValue().isNumber()) monthly.put(e.getKey(), e.getValue().asDouble()); });
+            Map<String, String> why = new LinkedHashMap<>();
+            answer.path("why").fields().forEachRemaining(e -> why.put(e.getKey(), e.getValue().asText()));
             double k401Monthly = Math.round(k401Defferal / 12.0);
             // Making sure the LLM does not put the category itself since it only knows the percentage not the dollar amount
             monthly.remove("401k"); 
@@ -257,21 +288,73 @@ public class BudgetQuizController {
                 }
             }
 
+            // known costs are fixed: the AI can't change them (debts only have a minimum: paying more is allowed)
+            for (var e : knownCostsAug.entrySet()) {
+                if (e.getKey().startsWith("Debt - ")) continue;
+                if (monthly.containsKey(e.getKey()) || categoriesAug.contains(e.getKey())) monthly.put(e.getKey(), (double) round0(e.getValue()));
+            }
+            // at least what driving and the commute cost (Gas, Transportation); the AI may plan more
+            if (details.splitsCommute()) monthly.remove("Commute"); // it's in Gas and Transportation
+            // Regenerate: only the page's categories, even if the AI adds others
+            if (exact) monthly.keySet().removeIf(c -> !categoriesAug.contains(c) && !knownCostsAug.containsKey(c));
+            // Gas and Transportation say exactly what they cover (the AI's explanations were vague)
+            details.drivingWhy().forEach((line, text) -> { if (monthly.containsKey(line)) why.put(line, text); });
+            for (var e : details.minimums().entrySet()) {
+                if (!categoriesAug.contains(e.getKey())) continue; // a line they removed stays removed
+                if (monthly.getOrDefault(e.getKey(), 0.0) < e.getValue()) monthly.put(e.getKey(), (double) Math.round(Math.ceil(e.getValue())));
+            }
+            // never more than they bring home: the AI sometimes plans more (from high real spending)
+            Set<String> lockedLines = new HashSet<>(knownCostsAug.keySet());
+            lockedLines.addAll(details.minimums().keySet());
+            double savingsFloor = switch (style.kind()) {
+                case "payYourselfFirst" -> monthlyNet * style.savePercent() / 100;
+                case "fiftyThirtyTwenty" -> monthlyNet * 0.20;
+                default -> 0;
+            };
+            Map<String, Double> lowered = BudgetFit.fit(monthly, monthlyNet, lockedLines, savingsFloor);
+            lowered.forEach((line, was) -> why.merge(line, "Lowered to fit your take-home (was $" + Math.round(was) + ").",
+                    (a, b) -> a + " " + b));
+            // "every dollar assigned": whatever is left goes to Savings
+            if (style.assignsEverything()) {
+                double total = monthly.values().stream().mapToDouble(Double::doubleValue).sum();
+                if (monthlyNet - total >= 1) monthly.merge("Savings", (double) Math.round(monthlyNet - total), Double::sum);
+            }
+
             Map<String, Double> weekly = new HashMap<>();
             for (Map.Entry<String, Double> entry : monthly.entrySet()) {
                 weekly.put(entry.getKey(), entry.getValue() / 4.0);
             }
-
-            // Save all 4 versions to S3
-            saveToS3(username, "monthly-budget.json", monthly);
-            saveToS3(username, "weekly-budget.json", weekly);
 
             // Add net monthly to quiz data for live tracker
             quizData.put("afterTaxYearly", round2(afterTaxYearly));
             quizData.put("monthlyNet",     round2(monthlyNet));
             quizData.put("k401Monthly", k401Monthly);
 
+            if (Boolean.TRUE.equals(quizData.get("withDetails"))) {
+                // the review screen: nothing is saved until they tap Save there (POST /save)
+                Map<String, Object> detailed = new LinkedHashMap<>();
+                detailed.put("budget", monthly);
+                detailed.put("why", why);
+                detailed.put("monthlyNet", round2(monthlyNet));
+                detailed.put("budgetingStyle", style.kind());
+                detailed.put("savePercent", style.savePercent());
+                // lines the AI couldn't change (bills they told us, debt minimums): Rebalance leaves them alone
+                detailed.put("fixed", knownCostsAug.keySet().stream().filter(monthly::containsKey).toList());
+                // where they usually spend more than this plan, and their usual total (a warning on the review)
+                detailed.put("overspending", BudgetFit.overspending(monthly, details.bankAverages()));
+                double usualTotal = details.bankAverages().values().stream().mapToDouble(QuizDetails::number).sum();
+                if (usualTotal > 0) detailed.put("usualTotal", Math.round(usualTotal));
+                // added to the saved answers on Save, for the live tracker
+                detailed.put("answers", Map.of("afterTaxYearly", round2(afterTaxYearly), "monthlyNet", round2(monthlyNet),
+                        "k401Monthly", k401Monthly));
+                return ResponseEntity.ok(detailed);
+            }
+
+            // older apps: saved right away
+            saveToS3(username, "monthly-budget.json", monthly);
+            saveToS3(username, "weekly-budget.json", weekly);
             saveQuizInput(username, quizData);
+            budgetChanges.record(username);
             return ResponseEntity.ok(monthly);
         } catch (Exception e) {
             log.error("Debts failed", e);
@@ -426,13 +509,20 @@ public class BudgetQuizController {
         final Double apr;        // percent, nullable
         final Double minMonthly; // nullable
         final Integer dueDay;    // nullable
+        final java.time.LocalDate nextDue; // nullable: the next payment date from the app
 
-        DebtItem(String name, double principal, Double apr, Double minMonthly, Integer dueDay) {
+        DebtItem(String name, double principal, Double apr, Double minMonthly, Integer dueDay, java.time.LocalDate nextDue) {
             this.name = name;
             this.principal = principal;
             this.apr = apr;
             this.minMonthly = minMonthly;
-            this.dueDay = dueDay;
+            this.dueDay = dueDay != null ? dueDay : nextDue != null ? nextDue.getDayOfMonth() : null;
+            this.nextDue = nextDue;
+        }
+
+        /** a loan whose first payment is more than ~6 weeks away (e.g. a new grad's grace period) */
+        boolean startsLater(java.time.LocalDate today) {
+            return nextDue != null && nextDue.isAfter(today.plusDays(45));
         }
     }
 
@@ -448,12 +538,29 @@ public class BudgetQuizController {
 
             double principal = parseDoubleSafe(m.get("principal"));
             Double apr = toNullableDouble(m.get("apr"));
-            Double minMonthly = toNullableDouble(m.get("minMonthly"));
+            // the app sends "minPayment" and "dueDate"; older saved quizzes may have "minMonthly"/"dueDay"
+            Double minMonthly = toNullableDouble(m.get("minPayment") != null ? m.get("minPayment") : m.get("minMonthly"));
             Integer dueDay = toNullableInt(m.get("dueDay"));
+            java.time.LocalDate nextDue = parseDay(m.get("dueDate"));
 
-            out.add(new DebtItem(name, principal, apr, minMonthly, dueDay));
+            out.add(new DebtItem(name, principal, apr, minMonthly, dueDay, nextDue));
         }
         return out;
+    }
+
+    /** "2026-12-01T05:00:00Z" or "2026-12-01" → the day (null if missing or unreadable) */
+    static java.time.LocalDate parseDay(Object value) {
+        if (value == null) return null;
+        String text = String.valueOf(value).strip();
+        try {
+            return java.time.OffsetDateTime.parse(text).toLocalDate();
+        } catch (Exception e) {
+            try {
+                return java.time.LocalDate.parse(text.length() >= 10 ? text.substring(0, 10) : text);
+            } catch (Exception ignored) {
+                return null;
+            }
+        }
     }
 
     private double computeDebtMinimum(DebtItem d) {
@@ -605,12 +712,54 @@ public class BudgetQuizController {
       }
   }
 
+  /**
+   * Saving after the review screen: the reviewed budget becomes the quiz's budget (what Revert goes
+   * back to) and the current budget (the "-edited" copy everything else reads, replacing edits of
+   * the old one), and the answers become the last quiz.
+   * Body: {username, budget: {category: monthly amount}, answers: {...the quiz...}}
+   */
+  @PostMapping("/save")
+  @SuppressWarnings("unchecked")
+  public ResponseEntity<String> saveReviewed(@RequestBody Map<String, Object> body) {
+      try {
+          String username = normalize(String.valueOf(body.getOrDefault("username", "")));
+          if (username.isBlank()) return ResponseEntity.badRequest().body("username is required");
+          Map<String, Double> monthly = new LinkedHashMap<>(toDoubleMap(body.get("budget")));
+          monthly.keySet().removeIf(this::is401kKey);
+          if (monthly.isEmpty()) return ResponseEntity.badRequest().body("budget is required");
+          Map<String, Object> answers = body.get("answers") instanceof Map<?, ?> a
+                  ? new LinkedHashMap<>((Map<String, Object>) a) : new LinkedHashMap<>();
+          answers.put("username", username);
+          answers.remove("withDetails");
+          answers.remove("reviewOverrides");
+
+          Map<String, Double> weekly = new LinkedHashMap<>();
+          monthly.forEach((k, v) -> weekly.put(k, v / 4.0));
+          saveToS3(username, "monthly-budget.json", monthly);
+          saveToS3(username, "weekly-budget.json", weekly);
+          // the same format POST /api/budget saves (the weekly recap, goals, tuning and bank sorting read it)
+          for (var copy : Map.of("monthly", monthly, "weekly", weekly).entrySet()) {
+              byte[] json = objectMapper.writeValueAsBytes(new BudgetRequest(username, copy.getKey(), copy.getValue()));
+              s3Service.uploadFile("users/%s/%s-budget-edited.json".formatted(username, copy.getKey()), new ByteArrayInputStream(json), json.length);
+          }
+          categorizer.clearCategoryCache(username); // bank transactions sort into the new categories
+          fixedCosts.applyQuizBudget(username, monthly); // savings, bills, subscriptions, debt minimums
+          budgetChanges.record(username);
+          saveQuizInput(username, answers);
+          return ResponseEntity.ok("Budget saved.");
+      } catch (Exception e) {
+          log.error("Saving the reviewed budget failed", e);
+          return ResponseEntity.internalServerError().body("Couldn't save your budget.");
+      }
+  }
+
   // Revert edited budget to original
   @PostMapping("/revert/{username}/{type}")
   public ResponseEntity<String> revertToOriginal(@PathVariable String username, @PathVariable String type) {
     try {
         String editedKey = String.format("users/%s/%s-budget-edited.json", normalize(username), type);
         s3Service.deleteFile(editedKey);
+        budgetChanges.record(normalize(username));
         return ResponseEntity.ok("Reverted to original budget.");
     } catch (Exception e) {
         return ResponseEntity.status(500).body("Failed to revert: " + e.getMessage());

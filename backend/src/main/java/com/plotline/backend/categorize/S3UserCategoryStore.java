@@ -39,6 +39,7 @@ public class S3UserCategoryStore implements UserCategoryStore {
 
     @Override
     public synchronized String lookup(String username, String merchantNormalized) {
+        username = username.toLowerCase(); // one copy per person, however the name is spelled
         loadIfNeeded(username);
         Map<String, String> userOverrides = cache.get(username);
         if (userOverrides == null) {
@@ -49,6 +50,7 @@ public class S3UserCategoryStore implements UserCategoryStore {
 
     @Override
     public synchronized void saveOverride(String username, String merchantNormalized, String category) {
+        username = username.toLowerCase();
         loadIfNeeded(username);
         cache.computeIfAbsent(username, k -> new ConcurrentHashMap<>())
              .put(merchantNormalized, category);
@@ -58,8 +60,8 @@ public class S3UserCategoryStore implements UserCategoryStore {
 
     @Override
     public synchronized void deleteUser(String username) {
-        cache.remove(username);
-        loadedUsers.remove(username);
+        cache.remove(username.toLowerCase());
+        loadedUsers.remove(username.toLowerCase());
         try {
             s3Service.deleteFile(OVERRIDES_PREFIX + username.toLowerCase() + ".json");
         } catch (Exception e) {

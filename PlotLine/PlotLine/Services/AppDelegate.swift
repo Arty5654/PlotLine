@@ -73,6 +73,12 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
             NotificationCenter.default.post(name: .plotlineDeepLink, object: nil, userInfo: ["destination": destination])
         }
 
+        // a bill that changes each month (utilities): open Monthly Costs to enter the amount
+        if userInfo["navigateTo"] as? String == "costs" {
+            let info = userInfo
+            Task { @MainActor in CostsRouter.shared.open(info) }
+        }
+
         // a goal reminder: open that goal (works whether the app was running or not)
         if userInfo["navigateTo"] as? String == "goals" {
             let info = userInfo

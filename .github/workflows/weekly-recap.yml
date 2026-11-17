@@ -1,13 +1,15 @@
 name: Weekly budget recap
 
 # The server sleeps when nobody is using the app, so it can't wake itself up on Sunday evening.
-# This pings it every half hour from Sunday 6 PM in the easternmost US time zone until Sunday
-# 8 PM in Hawaii; the server sends each person's recap once, between 6 and 8 PM their time.
-# (Scheduled runs only happen on the default branch, and GitHub can start them a few minutes late.)
+# This pings it every half hour through Sunday evening across US time zones; the server sends each
+# person's recap once, between 6 and 10 PM their time. GitHub often starts scheduled runs late or
+# skips some (on Oct 18 only 4 of ~22 ran), so it also pings Monday morning: anyone Sunday's runs
+# missed gets it between 8 AM and noon their time. (Scheduled runs only happen on the default branch.)
 on:
   schedule:
     - cron: "0,30 21-23 * * 0"   # Sunday 21:00-23:59 UTC
     - cron: "0,30 0-7 * * 1"     # Monday 00:00-07:59 UTC (Sunday evening in the US)
+    - cron: "0,30 12-22 * * 1"   # Monday 12:00-22:59 UTC (Monday morning in the US, the catch-up)
   workflow_dispatch:
 
 permissions: {}

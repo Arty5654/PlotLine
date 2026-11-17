@@ -20,9 +20,26 @@ import com.plotline.backend.tax.TakeHomeCalculator;
 public class ToolsController {
 
     private final TakeHomeCalculator takeHome;
+    private final com.plotline.backend.commute.CommutePrices commutePrices;
 
-    public ToolsController(TakeHomeCalculator takeHome) {
+    public ToolsController(TakeHomeCalculator takeHome, com.plotline.backend.commute.CommutePrices commutePrices) {
         this.takeHome = takeHome;
+        this.commutePrices = commutePrices;
+    }
+
+    /**
+     * Prices for the quiz's commute estimate: {mode, homeState, homeCity, workPlace, electric, routeHasTolls}
+     * → {gas: {pricePerGallon}} / {electricity: {pricePerKwh}} / {tolls: {oneWay}} / {transit: {...}} / {rideshare: {...}}
+     */
+    @PostMapping("/commute-prices")
+    public Map<String, Object> commutePrices(@RequestBody Map<String, Object> body) {
+        return commutePrices.pricesFor(
+                str(body.get("mode")), str(body.get("homeState")), str(body.get("homeCity")), str(body.get("workPlace")),
+                Boolean.TRUE.equals(body.get("electric")), Boolean.TRUE.equals(body.get("routeHasTolls")));
+    }
+
+    private static String str(Object value) {
+        return value == null ? null : String.valueOf(value).strip();
     }
 
     /** {salary, state, k401Percent, preTaxHealth (per year), payPeriods} → yearly and per-paycheck amounts */

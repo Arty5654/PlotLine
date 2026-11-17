@@ -62,6 +62,8 @@ abstract class FeatureTestBase {
     @MockBean protected SmsService smsService;
     @MockBean protected OpenAIService openAIService;
     @MockBean protected PlaidApi plaidApi;
+    /** never the real EIA in tests (not configured unless a test says so) */
+    @MockBean protected com.plotline.backend.commute.EiaPrices eia;
     @MockBean protected ExternalDataClient externalDataClient; // never call the real NewsAPI / USDA from tests
     @SpyBean protected PushService pushService; // real, but tests can check what would be pushed
     @MockBean protected com.plotline.backend.push.ApnsClient apnsClient; // never send real pushes from tests
@@ -69,6 +71,16 @@ abstract class FeatureTestBase {
     @Autowired protected MockMvc mockMvc;
     @Autowired protected AuthService authService;
     @Autowired protected S3Client s3;
+    @Autowired private org.springframework.jdbc.core.JdbcTemplate sharedPricesJdbc;
+
+    /**
+     * Saved prices are shared by everyone in a place, so one test's price (e.g. EIA's Virginia gas)
+     * would otherwise answer another test's question about the same place, depending on run order.
+     */
+    @org.junit.jupiter.api.BeforeEach
+    void clearSharedPrices() {
+        sharedPricesJdbc.update("delete from price_estimates");
+    }
 
     protected final ObjectMapper objectMapper = new ObjectMapper();
 

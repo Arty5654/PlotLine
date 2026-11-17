@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UserNotifications
 import GoogleSignIn
 import GoogleSignInSwift
 import AuthenticationServices
@@ -628,6 +629,10 @@ class AuthViewModel: ObservableObject {
         GIDSignIn.sharedInstance.signOut()
         GoalReminders.removeAll() // ...or get this person's goal reminders
         EventReminders.removeAll() // ...or their calendar reminders
+        UNUserNotificationCenter.current().getPendingNotificationRequests { requests in // ...or loan-start reminders
+            UNUserNotificationCenter.current().removePendingNotificationRequests(
+                withIdentifiers: requests.map(\.identifier).filter { $0.hasPrefix("loan-start-") })
+        }
 
         self.isCodeSent = false
         self.isSignin = true

@@ -105,7 +105,7 @@ public class CostsService {
                     newTotals.put(ae.getKey(), round2(cur + val));
                 }
             }
-            period.put("totals", newTotals);
+            period.put("totals", nonNegative(newTotals));
 
             // Store start/end for weekly/monthly
             if ("weekly".equalsIgnoreCase(type)) {
@@ -242,6 +242,7 @@ public class CostsService {
                 period.put("end", ym.atEndOfMonth().toString());
             }
 
+            nonNegative(totals);
             saveJson(key, period);
             log.debug("[CostsService] Added {} costs for {} on {}: {}", type, normUser, dateStr, costs);
 
@@ -364,6 +365,11 @@ public class CostsService {
      * in both monthly and weekly day-level costs.
      */
     public Map<String, Object> recategorizeTransaction(String username, String monthStr, String txnId, String newCategory) {
+        return recategorizeTransaction(username, monthStr, txnId, newCategory, false);
+    }
+
+    /** byHand: they moved it on Monthly Costs, so re-sorting after a budget change leaves it where they put it */
+    public Map<String, Object> recategorizeTransaction(String username, String monthStr, String txnId, String newCategory, boolean byHand) {
         try {
             String normUser = normalize(username);
             String key = "users/%s/costs/monthly/%s.json".formatted(normUser, monthStr);
@@ -382,14 +388,18 @@ public class CostsService {
             String dateStr = (String) target.get("date");
             double amount = target.get("amount") instanceof Number ? ((Number) target.get("amount")).doubleValue() : 0.0;
 
-            if (oldCategory != null && oldCategory.equals(newCategory)) return target; // no change
+            if (byHand) target.put("movedByHand", true);
+            if (oldCategory != null && oldCategory.equals(newCategory)) {
+                if (byHand) saveJson(key, period);
+                return target; // no change
+            }
 
             // Update the transaction record
             target.put("category", newCategory);
             period.put("transactions", transactions);
 
             // Move amount: subtract from old category, add to new category
-            if (dateStr != null && amount > 0) {
+            if (dateStr != null && amount != 0) {
                 if (oldCategory != null) {
                     applyDeltaToDays(period, dateStr, oldCategory, -amount);
                 }
@@ -496,7 +506,7 @@ public class CostsService {
             period.put("transactions", transactions);
 
             // Subtract from day-level costs
-            if (amount > 0 && category != null && dateStr != null) {
+            if (amount != 0 && category != null && dateStr != null) {
                 applyDeltaToDays(period, dateStr, category, -amount);
                 recalcTotals(period);
                 saveJson(key, period);
@@ -528,7 +538,8 @@ public class CostsService {
         Object val = dayCosts.get(category);
         if (val instanceof Number) current = ((Number) val).doubleValue();
 
-        double newVal = round2(Math.max(0, current + delta));
+        // can go below 0: a refund on a day with nothing else bought in that category
+        double newVal = round2(current + delta);
         if (newVal == 0.0) {
             dayCosts.remove(category);
         } else {
@@ -541,6 +552,16 @@ public class CostsService {
             days.put(dateStr, dayCosts);
         }
         period.put("days", days);
+    }
+
+    /**
+     * A month's (or week's) total for a category never shows below $0: a refund for something bought
+     * in an earlier month takes that category down to $0 there, not into the negative. Days keep the
+     * real amounts.
+     */
+    private static Map<String, Object> nonNegative(Map<String, Object> totals) {
+        totals.replaceAll((category, value) -> value instanceof Number n && n.doubleValue() < 0 ? 0.0 : value);
+        return totals;
     }
 
     /** Recalculate totals from days + adjustments. */
@@ -572,7 +593,7 @@ public class CostsService {
                 newTotals.put(ae.getKey(), round2(cur + val));
             }
         }
-        period.put("totals", newTotals);
+        period.put("totals", nonNegative(newTotals));
     }
 
     /** Apply a delta to the weekly period file for the given date. */
@@ -747,7 +768,7 @@ public class CostsService {
                 newTotals.putIfAbsent(cat, 0.0);
             }
 
-            period.put("totals", newTotals);
+            period.put("totals", nonNegative(newTotals));
 
             // Store start/end
             period.put("start", ym.atDay(1).toString());

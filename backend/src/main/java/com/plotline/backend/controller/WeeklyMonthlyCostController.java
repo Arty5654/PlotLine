@@ -61,6 +61,10 @@ public class WeeklyMonthlyCostController {
     @Autowired
     private com.plotline.backend.service.CostsService costsService;
 
+    /** fixed monthly costs, counted once (see FixedCosts) */
+    @Autowired
+    private com.plotline.backend.service.FixedCosts fixedCostsStore;
+
     @PostMapping
     public ResponseEntity<String> saveWeeklyMonthlyCosts(@RequestBody WeeklyMonthlyCostRequest request) {
         try {
@@ -576,19 +580,11 @@ public class WeeklyMonthlyCostController {
             List<Map<String, Object>> fixedCosts = loadFixedCosts(normUser);
             period.put("fixedCosts", fixedCosts);
 
-            // Merge fixed costs into totals so budget summary, feedback, and charts reflect them
+            // fixed costs in the totals (budget summary, feedback, charts), each counted once: the fixed
+            // amount or what was recorded in that category, whichever is larger (they used to be added)
             @SuppressWarnings("unchecked")
             Map<String, Object> totals = (Map<String, Object>) period.get("totals");
-            for (var fc : fixedCosts) {
-                String cat = String.valueOf(fc.get("category"));
-                double amt = fc.get("amount") instanceof Number ? ((Number) fc.get("amount")).doubleValue() : 0.0;
-                if (amt > 0) {
-                    double cur = 0.0;
-                    Object existing = totals.get(cat);
-                    if (existing instanceof Number) cur = ((Number) existing).doubleValue();
-                    totals.put(cat, round2(cur + amt));
-                }
-            }
+            com.plotline.backend.service.FixedCosts.countOnceInObjects(totals, fixedCosts);
 
             return ResponseEntity.ok(period);
         } catch (Exception e) {
@@ -699,6 +695,70 @@ public class WeeklyMonthlyCostController {
         }
     }
 
+    /**
+     * The monthly trophies for one finished month, checked once (users/<u>/trophy-months.json):
+     * Monthly Budgetor when spending (fixed costs counted once) was at or under the budget, Budget
+     * Pacer at least 5% under, Healthy Eater when eating out went down and groceries didn't. A month
+     * with nothing tracked isn't checked.
+     */
+    void awardMonthTrophies(String normUser, YearMonth month, List<Map<String, Object>> fixedCosts) throws Exception {
+        String key = "%04d-%02d".formatted(month.getYear(), month.getMonthValue());
+        String doneKey = "users/%s/trophy-months.json".formatted(normUser);
+        List<String> done = new ArrayList<>();
+        try {
+            byte[] data = s3Service.downloadFile(doneKey);
+            if (data != null && data.length > 0) done = new ArrayList<>(new ObjectMapper().readValue(data, new TypeReference<List<String>>() {}));
+        } catch (Exception ignored) { /* none yet */ }
+        if (done.contains(key)) return;
+
+        Map<String, Double> spent = readMonthlyTotalsOrEmpty(normUser, key);
+        if (spent.isEmpty()) return; // nothing tracked: nothing to judge (checked again if it's filled in later)
+        com.plotline.backend.service.FixedCosts.countOnce(spent, fixedCosts);
+        double budget = monthlyBudgetTotal(normUser);
+        double total = spent.entrySet().stream().filter(e -> !isTrackerExcluded(e.getKey())).mapToDouble(Map.Entry::getValue).sum();
+        if (budget > 0 && total <= budget) {
+            userProfileService.incrementTrophy(normUser, "monthly-budget-met", 1);
+            if (total <= budget * 0.95) userProfileService.incrementTrophy(normUser, "budget-pacer", 1);
+        }
+        YearMonth before = month.minusMonths(1);
+        Map<String, Double> previous = readMonthlyTotalsOrEmpty(normUser, "%04d-%02d".formatted(before.getYear(), before.getMonthValue()));
+        double eatNow = sumWhere(spent, "eat"), eatBefore = sumWhere(previous, "eat");
+        double grocNow = sumWhere(spent, "groc"), grocBefore = sumWhere(previous, "groc");
+        if (!previous.isEmpty() && eatBefore > 0 && eatNow < eatBefore && grocNow >= grocBefore) {
+            userProfileService.incrementTrophy(normUser, "healthy-eater", 1);
+        }
+        done.add(key);
+        byte[] json = new ObjectMapper().writeValueAsBytes(done);
+        s3Service.uploadFile(doneKey, new ByteArrayInputStream(json), json.length);
+    }
+
+    private static double sumWhere(Map<String, Double> totals, String part) {
+        return totals.entrySet().stream().filter(e -> e.getKey().toLowerCase().contains(part)).mapToDouble(Map.Entry::getValue).sum();
+    }
+
+    private static boolean isTrackerExcluded(String category) {
+        String c = category.toLowerCase().replace("(", "").replace(")", "");
+        return c.equals("401k") || c.equals("401k contribution");
+    }
+
+    /** the monthly budget's total (the current one, else the quiz's), without the 401(k) line */
+    private double monthlyBudgetTotal(String normUser) {
+        for (String file : List.of("monthly-budget-edited.json", "monthly-budget.json")) {
+            try {
+                Map<String, Object> saved = loadJsonOrEmpty("users/%s/%s".formatted(normUser, file));
+                Object lines = saved.containsKey("budget") ? saved.get("budget") : saved;
+                if (lines instanceof Map<?, ?> m && !m.isEmpty()) {
+                    double total = 0;
+                    for (var e : m.entrySet()) {
+                        if (e.getValue() instanceof Number n && !isTrackerExcluded(String.valueOf(e.getKey()))) total += n.doubleValue();
+                    }
+                    if (total > 0) return total;
+                }
+            } catch (Exception ignored) { /* try the next */ }
+        }
+        return 0;
+    }
+
     private Map<String, Object> loadJsonOrEmpty(String key) throws Exception {
         try {
             byte[] raw = s3Service.downloadFile(key);
@@ -738,8 +798,12 @@ public class WeeklyMonthlyCostController {
         boolean overBudget,
         Double monthlyBudget,
         java.util.List<CatDelta> cutbacks,
-        int monthsCompared         // how many prior months were averaged
+        int monthsCompared,        // how many prior months were averaged
+        String compare,            // "last", "3" or "6"
+        java.util.List<MonthTotal> history  // the 6 months up to this one, oldest first
     ) {}
+
+    static record MonthTotal(String month, double total, boolean tracked) {}
 
     /** Helper: parse "YYYY-MM" and return previous month as "YYYY-MM" */
     private static String prevMonthKey(String month) {
@@ -770,7 +834,9 @@ public class WeeklyMonthlyCostController {
     @GetMapping("/feedback/{username}")
     public ResponseEntity<?> getMonthlyFeedback(
             @PathVariable String username,
-            @RequestParam(name = "month") String month // "YYYY-MM"
+            @RequestParam(name = "month") String month, // "YYYY-MM"
+            // what this month is compared with: "last" month, the "3"- or "6"-month average (of tracked months)
+            @RequestParam(name = "compare", defaultValue = "6") String compare
     ) {
         try {
             String normUser = normalize(username);
@@ -778,35 +844,38 @@ public class WeeklyMonthlyCostController {
             // Load fixed costs once
             List<Map<String, Object>> fixedCosts = loadFixedCosts(normUser);
 
-            // Load and enrich current month
+            // this month, with fixed costs counted once
             Map<String, Double> curTotals = readMonthlyTotalsOrEmpty(normUser, month);
-            for (var fc : fixedCosts) {
-                String cat = String.valueOf(fc.get("category"));
-                double amt = fc.get("amount") instanceof Number ? ((Number) fc.get("amount")).doubleValue() : 0.0;
-                if (amt > 0) curTotals.merge(cat, amt, Double::sum);
-            }
+            com.plotline.backend.service.FixedCosts.countOnce(curTotals, fixedCosts);
 
-            // Collect up to 6 prior months — only those where the user tracked variable data
+            // the compared months: the most recent tracked ones (up to a year back), as many as asked for
+            int wanted = switch (compare) { case "last" -> 1; case "3" -> 3; default -> 6; };
             YearMonth ym = YearMonth.parse(month);
             java.util.List<Map<String, Double>> priorMonths = new java.util.ArrayList<>();
             String mostRecentPrevKey = null;
 
-            for (int i = 1; i <= 6; i++) {
+            for (int i = 1; i <= 12 && priorMonths.size() < wanted; i++) {
                 YearMonth prevYM = ym.minusMonths(i);
                 String prevKey = String.format("%04d-%02d", prevYM.getYear(), prevYM.getMonthValue());
                 Map<String, Double> rawPrev = readMonthlyTotalsOrEmpty(normUser, prevKey);
                 if (rawPrev.isEmpty()) continue; // no tracked data for this month
 
-                // Enrich with fixed costs for fair comparison
                 Map<String, Double> enriched = new LinkedHashMap<>(rawPrev);
-                for (var fc : fixedCosts) {
-                    String cat = String.valueOf(fc.get("category"));
-                    double amt = fc.get("amount") instanceof Number ? ((Number) fc.get("amount")).doubleValue() : 0.0;
-                    if (amt > 0) enriched.merge(cat, amt, Double::sum);
-                }
+                com.plotline.backend.service.FixedCosts.countOnce(enriched, fixedCosts);
 
                 if (mostRecentPrevKey == null) mostRecentPrevKey = prevKey;
                 priorMonths.add(enriched);
+            }
+
+            // spending each month for the trend chart: this month and the 5 before (fixed costs counted once)
+            java.util.List<MonthTotal> history = new java.util.ArrayList<>();
+            for (int i = 5; i >= 0; i--) {
+                YearMonth hm = ym.minusMonths(i);
+                String hk = String.format("%04d-%02d", hm.getYear(), hm.getMonthValue());
+                Map<String, Double> raw = i == 0 ? readMonthlyTotalsOrEmpty(normUser, month) : readMonthlyTotalsOrEmpty(normUser, hk);
+                boolean tracked = !raw.isEmpty();
+                com.plotline.backend.service.FixedCosts.countOnce(raw, fixedCosts);
+                history.add(new MonthTotal(hk, round2(raw.values().stream().mapToDouble(Double::doubleValue).sum()), tracked));
             }
 
             int monthsCompared = priorMonths.size();
@@ -873,22 +942,14 @@ public class WeeklyMonthlyCostController {
                 overBudget,
                 monthlyBudget > 0 ? monthlyBudget : null,
                 cutbacks,
-                monthsCompared
+                monthsCompared,
+                compare,
+                history
             );
 
-            // Trophy hooks
+            // monthly trophies: once per finished month (they used to count every time this page loaded)
             try {
-                if (!overBudget && monthlyBudget > 0) {
-                    userProfileService.incrementTrophy(username, "monthly-budget-met", 1);
-                    if (totalCur <= monthlyBudget * 0.95) {
-                        userProfileService.incrementTrophy(username, "budget-pacer", 1);
-                    }
-                }
-                CatDelta eatOut = deltas.stream().filter(d -> d.category.toLowerCase().contains("eat")).findFirst().orElse(null);
-                CatDelta groceries = deltas.stream().filter(d -> d.category.toLowerCase().contains("groc")).findFirst().orElse(null);
-                if (eatOut != null && eatOut.delta < 0 && (groceries == null || groceries.delta >= 0)) {
-                    userProfileService.incrementTrophy(username, "healthy-eater", 1);
-                }
+                awardMonthTrophies(normUser, YearMonth.now().minusMonths(1), fixedCosts);
             } catch (Exception ignore) { /* non-fatal */ }
 
             return ResponseEntity.ok(payload);
@@ -988,7 +1049,7 @@ public class WeeklyMonthlyCostController {
             if (newCategory == null || newCategory.isBlank()) {
                 return ResponseEntity.badRequest().body(Map.of("error", "category is required"));
             }
-            Map<String, Object> result = costsService.recategorizeTransaction(normUser, month, txnId, newCategory);
+            Map<String, Object> result = costsService.recategorizeTransaction(normUser, month, txnId, newCategory, true);
             if (result == null) {
                 return ResponseEntity.status(404).body(Map.of("error", "Transaction not found"));
             }
@@ -1109,10 +1170,13 @@ public class WeeklyMonthlyCostController {
         try {
             String normUser = normalize(username);
             List<Map<String, Object>> fixed = loadFixedCosts(normUser);
-            boolean removed = fixed.removeIf(fc -> id.equals(fc.get("id")));
-            if (!removed) {
+            Map<String, Object> gone = fixed.stream().filter(fc -> id.equals(fc.get("id"))).findFirst().orElse(null);
+            if (gone == null) {
                 return ResponseEntity.status(404).body(Map.of("error", "Fixed cost not found"));
             }
+            fixed.remove(gone);
+            // one the quiz added: retaking the quiz doesn't add it back
+            if ("quiz".equals(gone.get("source"))) fixedCostsStore.rememberRemoved(normUser, String.valueOf(gone.get("category")));
             saveFixedCosts(normUser, fixed);
             return ResponseEntity.ok(fixed);
         } catch (Exception e) {
@@ -1121,21 +1185,10 @@ public class WeeklyMonthlyCostController {
     }
 
     private List<Map<String, Object>> loadFixedCosts(String username) {
-        try {
-            String key = "users/" + username + "/fixed_costs.json";
-            byte[] data = s3Service.downloadFile(key);
-            if (data == null || data.length == 0) return new ArrayList<>();
-            return new ObjectMapper().readValue(data, new TypeReference<List<Map<String, Object>>>() {});
-        } catch (Exception e) {
-            return new ArrayList<>();
-        }
+        return fixedCostsStore.load(username);
     }
 
     private void saveFixedCosts(String username, List<Map<String, Object>> fixed) throws Exception {
-        String key = "users/" + username + "/fixed_costs.json";
-        String json = new ObjectMapper().writeValueAsString(fixed);
-        s3Service.uploadFile(key,
-                new ByteArrayInputStream(json.getBytes(StandardCharsets.UTF_8)),
-                json.length());
+        fixedCostsStore.save(username, fixed);
     }
 }

@@ -12,18 +12,18 @@ public class InMemoryUserCategoryStore implements UserCategoryStore {
 
   @Override
   public synchronized String lookup(String username, String merchantNormalized) {
-    var m = byUser.get(username);
+    var m = byUser.get(username.toLowerCase());
     return m == null ? null : m.get(merchantNormalized);
   }
 
   @Override
   public synchronized void deleteUser(String username) {
-    byUser.remove(username);
+    byUser.remove(username.toLowerCase());
   }
 
   @Override
   public synchronized void saveOverride(String username, String merchantNormalized, String category) {
-    byUser.computeIfAbsent(username, k -> new HashMap<>())
+    byUser.computeIfAbsent(username.toLowerCase(), k -> new HashMap<>())
           .put(merchantNormalized, category);
   }
 }
