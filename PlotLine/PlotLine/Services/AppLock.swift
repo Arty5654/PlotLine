@@ -5,6 +5,8 @@
 //  Profile → Lock with Face ID. When it's on, opening PlotLine asks for Face ID (or the phone's
 //  passcode), and so does coming back after more than a minute away. While the app is in the
 //  background or the app switcher, its screen is covered so balances and spending aren't visible.
+//  Not while a password is being typed (Plaid's bank sign-in, PlotLine's own): Face ID filling it
+//  in also makes the app inactive for a moment, and covering the screen then hid what they were doing.
 //
 //  The lock and the cover are their own window above everything (sheets and alerts included).
 //
@@ -28,6 +30,8 @@ final class AppLock: ObservableObject {
     private var hasLaunched = false
     private var prompting = false
     private var promptedForThisLock = false
+    /// screens with a password on them right now (Face ID AutoFill there isn't the app switcher)
+    private var passwordScreens = 0
     private var window: UIWindow?
 
     private init() {
@@ -84,8 +88,9 @@ final class AppLock: ObservableObject {
                 hideWindow()
             }
         case .inactive:
-            // the app switcher shows the app as it is now: cover it
-            if isEnabled, !prompting {
+            // the app switcher shows the app as it is now: cover it (not for Face ID filling in a
+            // password; leaving for real still covers it in .background)
+            if isEnabled, !prompting, passwordScreens == 0 {
                 covered = true
                 showWindow()
             }
@@ -107,6 +112,9 @@ final class AppLock: ObservableObject {
             hideWindow()
         }
     }
+
+    func passwordScreenAppeared() { passwordScreens += 1 }
+    func passwordScreenDisappeared() { passwordScreens = max(0, passwordScreens - 1) }
 
     /// signing out: the next person shouldn't inherit the lock prompt mid-way
     func reset() {
@@ -174,6 +182,14 @@ struct AppLockView: View {
             }
         }
         .accessibilityElement(children: .contain)
+    }
+}
+
+extension View {
+    /// a screen where a password is typed: Face ID filling it in doesn't cover the screen
+    func passwordEntryScreen(_ active: Bool = true) -> some View {
+        onAppear { if active { AppLock.shared.passwordScreenAppeared() } }
+            .onDisappear { if active { AppLock.shared.passwordScreenDisappeared() } }
     }
 }
 

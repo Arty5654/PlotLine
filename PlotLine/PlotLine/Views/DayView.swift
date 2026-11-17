@@ -337,7 +337,7 @@ private struct EventRow: View {
     let event: Event
 
     private var typeColor: Color {
-        event.eventType == "rent" ? .red :
+        event.eventType == "rent" || event.eventType == "bill" ? .red :
         event.eventType.hasPrefix("subscription") ? .orange :
         event.eventType.hasPrefix("weekly-goal") ? .green :
         PLColor.accent

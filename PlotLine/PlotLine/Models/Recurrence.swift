@@ -32,6 +32,9 @@ struct RecurrenceRule: Equatable {
     var months: [Int] = []            // BYMONTH
     var count: Int?                   // COUNT
     var until: Date?                  // UNTIL
+    /// "monthly on the 31st" lands on the last day of shorter months instead of skipping them
+    /// (bills and subscriptions: rent due the 31st is still due in April)
+    var clampsToMonthEnd = false
 
     // MARK: - PlotLine's named repeats
 
@@ -44,6 +47,7 @@ struct RecurrenceRule: Equatable {
         case "weekly": rule = RecurrenceRule(frequency: .weekly)
         case "biweekly": rule = RecurrenceRule(frequency: .weekly, interval: 2)
         case "monthly": rule = RecurrenceRule(frequency: .monthly)
+        case "every-6-months": rule = RecurrenceRule(frequency: .monthly, interval: 6) // e.g. car insurance
         case "yearly": rule = RecurrenceRule(frequency: .yearly)
         default: return nil
         }
@@ -62,6 +66,7 @@ struct RecurrenceRule: Equatable {
         case (.weekly, 1) where days.count <= 1: return "weekly"
         case (.weekly, 2) where days.count <= 1: return "biweekly"
         case (.monthly, 1) where days.isEmpty: return "monthly"
+        case (.monthly, 6) where days.isEmpty: return "every-6-months"
         case (.yearly, 1) where days.isEmpty: return "yearly"
         default: return nil
         }
@@ -251,7 +256,8 @@ enum Recurrence {
                 let count = daysIn(year, month)
                 days = rule.monthDays.compactMap { $0 > 0 ? ($0 <= count ? $0 : nil) : count + $0 + 1 }
             } else {
-                days = [startComps.day ?? 1]
+                let day = startComps.day ?? 1
+                days = [rule.clampsToMonthEnd ? min(day, daysIn(year, month)) : day]
             }
             return days.sorted().compactMap { at(year, month, $0) }
         }
@@ -313,7 +319,11 @@ extension Event {
     /// how this event repeats; nil for a one-off (or a rule PlotLine can't follow)
     var repeatRule: RecurrenceRule? {
         if let text = recurrenceRule, !text.isEmpty { return RecurrenceRule(rrule: text) }
-        return RecurrenceRule.named(recurrence, until: recurrenceEnd.flatMap(Self.endOfDay))
+        var rule = RecurrenceRule.named(recurrence, until: recurrenceEnd.flatMap(Self.endOfDay))
+        // money that's due every month is due in short months too (other events skip, like Apple and Google)
+        let type = eventType.lowercased()
+        if type == "rent" || type == "bill" || type.hasPrefix("subscription") { rule?.clampsToMonthEnd = true }
+        return rule
     }
 
     var isRepeating: Bool { repeatRule != nil || seriesId != nil }

@@ -7,20 +7,7 @@
 
 import SwiftUI
 
-private let txnCategories = [
-    "Rent", "Groceries", "Subscriptions", "Eating Out",
-    "Entertainment", "Utilities", "Savings", "Miscellaneous",
-    "Transportation", "Roth IRA", "Car Insurance",
-    "Health Insurance", "Brokerage",
-    "Gas", "Phone", "Internet", "Gym", "Clothing",
-    "Personal Care", "Education", "Childcare", "Pet Care",
-    "Home Maintenance", "Gifts", "Donations", "Travel",
-    "Baby Supplies", "Hobbies", "Shopping", "Coffee",
-    "Alcohol & Bars", "Home Decor", "Electronics",
-    "Medical", "Dental", "Vision", "Therapy",
-    "Parking", "Tolls", "Laundry", "Haircuts",
-    "Streaming Services", "Gaming", "Music", "Books"
-]
+private let txnCategories = CategoryOptions.common
 
 struct TransactionsView: View {
     @Environment(\.colorScheme) private var colorScheme
@@ -33,6 +20,8 @@ struct TransactionsView: View {
     @State private var editingTxn: SyncedTransaction? = nil
     @State private var editAmount: String = ""
     @State private var editCategory: String = ""
+    /// with a new category: put every purchase from this place there (past 3 months and from now on)
+    @State private var alwaysForPlace = false
     @State private var showDeleteConfirm: SyncedTransaction? = nil
     @State private var errorMessage: String? = nil
 
@@ -158,7 +147,7 @@ struct TransactionsView: View {
             Button("Cancel", role: .cancel) { showDeleteConfirm = nil }
         } message: {
             if let txn = showDeleteConfirm {
-                Text("Remove \"\(txn.name)\" ($\(String(format: "%.2f", txn.amount)))? This will update your costs.")
+                Text("Remove \"\(txn.name)\" (\(Self.money(txn.amount)))? This will update your costs.")
             }
         }
         .sheet(item: $editingTxn) { txn in
@@ -187,6 +176,11 @@ struct TransactionsView: View {
                     Text(txn.category)
                         .font(.caption)
                         .foregroundColor(.secondary)
+                    if txn.amount < 0 {
+                        Text("Refund")
+                            .font(.caption2)
+                            .foregroundColor(PLColor.success)
+                    }
                     if txn.originalAmount != nil {
                         Text("(edited)")
                             .font(.caption2)
@@ -196,11 +190,12 @@ struct TransactionsView: View {
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 2) {
-                Text("$\(String(format: "%.2f", txn.amount))")
+                Text(Self.money(txn.amount))
                     .font(.body.monospacedDigit())
                     .fontWeight(.medium)
+                    .foregroundColor(txn.amount < 0 ? PLColor.success : .primary)
                 if let orig = txn.originalAmount {
-                    Text("was $\(String(format: "%.2f", orig))")
+                    Text("was \(Self.money(orig))")
                         .font(.caption2.monospacedDigit())
                         .foregroundColor(.secondary)
                         .strikethrough()
@@ -215,8 +210,9 @@ struct TransactionsView: View {
                 Label("Delete", systemImage: "trash")
             }
             Button {
-                editAmount = String(format: "%.2f", txn.amount)
+                editAmount = String(format: "%.2f", abs(txn.amount))
                 editCategory = txn.category
+                alwaysForPlace = false
                 editingTxn = txn
             } label: {
                 Label("Edit", systemImage: "pencil")
@@ -248,9 +244,9 @@ struct TransactionsView: View {
                         .foregroundColor(.secondary)
                 }
 
-                Section("Amount") {
+                Section(txn.amount < 0 ? "Refund amount" : "Amount") {
                     HStack {
-                        Text("$")
+                        Text(txn.amount < 0 ? "−$" : "$")
                             .font(.title3)
                         TextField("Amount", text: $editAmount)
                             .keyboardType(.decimalPad)
@@ -276,6 +272,13 @@ struct TransactionsView: View {
                     }
                     .pickerStyle(.menu)
                     .tint(colorScheme == .dark ? .white : .blue)
+                    if editCategory != txn.category && (txn.source == "plaid" || txn.source == "manual") {
+                        Toggle("Always put \(txn.name) here", isOn: $alwaysForPlace)
+                        if alwaysForPlace {
+                            Text("Its other purchases from the last 3 months move too, and new ones go here.")
+                                .font(.caption).foregroundColor(.secondary)
+                        }
+                    }
                 }
 
                 if let err = errorMessage {
@@ -342,11 +345,17 @@ struct TransactionsView: View {
         }.resume()
     }
 
+    /// "$12.50", or "−$20.00" for a refund (money back lowers its category)
+    static func money(_ amount: Double) -> String {
+        (amount < 0 ? "−$" : "$") + String(format: "%.2f", abs(amount))
+    }
+
     private func saveEdit(_ txn: SyncedTransaction) {
-        guard let newAmt = Double(editAmount), newAmt >= 0 else {
+        guard let typed = Double(editAmount), typed >= 0 else {
             errorMessage = "Enter a valid amount"
             return
         }
+        let newAmt = txn.amount < 0 ? -typed : typed // a refund stays a refund
         errorMessage = nil
 
         let amountChanged = newAmt != txn.amount
@@ -354,6 +363,19 @@ struct TransactionsView: View {
 
         if !amountChanged && !categoryChanged {
             editingTxn = nil
+            return
+        }
+
+        // a rule for the place: this one and its others move (then the amount, if it changed)
+        if categoryChanged && alwaysForPlace {
+            Task {
+                if await saveRule(place: txn.name, category: editCategory) {
+                    if amountChanged { updateAmount(txn, newAmount: newAmt) } else { editingTxn = nil }
+                    fetchTransactions()
+                } else {
+                    errorMessage = "Couldn't save that. Try again in a moment."
+                }
+            }
             return
         }
 
@@ -398,6 +420,18 @@ struct TransactionsView: View {
                 }
             }
         }.resume()
+    }
+
+    /// "Always put this place in…" (POST /api/category/place): its purchases move there and new ones follow
+    private func saveRule(place: String, category: String) async -> Bool {
+        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/category/place") else { return false }
+        var req = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &req)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["username": username, "merchant": place, "category": category])
+        guard let (_, response) = try? await URLSession.shared.data(for: req) else { return false }
+        return (200...299).contains((response as? HTTPURLResponse)?.statusCode ?? -1)
     }
 
     private func recategorize(_ txn: SyncedTransaction, to newCategory: String, completion: @escaping () -> Void) {

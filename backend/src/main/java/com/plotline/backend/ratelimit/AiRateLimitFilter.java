@@ -37,7 +37,8 @@ public class AiRateLimitFilter extends OncePerRequestFilter {
             "/api/groceryLists/estimate-grocery-cost-live",
             "/api/groceryLists/generate-from-meal",
             "/api/groceryLists/generate-meal-from-list",
-            "/api/groceryLists/generate-list-from-goal"
+            "/api/groceryLists/generate-list-from-goal",
+            "/api/tools/commute-prices"     // AI estimates when a place isn't cached yet
     );
 
     private final RateLimiter limiter;

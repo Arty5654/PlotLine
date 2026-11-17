@@ -75,25 +75,48 @@ class PushFeatureTest extends FeatureTestBase {
     }
 
     @Test
-    @DisplayName("Weekly recap: Sunday 6-8 PM in the person's time zone, once per week, with this week's spending vs budget")
+    @DisplayName("Weekly recap: Sunday 6-10 PM in the person's time zone, for the week that just ended, once per week")
     void weeklyRecap() throws Exception {
         User me = newUser();
         String user = me.name().toLowerCase();
         ok(postJson(me, "/api/push/devices", Map.of("token", "b".repeat(64), "environment", "sandbox", "timeZone", "America/New_York")));
-        // weekly budget (savings isn't spending) and this week's spending
+        // weekly budget (savings isn't spending) and spending
         s3.putObject(b -> b.bucket("plotline-database-bucket").key("users/" + user + "/weekly-budget.json"),
-                software.amazon.awssdk.core.sync.RequestBody.fromString("{\"Groceries\": 100, \"Eating Out\": 50, \"Savings\": 200}"));
-        s3.putObject(b -> b.bucket("plotline-database-bucket").key("users/" + user + "/costs/weekly/2026-W42.json"),
+                software.amazon.awssdk.core.sync.RequestBody.fromString("{\"Groceries\": 100, \"Eating Out\": 50, \"Savings\": 200, \"Rent\": 362.5}"));
+        // rent is a fixed cost: not synced from the bank, so it's out of the recap's budget too
+        ok(postJson(me, "/api/costs/fixed/" + me.name(), Map.of("category", "Rent", "amount", 1450)));
+        // the week that just ended (Sun Oct 4 - Sat Oct 10) and the one that started Sunday morning
+        s3.putObject(b -> b.bucket("plotline-database-bucket").key("users/" + user + "/costs/weekly/2026-W41.json"),
                 software.amazon.awssdk.core.sync.RequestBody.fromString("{\"totals\": {\"Groceries\": 80, \"Eating Out\": 40}}"));
+        s3.putObject(b -> b.bucket("plotline-database-bucket").key("users/" + user + "/costs/weekly/2026-W42.json"),
+                software.amazon.awssdk.core.sync.RequestBody.fromString("{\"totals\": {\"Eating Out\": 9}}"));
 
         // Sunday Oct 11 2026, 5 PM in New York: too early
         recaps.run(ZonedDateTime.parse("2026-10-11T21:00:00Z"));
         org.mockito.Mockito.verify(pushService, org.mockito.Mockito.never()).send(eq(user), argThat(says("this week")));
 
-        // 6:30 PM: sent; the next run at 7 PM doesn't send it again
-        recaps.run(ZonedDateTime.parse("2026-10-11T22:30:00Z"));
-        recaps.run(ZonedDateTime.parse("2026-10-11T23:00:00Z"));
+        // 9:30 PM (GitHub's run came late): sent, for last week; later runs and Monday's don't send it again
+        recaps.run(ZonedDateTime.parse("2026-10-12T01:30:00Z"));
+        recaps.run(ZonedDateTime.parse("2026-10-12T01:45:00Z"));
+        recaps.run(ZonedDateTime.parse("2026-10-12T13:00:00Z"));
         verify(pushService).send(eq(user), argThat(says("You spent $120 of your $150 budget this week. $30 left to spare.")));
+    }
+
+    @Test
+    @DisplayName("Weekly recap: missed on Sunday evening, it comes Monday morning (8 AM-noon), still for last week")
+    void weeklyRecapCatchUp() throws Exception {
+        User me = newUser();
+        String user = me.name().toLowerCase();
+        ok(postJson(me, "/api/push/devices", Map.of("token", "c".repeat(64), "environment", "sandbox", "timeZone", "America/Los_Angeles")));
+        s3.putObject(b -> b.bucket("plotline-database-bucket").key("users/" + user + "/weekly-budget.json"),
+                software.amazon.awssdk.core.sync.RequestBody.fromString("{\"Groceries\": 100}"));
+        s3.putObject(b -> b.bucket("plotline-database-bucket").key("users/" + user + "/costs/weekly/2026-W41.json"),
+                software.amazon.awssdk.core.sync.RequestBody.fromString("{\"totals\": {\"Groceries\": 130}}"));
+
+        recaps.run(ZonedDateTime.parse("2026-10-12T10:00:00Z"));   // Monday 3 AM in Los Angeles: not at night
+        org.mockito.Mockito.verify(pushService, org.mockito.Mockito.never()).send(eq(user), argThat(says("this week")));
+        recaps.run(ZonedDateTime.parse("2026-10-12T16:00:00Z"));   // Monday 9 AM
+        verify(pushService).send(eq(user), argThat(says("You spent $130 this week, $30 over your $100 budget.")));
     }
 
     @Test

@@ -20,10 +20,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.plotline.backend.service.S3Service;
 
 /**
- * Sunday 6 PM (each person's own time zone): "This week you spent $142 of your $300 budget."
- * The server sleeps when nobody uses the app, so a GitHub Actions timer calls run() every half hour
- * on Sundays and early Mondays (UTC); whoever is between 6 and 8 PM on Sunday and hasn't had this
- * week's recap gets it.
+ * Sunday evening (each person's own time zone): "You spent $142 of your $300 budget this week", for
+ * the Sunday-to-Saturday week that just ended. The server sleeps when nobody uses the app, so a
+ * GitHub Actions timer calls run() every half hour; GitHub often starts those runs late or skips
+ * some, so anyone between 6 and 10 PM on Sunday gets it, and anyone it missed gets it Monday
+ * between 8 AM and noon. Once per week either way.
  */
 @Service
 public class WeeklyRecapService {
@@ -38,10 +39,13 @@ public class WeeklyRecapService {
     private final PushService push;
     private final ObjectMapper json = new ObjectMapper();
 
-    public WeeklyRecapService(JdbcTemplate jdbc, S3Service s3, PushService push) {
+    private final com.plotline.backend.service.FixedCosts fixedCosts;
+
+    public WeeklyRecapService(JdbcTemplate jdbc, S3Service s3, PushService push, com.plotline.backend.service.FixedCosts fixedCosts) {
         this.jdbc = jdbc;
         this.s3 = s3;
         this.push = push;
+        this.fixedCosts = fixedCosts;
     }
 
     /** sends this week's recap to everyone for whom it's now Sunday evening; returns how many */
@@ -53,8 +57,8 @@ public class WeeklyRecapService {
             String username = (String) person.get("username");
             ZoneId zone = zone((String) person.get("time_zone"));
             ZonedDateTime local = nowUtc.withZoneSameInstant(zone);
-            if (local.getDayOfWeek() != DayOfWeek.SUNDAY || local.getHour() < 18 || local.getHour() >= 20) continue;
-            String week = weekKey(local.toLocalDate());
+            if (!inWindow(local)) continue;
+            String week = weekKey(lastSaturday(local.toLocalDate())); // the week that just ended
             // one per week, even if the timer runs twice in the window
             int claimed = jdbc.update("insert into weekly_recaps (username, week) values (?, ?) on conflict do nothing", username, week);
             if (claimed == 0) continue;
@@ -71,12 +75,33 @@ public class WeeklyRecapService {
         return sent;
     }
 
+    /** Sunday 6-10 PM, or Monday 8 AM-noon when Sunday's runs missed them */
+    static boolean inWindow(ZonedDateTime local) {
+        int hour = local.getHour();
+        return (local.getDayOfWeek() == DayOfWeek.SUNDAY && hour >= 18 && hour < 22)
+                || (local.getDayOfWeek() == DayOfWeek.MONDAY && hour >= 8 && hour < 12);
+    }
+
+    /** the Saturday that ended the week being recapped (yesterday on Sunday, two days ago on Monday) */
+    static LocalDate lastSaturday(LocalDate date) {
+        return date.minusDays(date.getDayOfWeek().getValue() % 7 + 1);
+    }
+
     /** the recap for one person, or null when there's nothing to say (no budget and no spending) */
     PushService.Message message(String username, String week) throws Exception {
-        double budget = spendingTotal(read("users/%s/weekly-budget-edited.json".formatted(username), "budget"));
-        if (budget == 0) budget = spendingTotal(readMap("users/%s/weekly-budget.json".formatted(username)));
-        double spent = spendingTotal(read("users/%s/costs/weekly/%s.json".formatted(username, week), "totals"));
+        // the week's flexible spending against the flexible budget: fixed costs (rent, a car payment...)
+        // aren't synced from the bank, so they're left out of both sides
+        java.util.Set<String> fixed = fixedCosts.categories(username);
+        double budget = spendingTotal(withoutFixed(read("users/%s/weekly-budget-edited.json".formatted(username), "budget"), fixed));
+        if (budget == 0) budget = spendingTotal(withoutFixed(readMap("users/%s/weekly-budget.json".formatted(username)), fixed));
+        double spent = spendingTotal(withoutFixed(read("users/%s/costs/weekly/%s.json".formatted(username, week), "totals"), fixed));
         return text(spent, budget);
+    }
+
+    static Map<String, Object> withoutFixed(Map<String, Object> amounts, java.util.Set<String> fixed) {
+        Map<String, Object> out = new java.util.LinkedHashMap<>(amounts);
+        out.keySet().removeIf(c -> fixed.contains(c.toLowerCase(Locale.ROOT)));
+        return out;
     }
 
     static PushService.Message text(double spent, double budget) {

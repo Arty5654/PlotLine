@@ -373,7 +373,7 @@ struct MonthContent: View {
             return .clear
         }
 
-        if dayEvents.contains(where: { $0.eventType == "rent" }) {
+        if dayEvents.contains(where: { $0.eventType == "rent" || $0.eventType == "bill" }) {
             // on rent due dates, color red
             return Color.red.opacity(0.2)
         } else if dayEvents.contains(where: { $0.eventType.lowercased().starts(with: "subscription") }) {
@@ -580,7 +580,7 @@ struct WeekContent: View {
     
     private func dotColor(for event: Event) -> Color {
         let type = event.eventType.lowercased()
-        if type == "rent" { return .red }
+        if type == "rent" || type == "bill" { return .red } // bills from the budget quiz
         if type.hasPrefix("subscription") { return .yellow }
         if type.hasPrefix("weekly-goal") { return .green }
         return PLColor.accent
@@ -593,7 +593,7 @@ struct WeekContent: View {
             return .clear
         }
 
-        if dayEvents.contains(where: { $0.eventType == "rent" }) {
+        if dayEvents.contains(where: { $0.eventType == "rent" || $0.eventType == "bill" }) {
             // on rent due dates, color red
             return Color.red.opacity(0.2)
         } else if dayEvents.contains(where: { $0.eventType.lowercased().starts(with: "subscription") }) {

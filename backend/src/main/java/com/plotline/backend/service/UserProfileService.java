@@ -287,6 +287,8 @@ public class UserProfileService {
       }
       // sleep tracking was an old feature: its trophies can't be earned any more
       changed |= trophies.removeIf(trophy -> trophy.getId().startsWith("sleep-"));
+      // the monthly budgeting trophies counted every Feedback page load until Oct 2026: started over once
+      changed |= resetOverCountedOnce(username, trophies);
       if (changed) saveTrophies(username, trophies);
 
       // if new trophies were added since this user created their default trophies, add here
@@ -322,6 +324,7 @@ public class UserProfileService {
       // If the trophies.json file does not exist, create default trophies     
       if (e.awsErrorDetails().errorCode().equals("NoSuchKey")) {
           log.debug("No trophies found for user: {}. Creating default trophies.", username);
+          markResetDone(username); // a new account has nothing over-counted to start over
           return createDefaultTrophies(username);
       } else {
           throw e;
@@ -329,6 +332,53 @@ public class UserProfileService {
     }
 
 
+  }
+
+  /** trophies that were over-counted (every Feedback load instead of once a month), started over once per account */
+  static final Set<String> OVER_COUNTED = Set.of("monthly-budget-met", "budget-pacer", "healthy-eater");
+  private static final String MONTHLY_RESET = "monthly-trophies-2026-10";
+  private final Set<String> resetChecked = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+  private boolean resetOverCountedOnce(String username, List<Trophy> trophies) {
+    String user = normalize(username);
+    if (!resetChecked.add(user)) return false;   // checked already since the server started
+    String key = "users/" + user + "/trophy-resets.json";
+    List<String> done = new ArrayList<>();
+    try {
+      byte[] data = s3Client.getObjectAsBytes(GetObjectRequest.builder().bucket(bucketName).key(key).build()).asByteArray();
+      done = new ArrayList<>(objectMapper.readValue(data, new TypeReference<List<String>>() {}));
+    } catch (Exception ignored) { /* never reset */ }
+    if (done.contains(MONTHLY_RESET)) return false;
+    boolean changed = false;
+    for (Trophy trophy : trophies) {
+      if (OVER_COUNTED.contains(trophy.getId()) && (trophy.getProgress() > 0 || trophy.getLevel() > 0)) {
+        trophy.setProgress(0);
+        trophy.setLevel(0);
+        changed = true;
+      }
+    }
+    done.add(MONTHLY_RESET);
+    if (!writeResets(user, done)) {
+      resetChecked.remove(user);                 // try again next time
+      return false;
+    }
+    return changed;
+  }
+
+  private void markResetDone(String username) {
+    String user = normalize(username);
+    resetChecked.add(user);
+    writeResets(user, List.of(MONTHLY_RESET));
+  }
+
+  private boolean writeResets(String user, List<String> done) {
+    try {
+      s3Client.putObject(PutObjectRequest.builder().bucket(bucketName).key("users/" + user + "/trophy-resets.json")
+          .contentType("application/json").build(), RequestBody.fromString(objectMapper.writeValueAsString(done)));
+      return true;
+    } catch (Exception e) {
+      return false;
+    }
   }
 
   public void saveTrophies(String username, List<Trophy> trophies) throws IOException {

@@ -77,6 +77,7 @@ struct ChangePasswordModalView: View {
             }
         }
         .tint(PLColor.accent)
+        .passwordEntryScreen()
     }
 
     private var form: some View {

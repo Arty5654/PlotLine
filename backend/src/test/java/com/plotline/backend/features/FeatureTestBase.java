@@ -62,6 +62,8 @@ abstract class FeatureTestBase {
     @MockBean protected SmsService smsService;
     @MockBean protected OpenAIService openAIService;
     @MockBean protected PlaidApi plaidApi;
+    /** never the real EIA in tests (not configured unless a test says so) */
+    @MockBean protected com.plotline.backend.commute.EiaPrices eia;
     @MockBean protected ExternalDataClient externalDataClient; // never call the real NewsAPI / USDA from tests
     @SpyBean protected PushService pushService; // real, but tests can check what would be pushed
     @MockBean protected com.plotline.backend.push.ApnsClient apnsClient; // never send real pushes from tests

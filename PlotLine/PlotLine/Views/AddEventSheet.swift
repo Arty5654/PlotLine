@@ -241,6 +241,7 @@ struct AddEventSheet: View {
                                 Text("Every Week").tag("weekly")
                                 Text("Every other week").tag("biweekly")
                                 Text("Every Month").tag("monthly")
+                                Text("Every 6 Months").tag("every-6-months")
                                 Text("Every Year").tag("yearly")
                             }
                             Toggle("End Repeat", isOn: $endsOnDate)

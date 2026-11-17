@@ -1,299 +1,205 @@
+//
+//  BudgetCompareView.swift
+//  PlotLine
+//
+//  Budget → Compare New Income/Location: your budget now next to one built for a new income and/or
+//  place, each against its own take-home. Built like the quiz (your saved answers and spending) but
+//  nothing is saved: it used to save every projection over your budget and quiz answers. "Use This
+//  Budget" opens the quiz's review screen; saving there makes it your budget and your new answers.
+//
+
 import SwiftUI
 
 struct BudgetCompareView: View {
-    @State private var currentIncome: String = ""
-    @State private var newIncome: String = ""
-    @State private var newCity: String = ""
-    @State private var newState: String = ""
-    
+    @StateObject private var model = BudgetQuizModel()
+    @EnvironmentObject private var calendarVM: CalendarViewModel
+
+    @State private var currentIncome: Double?
+    @State private var currentCity = ""
+    @State private var currentState = ""
+    @State private var newIncome = ""
+    @State private var newCity = ""
+    @State private var newState = ""
+
     @State private var currentBudget: [String: Double] = [:]
-    @State private var proposedBudget: [String: Double] = [:]
-    @State private var isLoading = false
+    @State private var projection: BudgetQuizModel.Draft?
+    @State private var projecting = false
     @State private var error: String?
-    @State private var successMessage: String?
-    @State private var quizPayload: [String: Any] = [:]
-    
-    private let excludedCats: Set<String> = ["401(k)", "401(k) Contribution"]
-    private var visibleCurrent: [String: Double] {
-        currentBudget.filter { !excludedCats.contains($0.key) }
-    }
-    private var visibleProposed: [String: Double] {
-        proposedBudget.filter { !excludedCats.contains($0.key) }
+    @State private var reviewing: Review?
+    @State private var saved = false
+
+    private struct Review: Identifiable {
+        let id = UUID()
+        let draft: BudgetQuizModel.Draft
     }
 
-    
-    private var username: String {
-        UserDefaults.standard.string(forKey: "loggedInUsername") ?? "UnknownUser"
-    }
+    private let excluded: Set<String> = ["401(k)", "401(k) Contribution", "401k", "401k Contribution"]
+    private var currentTotal: Double { currentBudget.filter { !excluded.contains($0.key) }.values.reduce(0, +) }
+    private var projectedTotal: Double { (projection?.budget ?? [:]).filter { !excluded.contains($0.key) }.values.reduce(0, +) }
 
-    private var totalCurrent: Double { visibleCurrent.values.reduce(0, +) }
-    private var totalProposed: Double { visibleProposed.values.reduce(0, +) }
-    
     var body: some View {
         ScrollView {
             VStack(spacing: PLSpacing.lg) {
-                header
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Plan a Move or Raise").font(.title3).bold()
+                    Text("See what your budget would look like with a new income or in a new place. Nothing changes unless you choose to use it.")
+                        .font(.subheadline).foregroundColor(PLColor.textSecondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 inputs
-                comparisonCard
-                applyCard
+                if projection != nil { comparison }
+                if saved {
+                    Label("Your budget was updated.", systemImage: "checkmark.circle.fill").foregroundColor(PLColor.success)
+                }
             }
             .padding(PLSpacing.lg)
         }
         .navigationTitle("Compare Budgets")
         .navigationBarTitleDisplayMode(.inline)
-        .onAppear { Task { await loadInitialData() } }
-    }
-    
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Plan a Move or Raise")
-                .font(.title3).bold()
-            Text("Compare your current budget to a projected one with a new income and/or location.")
-                .font(.subheadline)
-                .foregroundColor(PLColor.textSecondary)
+        .task { await load() }
+        .sheet(item: $reviewing) { review in
+            BudgetReviewView(model: model, draft: review.draft) {
+                reviewing = nil
+                saved = true
+                Task { await load() } // the new budget is now the current one
+            }
+            .environmentObject(calendarVM)
         }
     }
-    
+
+    // MARK: - Pieces
+
     private var inputs: some View {
         VStack(alignment: .leading, spacing: PLSpacing.md) {
-            Text("Inputs").font(.headline)
-            
-            HStack {
-                VStack(alignment: .leading) {
-                    Text("Current Income").font(.caption).foregroundColor(PLColor.textSecondary)
-                    TextField("e.g., 75000", text: $currentIncome)
-                        .keyboardType(.decimalPad)
-                        .textFieldStyle(.roundedBorder)
-                }
-                VStack(alignment: .leading) {
-                    Text("New Income").font(.caption).foregroundColor(PLColor.textSecondary)
-                    TextField("e.g., 90000", text: $newIncome)
-                        .keyboardType(.decimalPad)
-                        .textFieldStyle(.roundedBorder)
-                }
-            }
-            
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Location change (optional)").font(.caption).foregroundColor(PLColor.textSecondary)
-                TextField("City", text: $newCity)
-                    .textFieldStyle(.roundedBorder)
-                TextField("State (e.g., CA)", text: $newState)
-                    .textFieldStyle(.roundedBorder)
-            }
-            
-            if let err = error {
-                HStack(spacing: 6) {
-                    Image(systemName: "exclamationmark.triangle.fill").foregroundColor(PLColor.danger)
-                    Text(err).foregroundColor(.primary)
-                }.font(.footnote)
-            }
-            
-            Button {
-                Task { await recomputeProposal() }
-            } label: {
-                Text("Update Projection")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .disabled(isLoading || currentBudget.isEmpty)
-        }
-        .plCard()
-    }
-    
-    private var comparisonCard: some View {
-        VStack(alignment: .leading, spacing: PLSpacing.md) {
-            Text("Comparison").font(.headline)
-            
-            HStack {
-                VStack(alignment: .leading) {
-                    Text("Current").font(.caption).foregroundColor(PLColor.textSecondary)
-                    Text(currency(totalCurrent)).font(.headline)
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Current income").font(.caption).foregroundColor(PLColor.textSecondary)
+                    Text(currentIncome.map { $0.dollars() } ?? "—").font(.headline)
+                    Text("From your budget quiz").font(.caption2).foregroundColor(PLColor.textSecondary)
                 }
                 Spacer()
-                VStack(alignment: .trailing) {
-                    Text("Proposed").font(.caption).foregroundColor(PLColor.textSecondary)
-                    Text(currency(totalProposed)).font(.headline)
-                        .foregroundColor(totalProposed > totalCurrent ? PLColor.danger : PLColor.success)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("New income").font(.caption).foregroundColor(PLColor.textSecondary)
+                    TextField("e.g. 90000", text: $newIncome)
+                        .keyboardType(.decimalPad)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(maxWidth: 150)
                 }
             }
-            
-            Divider()
-            
-            ForEach(sortedCategories(), id: \.self) { cat in
-                let cur = visibleCurrent[cat] ?? 0
-                let prop = visibleProposed[cat] ?? 0
-                HStack {
-                    Text(cat)
-                    Spacer()
-                    VStack(alignment: .trailing) {
-                        Text(currency(cur)).font(.caption).foregroundColor(PLColor.textSecondary)
-                        Text(currency(prop)).font(.headline)
-                    }
+            VStack(alignment: .leading, spacing: 6) {
+                Text("New place (optional)").font(.caption).foregroundColor(PLColor.textSecondary)
+                TextField("City", text: $newCity).textFieldStyle(.roundedBorder)
+                Picker("State", selection: $newState) {
+                    ForEach(USState.all) { Text($0.name).tag($0.code) }
                 }
+                .pickerStyle(.menu)
             }
-        }
-        .plCard()
-    }
-    
-    private var applyCard: some View {
-        VStack(alignment: .leading, spacing: PLSpacing.sm) {
-            Text("Apply this budget?")
-                .font(.headline)
-            if let successMessage {
-                Text(successMessage)
-                    .font(.footnote)
-                    .foregroundColor(PLColor.success)
+            if let error {
+                Label(error, systemImage: "exclamationmark.triangle.fill").font(.footnote).foregroundColor(PLColor.danger)
             }
             Button {
-                Task { await applyBudget() }
+                Task { await project() }
             } label: {
-                Text("Replace my budget with proposed")
-                    .frame(maxWidth: .infinity)
+                Text(projecting ? "Building…" : "Show Projection").frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
-            .tint(.green)
-            .disabled(proposedBudget.isEmpty || isLoading)
+            .disabled(projecting || currentIncome == nil || (BudgetQuizModel.amount(newIncome) ?? 0) <= 0)
         }
         .plCard()
     }
-    
-    // MARK: - Helpers
-    private func currency(_ v: Double) -> String {
-        String(format: "$%.0f", v)
-    }
-    
-    private func sortedCategories() -> [String] {
-        Array(Set(visibleCurrent.keys).union(visibleProposed.keys)).sorted()
-    }
-    
-    private func recomputeProposal() async {
-        await MainActor.run {
-            self.error = nil
-            self.isLoading = true
-        }
-        defer {
-            Task { await MainActor.run { self.isLoading = false } }
-        }
 
-        guard let baseIncome = Double(currentIncome) else {
-            await MainActor.run { self.error = "Current income missing or invalid." }
+    private func fitText(planned: Double, takeHome: Double?) -> (String, Color) {
+        guard let takeHome, takeHome > 0 else { return ("", PLColor.textSecondary) }
+        let left = takeHome - planned
+        return left >= -0.5 ? ("Fits: \(left.dollars()) left a month", PLColor.success) : ("Over by \((-left).dollars()) a month", PLColor.danger)
+    }
+
+    private var comparison: some View {
+        let current = fitText(planned: currentTotal, takeHome: model.savedMonthlyNet)
+        let projected = fitText(planned: projectedTotal, takeHome: projection?.monthlyNet)
+        return VStack(alignment: .leading, spacing: PLSpacing.md) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Now").font(.caption).foregroundColor(PLColor.textSecondary)
+                    Text("Take-home \(model.savedMonthlyNet.map { $0.dollars() } ?? "—")").font(.subheadline)
+                    Text("Planned \(currentTotal.dollars())").font(.subheadline)
+                    Text(current.0).font(.caption).foregroundColor(current.1)
+                }
+                Spacer()
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("New").font(.caption).foregroundColor(PLColor.textSecondary)
+                    Text("Take-home \(projection.map { $0.monthlyNet.dollars() } ?? "—")").font(.subheadline)
+                    Text("Planned \(projectedTotal.dollars())").font(.subheadline)
+                    Text(projected.0).font(.caption).foregroundColor(projected.1)
+                }
+            }
+            Divider()
+            ForEach(lines, id: \.self) { line in
+                let now = currentBudget[line] ?? 0, new = projection?.budget[line] ?? 0
+                HStack {
+                    Text(line)
+                    Spacer()
+                    Text(now.dollars()).font(.caption).foregroundColor(PLColor.textSecondary).monospacedDigit()
+                    Image(systemName: "arrow.right").font(.caption2).foregroundColor(PLColor.textSecondary)
+                    Text(new.dollars()).font(.subheadline.weight(.semibold)).monospacedDigit()
+                        .foregroundColor(new < now ? .orange : PLColor.textPrimary)
+                }
+            }
+            Button {
+                if let projection { reviewing = Review(draft: projection) }
+            } label: {
+                Text("Review and Use This Budget").frame(maxWidth: .infinity)
+            }
+            .buttonStyle(PrimaryButton())
+            Text("Using it also updates your quiz answers to the new income and place.")
+                .font(.caption2).foregroundColor(PLColor.textSecondary)
+        }
+        .plCard()
+    }
+
+    private var lines: [String] {
+        Set(currentBudget.keys).union(projection?.budget.keys ?? [String: Double]().keys)
+            .subtracting(excluded).sorted()
+    }
+
+    // MARK: - Loading
+
+    private func load() async {
+        await model.loadSavedQuiz()
+        guard model.hasSavedQuiz else {
+            error = "Take the budget quiz first; the projection starts from its answers."
             return
         }
-        let targetIncome = Double(newIncome) ?? baseIncome
+        currentIncome = BudgetQuizModel.amount(model.yearlyIncome)
+        currentCity = model.finalCity
+        currentState = model.finalState
+        if newIncome.isEmpty { newIncome = model.yearlyIncome }
+        if newCity.isEmpty { newCity = currentCity }
+        if newState.isEmpty { newState = currentState }
+        currentBudget = (try? await PlanAPI.fetchMonthlyBudget()) ?? [:]
+        await model.checkBank()
+        await model.loadSubscriptions()   // the Subscriptions page's list (its total is a line)
+        await model.loadPlan()
+        if model.hasCar && model.commute.fuelPrice <= 0 { await model.loadGasPrice() }
+    }
 
-        var payload = quizPayload
-        payload["username"] = username
-        payload["yearlyIncome"] = targetIncome
-        if !newCity.trimmingCharacters(in: .whitespaces).isEmpty { payload["city"] = newCity }
-        if !newState.trimmingCharacters(in: .whitespaces).isEmpty { payload["state"] = newState }
-
-        guard let data = try? JSONSerialization.data(withJSONObject: payload),
-              let url = URL(string: "\(BackendConfig.baseURLString)/api/llm/budget") else { return }
-
-        var req = URLRequest(url: url)
-        BackendConfig.addApiKey(to: &req)
-        req.httpMethod = "POST"
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = data
-
-        do {
-            let (respData, response) = try await URLSession.shared.data(for: req)
-            if let limit = AILimitError.from(respData, response) {
-                await MainActor.run { self.error = limit.message }
-                return
-            }
-            if let decoded = try? JSONDecoder().decode([String: Double].self, from: respData) {
-                await MainActor.run {
-                    self.proposedBudget = decoded.filter { !excludedCats.contains($0.key) }
-                }
-            } else {
-                await MainActor.run { self.error = "Could not generate proposed budget." }
-            }
-        } catch {
-            await MainActor.run { self.error = "Could not generate proposed budget." }
+    /// the same answers with the new income and place; built, never saved
+    private func project() async {
+        error = nil
+        projecting = true
+        defer { projecting = false }
+        model.yearlyIncome = newIncome
+        // "Ashburn, VA" typed as the city is Ashburn + VA
+        let place = BudgetQuizModel.place(city: newCity, state: newState)
+        if !place.city.isEmpty || !place.state.isEmpty {
+            model.useDeviceLocation = false
+            model.manualCity = place.city.isEmpty ? currentCity : place.city
+            model.manualState = place.state.isEmpty ? currentState : place.state
         }
-    }
-    
-    private func loadInitialData() async {
-        async let current: Void = loadCurrentBudget()
-        async let quiz: Void = loadQuizData()
-        _ = await (current, quiz)
-        await recomputeProposal()
-    }
-    
-    private func loadCurrentBudget() async {
-        isLoading = true
-        defer { isLoading = false }
-
-        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/budget/\(username)/monthly") else { return }
-
         do {
-            var req = URLRequest(url: url)
-            BackendConfig.addApiKey(to: &req)
-            let (data, _) = try await URLSession.shared.data(for: req)
-
-            if let decoded = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let budget = decoded["budget"] as? [String: Double] {
-
-                // Update state on the main actor
-                await MainActor.run {
-                    self.currentBudget = budget.filter { !excludedCats.contains($0.key) }
-                }
-
-                // Now that state is set, run the async recompute
-                await recomputeProposal()
-            }
+            projection = try await model.build()
         } catch {
-            await MainActor.run { self.error = "Could not load current budget." }
-        }
-    }
-
-    
-    private func loadQuizData() async {
-        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/llm/budget/last/\(username)") else { return }
-        do {
-            var req = URLRequest(url: url)
-            BackendConfig.addApiKey(to: &req)
-            let (data, resp) = try await URLSession.shared.data(for: req)
-            guard let http = resp as? HTTPURLResponse, (200...299).contains(http.statusCode) else { return }
-            if let dict = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                await MainActor.run {
-                    self.quizPayload = dict
-                    if let inc = dict["yearlyIncome"] {
-                        self.currentIncome = String(describing: inc)
-                        if self.newIncome.isEmpty { self.newIncome = self.currentIncome }
-                    }
-                    if let city = dict["city"] as? String { self.newCity = city }
-                    if let state = dict["state"] as? String { self.newState = state }
-                }
-            }
-        } catch { }
-    }
-    
-    private func applyBudget() async {
-        isLoading = true
-        defer { isLoading = false }
-        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/budget") else { return }
-        let cleanedMonthly = proposedBudget.filter { !excludedCats.contains($0.key) }
-
-        // Save monthly budget — backend auto-creates weekly (monthly / 4)
-        let payload: [String: Any] = [
-            "username": username,
-            "type": "monthly",
-            "budget": cleanedMonthly
-        ]
-        guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
-        var req = URLRequest(url: url)
-        BackendConfig.addApiKey(to: &req)
-        req.httpMethod = "POST"
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = data
-
-        do {
-            _ = try await URLSession.shared.data(for: req)
-            await MainActor.run { self.successMessage = "Budget replaced successfully." }
-        } catch {
-            await MainActor.run { self.error = "Could not save budget." }
+            self.error = (error as? AILimitError)?.message ?? "Couldn't build the projection. Please try again."
         }
     }
 }
