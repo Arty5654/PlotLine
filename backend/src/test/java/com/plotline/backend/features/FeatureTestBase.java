@@ -71,6 +71,16 @@ abstract class FeatureTestBase {
     @Autowired protected MockMvc mockMvc;
     @Autowired protected AuthService authService;
     @Autowired protected S3Client s3;
+    @Autowired private org.springframework.jdbc.core.JdbcTemplate sharedPricesJdbc;
+
+    /**
+     * Saved prices are shared by everyone in a place, so one test's price (e.g. EIA's Virginia gas)
+     * would otherwise answer another test's question about the same place, depending on run order.
+     */
+    @org.junit.jupiter.api.BeforeEach
+    void clearSharedPrices() {
+        sharedPricesJdbc.update("delete from price_estimates");
+    }
 
     protected final ObjectMapper objectMapper = new ObjectMapper();
 
