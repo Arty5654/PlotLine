@@ -22,6 +22,8 @@ struct ContentView: View {
     @State private var navigateToCalendar = false
     @State private var navigateToNutrition = false
     @State private var navigateToBudget = false
+    /// the Budget page's tab to open ("Plan" from the monthly savings reminder)
+    @State private var budgetTab = "Budgeting"
     @State private var navigateToGoals = false
     @State private var navigateToCosts = false
     @State private var navigateToGrocery = false
@@ -119,8 +121,9 @@ struct ContentView: View {
                 NutritionView()
             }
             .navigationDestination(isPresented: $navigateToBudget) {
-                BudgetView().environmentObject(calendarVM)
+                BudgetView(initialTab: budgetTab).environmentObject(calendarVM)
             }
+            .onChange(of: navigateToBudget) { _, open in if !open { budgetTab = "Budgeting" } }
             .navigationDestination(isPresented: $navigateToCosts) {
                 WeeklyMonthlyCostView().environmentObject(calendarVM)
             }
@@ -172,7 +175,8 @@ struct ContentView: View {
                 guard let destination = notification.userInfo?["destination"] as? String else { return }
                 switch destination {
                 case "nutrition":   navigateToNutrition = true
-                case "budget":      navigateToBudget = true
+                case "budget":      budgetTab = "Budgeting"; navigateToBudget = true
+                case "plan":        budgetTab = "Plan"; navigateToBudget = true
                 case "goals":       navigateToGoals = true
                 case "friends":     isFriendsPresented = true
                 case "calendar":    navigateToCalendar = true

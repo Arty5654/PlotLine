@@ -274,7 +274,7 @@ public record QuizDetails(Map<String, Object> housing, Map<String, Object> work,
                         + (date != null ? ", by " + date : "") + (needed > 0 ? " (about $" + Math.round(needed) + "/month needed)" : "") + ".");
             }
         }
-        parts.add("Keep one Savings line; in its \"why\", say how it's split between the emergency fund and their goals.");
+        parts.add("Keep one Savings line for all of it: PlotLine splits it between the emergency fund and their goals.");
         return String.join(" ", parts);
     }
 

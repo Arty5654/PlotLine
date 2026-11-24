@@ -25,7 +25,7 @@ enum BudgetReview {
 
     static func kind(of category: String) -> BudgetLineKind {
         let key = category.lowercased().trimmingCharacters(in: .whitespaces)
-        if savingCategories.contains(key) { return .saving }
+        if savingCategories.contains(key) || BudgetLine.isPlanSaving(category) { return .saving }
         if needCategories.contains(key) || key.hasPrefix("debt - ") { return .need }
         return .want
     }

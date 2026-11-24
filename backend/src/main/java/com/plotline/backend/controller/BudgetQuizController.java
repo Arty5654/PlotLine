@@ -49,6 +49,10 @@ public class BudgetQuizController {
     @Autowired
     private com.plotline.backend.service.BudgetChanges budgetChanges;
 
+    // the budget as it is now: goal amounts set in Plan carry over
+    @Autowired
+    private com.plotline.backend.plan.BudgetFiles budgetFiles;
+
     // take-home pay with the current year's tax rules (shared with the paycheck calculator)
     @Autowired
     private TakeHomeCalculator takeHome;
@@ -133,6 +137,13 @@ public class BudgetQuizController {
             for (var e : debtFixed.entrySet()) {
                 // If the user already put a manual amount for the same label, keep user's amount.
                 knownCostsAug.putIfAbsent(e.getKey(), e.getValue());
+            }
+            // the payoff planner's extra each month, on top of the minimums: its own line, as set there
+            double plannedExtra = Math.round(parseDoubleSafe(quizData.get("extraDebtPayment")));
+            String extraLine = com.plotline.backend.plan.BudgetLines.EXTRA_DEBT;
+            if (plannedExtra > 0 && !debtFixed.isEmpty()) {
+                knownCostsAug.putIfAbsent(extraLine, plannedExtra);
+                if (!categoriesAug.contains(extraLine)) categoriesAug.add(extraLine);
             }
 
 
@@ -293,6 +304,16 @@ public class BudgetQuizController {
                 if (e.getKey().startsWith("Debt - ")) continue;
                 if (monthly.containsKey(e.getKey()) || categoriesAug.contains(e.getKey())) monthly.put(e.getKey(), (double) round0(e.getValue()));
             }
+            // a debt line is its minimum (what the payoff planner shows); paying more is Extra Debt Payment
+            boolean extraTyped = knownCostsAug.containsKey(extraLine);
+            for (var e : debtFixed.entrySet()) {
+                if (overrides.containsKey(e.getKey())) continue; // typed on the review screen: kept
+                double minimum = round0(e.getValue()), now = monthly.getOrDefault(e.getKey(), 0.0);
+                if (now - minimum < 1) continue;
+                monthly.put(e.getKey(), minimum);
+                monthly.merge(extraTyped ? "Savings" : extraLine, (double) round0(now - minimum), Double::sum);
+                if (!extraTyped) why.put(extraLine, "Paying more than the minimums gets you out of debt sooner.");
+            }
             // at least what driving and the commute cost (Gas, Transportation); the AI may plan more
             if (details.splitsCommute()) monthly.remove("Commute"); // it's in Gas and Transportation
             // Regenerate: only the page's categories, even if the AI adds others
@@ -319,6 +340,10 @@ public class BudgetQuizController {
                 double total = monthly.values().stream().mapToDouble(Double::doubleValue).sum();
                 if (monthlyNet - total >= 1) monthly.merge("Savings", (double) Math.round(monthlyNet - total), Double::sum);
             }
+            // Savings split into the emergency fund and goals from the Plan tab
+            SavingsSplit.apply(monthly, why, details.savings(), lockedLines, budgetFiles.monthly(username));
+            if (extraTyped && monthly.containsKey(extraLine))
+                why.put(extraLine, "The extra each month from your debt payoff planner, on top of the minimums.");
 
             Map<String, Double> weekly = new HashMap<>();
             for (Map.Entry<String, Double> entry : monthly.entrySet()) {

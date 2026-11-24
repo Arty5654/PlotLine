@@ -27,9 +27,14 @@ struct AdaptivePrimaryButton: ButtonStyle {
 
 // MARK: - Root
 struct BudgetView: View {
-    @State private var selectedTab = "Budgeting"
+    @State private var selectedTab: String
     @EnvironmentObject var viewModel: CalendarViewModel
     @EnvironmentObject var friendVM: FriendsViewModel
+
+    /// "Plan" opens the Plan tab (the monthly savings reminder)
+    init(initialTab: String = "Budgeting") {
+        _selectedTab = State(initialValue: initialTab)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -47,7 +52,7 @@ struct BudgetView: View {
             Group {
                 if selectedTab == "Budgeting" {
                     ScrollView {
-                        BudgetSection()
+                        BudgetSection(openPlan: { selectedTab = "Plan" })
                             .environmentObject(viewModel)
                             .padding(.horizontal, PLSpacing.lg)
                             .padding(.vertical, PLSpacing.lg)
@@ -68,8 +73,11 @@ struct BudgetView: View {
 // MARK: - Budgeting Section
 struct BudgetSection: View {
     @EnvironmentObject var calendarVM: CalendarViewModel
+    var openPlan: () -> Void = {}
     @State private var chartType = "Weekly" // or "Monthly"
     @StateObject private var bankLinker = BankLinker()
+    /// the Plan tab's savings and debts: its summary and suggestions here
+    @StateObject private var plan = PlanViewModel()
     
     @State private var hasQuiz: Bool? = nil
 
@@ -93,6 +101,9 @@ struct BudgetSection: View {
             } else {
                 // suggestions from real spending once a bank has a month of it (hidden otherwise)
                 RetuneCard()
+                // where the budget's saving money should go, and the Plan at a glance
+                PlanSuggestionsCard(model: plan)
+                PlanSummaryCard(model: plan, openPlan: openPlan)
 
                 // Trend chart card
                 VStack(alignment: .leading, spacing: PLSpacing.md) {
@@ -160,9 +171,11 @@ struct BudgetSection: View {
             }
         }
         .onAppear { Task { await checkQuizExists() } }
+        .task { await plan.load(reportErrors: false) }
         .onReceive(NotificationCenter.default.publisher(for: .budgetQuizCompleted)) { _ in
             // After the flow finishes, re-check server to flip hasQuiz -> true
             Task { await checkQuizExists() }
+            Task { await plan.load(reportErrors: false) }
         }
     }
     

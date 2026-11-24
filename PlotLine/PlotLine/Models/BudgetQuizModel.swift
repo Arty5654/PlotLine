@@ -3,8 +3,9 @@
 //  PlotLine
 //
 //  Everything the budget quiz asks, what it loads (last answers, bank spending, subscriptions,
-//  savings from the Plan tab), the answers kept on the phone while it's unfinished, and the request
-//  that builds the budget. Saving also puts bills on the calendar and schedules a one-month check-in.
+//  the Plan tab's savings and debts), the answers kept on the phone while it's unfinished, and the
+//  request that builds the budget. Saving also puts bills on the calendar, schedules a one-month
+//  check-in, and writes the debts back to the Plan tab (one list, edited in either place).
 //  The quiz screens (BudgetQuizView) show one step at a time; the review screen (BudgetReviewView)
 //  checks the result before it's saved.
 //
@@ -264,9 +265,10 @@ final class BudgetQuizModel: ObservableObject {
     // yearly
     @Published var yearlyCosts: [YearlyCost] = []
 
-    // debt
+    // debt (the same list as Budget → Plan → Debt payoff planner)
     @Published var hasDebt = false
     @Published var debts: [DebtItem] = []
+    @Published var extraDebtPayment = ""               // the planner's extra each month, on top of the minimums
 
     // goals and style
     @Published var budgetingStyle: BudgetingStyleChoice = .flexible
@@ -285,7 +287,11 @@ final class BudgetQuizModel: ObservableObject {
     // savings, shared with the Plan tab
     @Published private(set) var plan: Plan?            // nil until it loads
     @Published private(set) var planBalances: [String: Double] = [:]
-    @Published var savedNow = ""                       // asked only when the Plan tab has nothing yet
+    @Published private(set) var planAccounts: [LinkedBalance] = []
+    @Published var savedNow = ""                       // asked only when the Plan tab didn't load
+    private var planSaveTask: Task<Void, Never>?
+    /// an unfinished quiz was picked up: its debts are newer than the Plan tab's
+    private var resumedDraft = false
 
     // bank
     @Published var bankLinked = false
@@ -572,7 +578,7 @@ final class BudgetQuizModel: ObservableObject {
         let notLines = answeredElsewhere.subtracting(derivedCategories)
         return Set(CategoryOptions.spending).union(allCategories).union(bankAverages.keys)
             .subtracting(Self.trackerExclusions).subtracting(notLines)
-            .filter { !money.contains($0) && !$0.hasPrefix("Debt - ") }.sorted()
+            .filter { !money.contains($0) && !$0.hasPrefix("Debt - ") && !BudgetLine.isPlanSaving($0) }.sorted()
     }
 
     /// the transactions as they count now (what "see the transactions" shows); removed ones aren't here
@@ -768,26 +774,46 @@ final class BudgetQuizModel: ObservableObject {
     func loadPlan() async {
         guard plan == nil, let loaded = try? await PlanAPI.fetchPlan() else { return }
         let accounts = (try? await PlanAPI.fetchAccounts()) ?? []
-        planBalances = Dictionary(accounts.compactMap(LinkedBalance.init).map { ($0.id, $0.balance) }, uniquingKeysWith: { a, _ in a })
+        planAccounts = accounts.compactMap(LinkedBalance.init)
+        planBalances = Dictionary(planAccounts.map { ($0.id, $0.balance) }, uniquingKeysWith: { a, _ in a })
         plan = loaded
+        if !resumedDraft { adoptPlanDebts() }
     }
 
     /// set for testing and previews
     func setPlan(_ plan: Plan, balances: [String: Double] = [:]) {
         self.plan = plan
         planBalances = balances
+        adoptPlanDebts()
+    }
+
+    /// the Plan tab's debts are the list (once it has any, or once the quiz has written them there);
+    /// before that, the quiz's own saved debts are kept and become the Plan's on save
+    func adoptPlanDebts() {
+        guard let plan, plan.importedQuizDebts || !plan.debts.isEmpty else { return }
+        debts = plan.debts.map { DebtItem(plan: $0, balance: planBalances[$0.linkedAccountId ?? ""]) }
+        hasDebt = !debts.isEmpty
+        extraDebtPayment = plan.extraDebtPayment > 0 ? Self.text(NSNumber(value: plan.extraDebtPayment), keepZero: true) : ""
+    }
+
+    /// change the Plan tab's savings from the quiz (saved a moment after the last change)
+    func updatePlan(_ change: (inout Plan) -> Void) {
+        guard var updated = plan else { return } // never overwrite a plan that didn't load
+        change(&updated)
+        plan = updated
+        planSaveTask?.cancel()
+        let snapshot = updated
+        planSaveTask = Task {
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            guard !Task.isCancelled else { return }
+            do { try await PlanAPI.savePlan(snapshot) } catch { AppBanner.report("save your plan", error) }
+        }
     }
 
     var emergencySaved: Double {
         guard let plan else { return Self.amount(savedNow) ?? 0 }
         if let id = plan.emergencyFund.linkedAccountId, let balance = planBalances[id] { return balance }
-        return planHasSavings ? plan.emergencyFund.saved : Self.amount(savedNow) ?? 0
-    }
-
-    /// the Plan tab already says what they have saved (so the quiz doesn't ask)
-    var planHasSavings: Bool {
-        guard let plan else { return false }
-        return plan.emergencyFund.saved > 0 || plan.emergencyFund.linkedAccountId != nil || !plan.savingsGoals.isEmpty
+        return plan.emergencyFund.saved
     }
 
     func goalSaved(_ goal: SavingsGoal) -> Double {
@@ -856,8 +882,11 @@ final class BudgetQuizModel: ObservableObject {
     func payload() -> [String: Any] {
         let iso = ISO8601DateFormatter()
         let debtsPayload: [[String: Any]] = hasDebt ? debts.map { d in
-            ["name": d.name, "principal": Double(d.principal) ?? 0, "apr": Double(d.apr) ?? 0,
-             "minPayment": Double(d.minPayment) ?? 0, "dueDate": iso.string(from: d.dueDate)] as [String: Any]
+            var item: [String: Any] = ["name": d.name, "principal": Double(d.principal) ?? 0, "apr": Double(d.apr) ?? 0,
+                                       "minPayment": Double(d.minPayment) ?? 0, "dueDate": iso.string(from: d.dueDate)]
+            if let id = d.planId { item["planId"] = id }
+            if let account = d.linkedAccountId { item["linkedAccountId"] = account }
+            return item
         } : []
         let known: [String: Double] = knownCosts.reduce(into: [:]) { result, entry in
             if let value = Self.amount(entry.value), !answeredElsewhere.contains(entry.key) { result[entry.key] = value }
@@ -956,6 +985,7 @@ final class BudgetQuizModel: ObservableObject {
             "knownCosts": known,
             "hasDebt": hasDebt,
             "debts": debtsPayload,
+            "extraDebtPayment": hasDebt ? (Self.amount(extraDebtPayment) ?? 0) : 0,
             "housing": housing,
             "work": work,
             "insurance": (["payFrequency": payFrequency.rawValue] as [String: Any])
@@ -1060,7 +1090,7 @@ final class BudgetQuizModel: ObservableObject {
         // asked once, before anything schedules a reminder
         let allowed = await NotificationPermission.ensure(for: "bill and subscription reminders and a check-in on your budget")
         await saveSubscriptions(calendarVM: calendarVM)
-        await saveSavingsToPlan()
+        await saveDebtsToPlan(budget: budget)
         syncBills(budget: budget, calendarVM: calendarVM)
         if allowed {
             await remindBeforeLoansStart()
@@ -1071,16 +1101,38 @@ final class BudgetQuizModel: ObservableObject {
         NotificationCenter.default.post(name: .budgetQuizCompleted, object: nil)
     }
 
-    /// what they typed as saved goes to the Plan tab's emergency fund (only when the Plan had nothing)
-    private func saveSavingsToPlan() async {
-        guard var plan, !planHasSavings, let amount = Self.amount(savedNow), amount > 0 else { return }
-        plan.emergencyFund.saved = amount
+    /// the quiz's debts (and the budget's extra payment) become the Plan tab's: one list, edited in either place
+    private func saveDebtsToPlan(budget: [String: Double]) async {
+        guard let plan else { return } // never overwrite a plan that didn't load
+        planSaveTask?.cancel()          // this save has the savings changes too
+        let updated = Self.plan(plan, withDebts: hasDebt ? debts : [], budget: budget)
         do {
-            try await PlanAPI.savePlan(plan)
-            self.plan = plan
+            try await PlanAPI.savePlan(updated)
+            self.plan = updated
         } catch {
-            AppBanner.report("save your savings to your Plan", error)
+            AppBanner.report("save your debts to your Plan", error)
         }
+    }
+
+    /// `plan` with the quiz's debts: ones that came from the Plan keep their id and linked account
+    /// (and a linked one keeps following its balance); a blank minimum is the budget's line
+    nonisolated static func plan(_ plan: Plan, withDebts items: [DebtItem], budget: [String: Double]) -> Plan {
+        var out = plan
+        out.debts = items.filter { !$0.name.trimmingCharacters(in: .whitespaces).isEmpty }.map { item in
+            let name = item.name.trimmingCharacters(in: .whitespaces)
+            var debt = plan.debts.first { $0.id == item.planId } ?? Debt(name: name, balance: 0, apr: 0, minPayment: 0)
+            debt.name = name
+            if debt.linkedAccountId == nil { debt.balance = amount(item.principal) ?? debt.balance }
+            debt.apr = amount(item.apr) ?? 0
+            let minimum = amount(item.minPayment).flatMap { $0 > 0 ? $0 : nil }
+                ?? BudgetLine.amount(BudgetLine.debt(name), in: budget) ?? max(25, debt.balance * 0.02)
+            debt.minPayment = minimum
+            debt.dueDate = Plan.dayKey(item.dueDate)
+            return debt
+        }
+        out.importedQuizDebts = true
+        out.extraDebtPayment = BudgetLine.amount(BudgetLine.extraDebt, in: budget) ?? 0
+        return out
     }
 
     // MARK: Bills on the calendar
@@ -1212,6 +1264,7 @@ final class BudgetQuizModel: ObservableObject {
 
     /// pick up where they left off
     func resume(_ draft: [String: Any]) {
+        resumedDraft = true
         let wasSaved = hasSavedQuiz
         restore(draft)
         hasSavedQuiz = wasSaved
@@ -1388,9 +1441,12 @@ final class BudgetQuizModel: ObservableObject {
             debts = savedDebts.map { d in
                 DebtItem(name: d["name"] as? String ?? "", principal: text(d["principal"]), apr: text(d["apr"]),
                          minPayment: text(d["minPayment"] ?? d["minMonthly"]),
-                         dueDate: iso.date(from: d["dueDate"] as? String ?? "") ?? Date())
+                         dueDate: iso.date(from: d["dueDate"] as? String ?? "") ?? Date(),
+                         planId: d["planId"] as? String, linkedAccountId: d["linkedAccountId"] as? String)
             }
         }
+        if let extra = dict["extraDebtPayment"] as? NSNumber { extraDebtPayment = extra.doubleValue > 0 ? extra.stringValue : "" }
+        if plan != nil && !resumedDraft { adoptPlanDebts() } // the Plan tab's list wins over older answers
         if let v = dict["primaryGoal"] as? String, !v.isEmpty { primaryGoal = v }
         if let v = dict["savingsPriority"] as? String, !v.isEmpty { savingsPriority = v }
         if let v = dict["housingSituation"] as? String, !v.isEmpty { housingSituation = v }
@@ -1547,6 +1603,20 @@ struct DebtItem: Identifiable, Codable {
     var apr: String = ""
     var minPayment: String = ""
     var dueDate: Date = Date()
+    /// the Plan tab's debt this is (nil: new in the quiz)
+    var planId: String? = nil
+    /// a linked card or loan: the balance follows it
+    var linkedAccountId: String? = nil
+}
+
+extension DebtItem {
+    /// a Plan tab debt, as the quiz edits it (`balance`: the linked account's, if it has one)
+    init(plan debt: Debt, balance: Double? = nil) {
+        func text(_ value: Double) -> String { value == 0 ? "" : NSNumber(value: value).stringValue }
+        self.init(name: debt.name, principal: text(balance ?? debt.balance), apr: text(debt.apr),
+                  minPayment: text(debt.minPayment), dueDate: debt.dueDate.flatMap(Plan.day) ?? Date(),
+                  planId: debt.id, linkedAccountId: debt.linkedAccountId)
+    }
 }
 
 extension Dictionary where Key == String, Value == Any {

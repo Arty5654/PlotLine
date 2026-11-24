@@ -163,6 +163,39 @@ class QuizAndRetuneFeatureTest extends FeatureTestBase {
     }
 
     @Test
+    @DisplayName("Plan in the quiz: debt lines are the minimums, more is Extra Debt Payment; Savings splits into the fund and goals")
+    void planLines() throws Exception {
+        when(openAIService.generateBudget(anyString())).thenReturn("""
+            {"budget": {"Rent": 900, "Groceries": 350, "Transportation": 100, "Savings": 600, "Debt - Visa": 100}, "why": {}}
+            """);
+        when(openAIService.generateResponseLocalTaxes(anyString())).thenReturn("0");
+        User me = newUser();
+        Map<String, Object> q = quiz(me);
+        q.put("withDetails", true);
+        q.put("hasDebt", true);
+        q.put("debts", List.of(Map.of("name", "Visa", "principal", 2000, "apr", 24, "minPayment", 40)));
+        q.put("savings", Map.of("emergencySaved", 500, "emergencyMonths", 3, "goals",
+                List.of(Map.of("name", "Trip", "target", 3000, "saved", 0, "targetDate", "2027-08-01", "monthlyNeeded", 150))));
+        JsonNode r = ok(postJson(me, "/api/llm/budget", q));
+        JsonNode budget = r.get("budget");
+        assertThat(budget.get("Debt - Visa").asDouble()).isEqualTo(40.0);
+        assertThat(budget.get("Extra Debt Payment").asDouble()).isEqualTo(60.0);   // the AI's $60 over the minimum
+        assertThat(budget.get("Savings - Trip").asDouble()).isEqualTo(150.0);
+        assertThat(budget.get("Emergency Fund").asDouble()).isEqualTo(450.0);      // the rest of the $600
+        assertThat(budget.has("Savings")).isFalse();
+        assertThat(r.get("why").get("Emergency Fund").asText()).contains("$500 of");
+
+        // the planner's extra is kept as set; the AI's overpayment goes to savings instead
+        q.put("extraDebtPayment", 200);
+        JsonNode withExtra = ok(postJson(me, "/api/llm/budget", q));
+        budget = withExtra.get("budget");
+        assertThat(withExtra.get("why").get("Extra Debt Payment").asText()).contains("debt payoff planner");
+        assertThat(budget.get("Extra Debt Payment").asDouble()).isEqualTo(200.0);
+        assertThat(budget.get("Debt - Visa").asDouble()).isEqualTo(40.0);
+        assertThat(budget.get("Emergency Fund").asDouble() + budget.get("Savings - Trip").asDouble()).isEqualTo(660.0);
+    }
+
+    @Test
     @DisplayName("Review flow: building saves nothing; Save stores the reviewed budget and the answers, replacing old edits")
     void reviewThenSave() throws Exception {
         when(openAIService.generateBudget(anyString())).thenReturn("""

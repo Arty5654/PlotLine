@@ -4,6 +4,7 @@
 //
 //  Budget → Plan → Debt payoff planner: your debts, an extra monthly payment, and when you'll be
 //  debt-free with the avalanche (highest rate first) or snowball (smallest balance first) method.
+//  The same list the budget quiz asks about; the budget has a line for each minimum and the extra.
 //
 
 import SwiftUI
@@ -52,6 +53,10 @@ struct DebtPlannerView: View {
                             }
                             Text("\(debt.apr.formatted(.number.precision(.fractionLength(0...2))))% APR · \(debt.minPayment.dollars()) minimum\(debt.linkedAccountId != nil ? " · linked" : "")")
                                 .font(.caption).foregroundColor(PLColor.textSecondary)
+                            if debt.startsLater(), let day = debt.dueDate.flatMap(Plan.day) {
+                                Text("Payments start \(day.formatted(.dateTime.month(.abbreviated).day().year())): not in your budget yet")
+                                    .font(.caption).foregroundColor(PLColor.textSecondary)
+                            }
                             if DebtPayoff.minimumTooLow(debt) {
                                 Label("The minimum doesn't cover the interest, so this never shrinks.", systemImage: "exclamationmark.triangle.fill")
                                     .font(.caption).foregroundColor(PLColor.danger)
@@ -71,7 +76,8 @@ struct DebtPlannerView: View {
             } header: {
                 Text("Your debts")
             } footer: {
-                if debts.isEmpty { Text("Student loans, credit cards, a car loan…") }
+                Text(debts.isEmpty ? "Student loans, credit cards, a car loan…"
+                     : "The same list as your budget quiz. Your budget has a line for each minimum, and it changes when you change them here.")
             }
 
             if !debts.isEmpty {
@@ -88,7 +94,14 @@ struct DebtPlannerView: View {
                             }
                     }
                 } footer: {
-                    Text("On top of the minimums (\(debts.map(\.minPayment).reduce(0, +).dollars()) a month). When a debt is paid off, its minimum goes to the next one.")
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("On top of the minimums (\(debts.map(\.minPayment).reduce(0, +).dollars()) a month). When a debt is paid off, its minimum goes to the next one. It's your budget's Extra Debt Payment line.")
+                        if model.hasBudget, let free = model.unassigned, free > 0 {
+                            Text("Your budget has \(free.dollars()) a month it doesn't assign yet.")
+                        } else if model.hasBudget, model.unassigned == 0, extra > model.plan.extraDebtPayment {
+                            Text("Your budget is fully assigned: lower another category to make room.")
+                        }
+                    }
                 }
 
                 Section("When you'll be debt-free") {
@@ -195,9 +208,16 @@ struct DebtEditor: View {
                         TextField("0", value: $debt.apr, format: .number.precision(.fractionLength(0...2)))
                             .keyboardType(.decimalPad).multilineTextAlignment(.trailing)
                     }
-                    LabeledContent("Minimum payment / month") {
+                    LabeledContent("Minimum / month") {
                         TextField("$0", value: $debt.minPayment, format: .currency(code: "USD"))
                             .keyboardType(.decimalPad).multilineTextAlignment(.trailing)
+                    }
+                    DatePicker("Next payment", selection: Binding(get: { debt.dueDate.flatMap(Plan.day) ?? Date() },
+                                                                  set: { debt.dueDate = Plan.dayKey($0) }),
+                               displayedComponents: .date)
+                } footer: {
+                    if debt.startsLater() {
+                        Text("Payments haven't started: your budget adds this debt about six weeks before the first one.")
                     }
                 }
                 if !accounts.isEmpty {
