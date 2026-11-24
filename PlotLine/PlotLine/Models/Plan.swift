@@ -2,8 +2,9 @@
 //  Plan.swift
 //  PlotLine
 //
-//  Budget → Plan: savings goals, the emergency fund, debts for the payoff planner, and things
-//  owned for net worth. Saved on the server as one document (PlanAPI); the math is here.
+//  Budget → Plan: savings goals, the emergency fund and debts for the payoff planner. Saved
+//  on the server as one document (PlanAPI); the math is here. The budget has a line for each
+//  (BudgetLine): the server keeps debt and goal lines in step when the plan is saved.
 //
 
 import Foundation
@@ -13,8 +14,8 @@ struct Plan: Codable, Equatable {
     var emergencyFund = EmergencyFund()
     var debts: [Debt] = []
     var extraDebtPayment: Double = 0       // on top of the minimums, each month
-    var assets: [Holding] = []             // typed in: a car, cash at home, an account that isn't linked
-    var importedQuizDebts = false          // the budget quiz's debts were offered once
+    var importedQuizDebts = false          // the budget quiz's debts were offered once (the quiz edits these now)
+    var savingsCheckIn: String?            // "2026-11": that month's savings were confirmed (or skipped)
 
     init() { }
 
@@ -25,8 +26,8 @@ struct Plan: Codable, Equatable {
         emergencyFund = (try? c.decode(EmergencyFund.self, forKey: .emergencyFund)) ?? EmergencyFund()
         debts = (try? c.decode([Debt].self, forKey: .debts)) ?? []
         extraDebtPayment = (try? c.decode(Double.self, forKey: .extraDebtPayment)) ?? 0
-        assets = (try? c.decode([Holding].self, forKey: .assets)) ?? []
         importedQuizDebts = (try? c.decode(Bool.self, forKey: .importedQuizDebts)) ?? false
+        savingsCheckIn = try? c.decode(String.self, forKey: .savingsCheckIn)
     }
 }
 
@@ -59,12 +60,38 @@ struct Debt: Codable, Identifiable, Equatable {
     var apr: Double                        // percent, e.g. 5.5
     var minPayment: Double                 // per month
     var linkedAccountId: String?           // a linked card or loan: its balance is used
+    var dueDate: String?                   // the next payment, "2026-12-01" (a loan that starts later isn't budgeted yet)
+
+    /// payments start more than ~6 weeks from now (a new grad's grace period): no budget line yet
+    func startsLater(now: Date = Date()) -> Bool {
+        guard let dueDate, let day = Plan.day(dueDate) else { return false }
+        return day > now.addingTimeInterval(45 * 86_400)
+    }
 }
 
-struct Holding: Codable, Identifiable, Equatable {
-    var id = UUID().uuidString
-    var name: String
-    var value: Double
+/// The budget lines Plan shares with the budget (the server's BudgetLines):
+/// "Emergency Fund", "Savings - <goal>", "Savings" for anything else, "Debt - <debt>" (its minimum)
+/// and "Extra Debt Payment" (the payoff planner's extra). All are money set aside or paid down.
+enum BudgetLine {
+    static let savings = "Savings"
+    static let emergencyFund = "Emergency Fund"
+    static let extraDebt = "Extra Debt Payment"
+    static let goalPrefix = "Savings - "
+    static let debtPrefix = "Debt - "
+
+    static func goal(_ name: String) -> String { goalPrefix + name.trimmingCharacters(in: .whitespaces) }
+    static func debt(_ name: String) -> String { debtPrefix + name.trimmingCharacters(in: .whitespaces) }
+
+    static func isGoal(_ line: String) -> Bool { line.lowercased().hasPrefix(goalPrefix.lowercased()) }
+    static func isExtraDebt(_ line: String) -> Bool { line.trimmingCharacters(in: .whitespaces).lowercased() == extraDebt.lowercased() }
+    /// a goal line or the extra debt payment (counted with savings, like the 20% in 50/30/20)
+    static func isPlanSaving(_ line: String) -> Bool { isGoal(line) || isExtraDebt(line) }
+
+    /// a budget's amount for a line, matched ignoring case
+    static func amount(_ line: String, in budget: [String: Double]?) -> Double? {
+        guard let budget else { return nil }
+        return budget.first { $0.key.caseInsensitiveCompare(line) == .orderedSame }?.value
+    }
 }
 
 extension Plan {
@@ -86,16 +113,25 @@ extension Plan {
     static let notSpending: Set<String> = ["savings", "brokerage", "roth ira", "401k contribution", "401(k) contribution",
                                            "emergency fund", "investments", "investing"]
 
-    /// a month of spending from the monthly budget (savings and investing lines left out)
+    static func isSaving(_ line: String) -> Bool {
+        notSpending.contains(line.lowercased().trimmingCharacters(in: .whitespaces)) || BudgetLine.isPlanSaving(line)
+    }
+
+    /// a month of spending from the monthly budget (savings, investing and extra debt payments left out)
     static func monthlySpending(budget: [String: Double]) -> Double {
-        budget.filter { !notSpending.contains($0.key.lowercased().trimmingCharacters(in: .whitespaces)) }
-            .values.reduce(0, +)
+        budget.filter { !isSaving($0.key) }.values.reduce(0, +)
+    }
+
+    /// "2026-11"
+    static func monthKey(_ date: Date = Date()) -> String {
+        let c = Calendar.current.dateComponents([.year, .month], from: date)
+        return String(format: "%04d-%02d", c.year ?? 0, c.month ?? 0)
     }
 }
 
-// MARK: - Net worth
+// MARK: - Linked accounts
 
-/// A linked bank account as net worth sees it.
+/// A linked bank account, for savings goals, the emergency fund and debts to follow.
 struct LinkedBalance: Identifiable, Equatable {
     let id: String
     let name: String
@@ -123,35 +159,6 @@ struct LinkedBalance: Identifiable, Equatable {
         self.name = name
         self.kind = kind
         self.balance = balance
-    }
-}
-
-struct NetWorth: Equatable {
-    var owned: [(name: String, amount: Double)]
-    var owed: [(name: String, amount: Double)]
-    var total: Double { owned.map(\.amount).reduce(0, +) - owed.map(\.amount).reduce(0, +) }
-
-    static func == (a: NetWorth, b: NetWorth) -> Bool { a.total == b.total && a.owned.count == b.owned.count && a.owed.count == b.owed.count }
-
-    /// Linked accounts, plus what's typed in. A debt tied to a linked card/loan counts once (with
-    /// the account's balance). Savings goals aren't added again: that money is in an account.
-    static func of(plan: Plan, linked: [LinkedBalance]) -> NetWorth {
-        let tiedToDebts = Set(plan.debts.compactMap(\.linkedAccountId))
-        var owned: [(String, Double)] = []
-        var owed: [(String, Double)] = []
-        for account in linked {
-            switch account.kind {
-            case .cash, .investment: owned.append((account.name, account.balance))
-            case .owed where !tiedToDebts.contains(account.id): owed.append((account.name, account.balance))
-            case .owed: break
-            }
-        }
-        for asset in plan.assets { owned.append((asset.name, asset.value)) }
-        for debt in plan.debts {
-            let balance = debt.linkedAccountId.flatMap { id in linked.first { $0.id == id }?.balance } ?? debt.balance
-            owed.append((debt.name, balance))
-        }
-        return NetWorth(owned: owned, owed: owed)
     }
 }
 

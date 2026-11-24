@@ -44,7 +44,9 @@ public final class RetuneAdvisor {
             "car insurance", "health insurance", "insurance", "childcare", "commute", "car payment", "tuition",
             "student loan", "subscriptions");
 
-    static boolean isSaving(String category) { return SAVING.contains(key(category)); }
+    static boolean isSaving(String category) {
+        return SAVING.contains(key(category)) || com.plotline.backend.plan.BudgetLines.isPlanSaving(category);
+    }
 
     static boolean isFixed(String category) {
         String k = key(category);
@@ -194,7 +196,9 @@ public final class RetuneAdvisor {
         }
 
         // well under budget: lower it and save the difference
-        String savingsCategory = savings.keySet().stream().filter(c -> key(c).equals("savings")).findFirst()
+        // the emergency fund while it's being built (the quiz only gives it a line until it's full), then Savings
+        String savingsCategory = savings.keySet().stream().filter(c -> key(c).equals("emergency fund")).findFirst()
+                .or(() -> savings.keySet().stream().filter(c -> key(c).equals("savings")).findFirst())
                 .orElse(savings.keySet().stream().findFirst().orElse(null));
         for (var e : slack.entrySet()) {
             String category = e.getKey();

@@ -25,7 +25,7 @@ final class BudgetFit {
             "car maintenance", "taxes & fees");
 
     private static String key(String c) { return c.toLowerCase(Locale.ROOT).strip(); }
-    static boolean isSaving(String c) { return SAVING.contains(key(c)); }
+    static boolean isSaving(String c) { return SAVING.contains(key(c)) || com.plotline.backend.plan.BudgetLines.isPlanSaving(c); }
     static boolean isNeed(String c) { return NEEDS.contains(key(c)) || key(c).startsWith("debt - "); }
 
     /** lowers lines so the total fits; returns what each lowered line was. Whole dollars. */

@@ -473,7 +473,8 @@ extension BudgetInputView {
     private func generateBudgetingWarnings() {
         budgetingWarnings = ""
         let rent = Double(budgetItems.first(where: { $0.category == "Rent" })?.amount ?? "0") ?? 0
-        let savings = Double(budgetItems.first(where: { $0.category == "Savings" })?.amount ?? "0") ?? 0
+        // every line set aside: Savings, the emergency fund, goals, investing
+        let savings = budgetItems.filter { Plan.isSaving($0.category) }.compactMap { Double($0.amount) }.reduce(0, +)
         let eatingOut = Double(budgetItems.first(where: { $0.category == "Eating Out" })?.amount ?? "0") ?? 0
         
         if userIncome > 0 {

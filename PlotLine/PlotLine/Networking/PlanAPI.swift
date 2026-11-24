@@ -14,6 +14,12 @@ struct QuizAnswers {
     var state: String?
     var k401Percent: Double?
     var debts: [Debt] = []
+    var monthlyNet: Double?          // take-home a month, worked out when the quiz was saved
+}
+
+/// POST budget-line: there isn't that much in Savings (or unassigned); `available` is the most it can be
+struct NotEnoughInBudget: Error, Equatable {
+    let available: Double
 }
 
 /// one paycheck (or a year) from the take-home calculator
@@ -135,7 +141,8 @@ enum PlanAPI {
         }
         var answers = QuizAnswers(yearlyIncome: number(json["yearlyIncome"]),
                                   state: json["state"] as? String,
-                                  k401Percent: number(json["401(k) Contribution"]))
+                                  k401Percent: number(json["401(k) Contribution"]),
+                                  monthlyNet: number(json["monthlyNet"]))
         for item in json["debts"] as? [[String: Any]] ?? [] {
             guard let balance = number(item["principal"]), balance > 0 else { continue }
             let name = (item["name"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "Debt"
@@ -179,6 +186,24 @@ enum PlanAPI {
     static func applyRetune(_ changes: [String: Double]) async throws {
         _ = try await load(request("/api/budget/\(username)/retune/apply", method: "POST",
                                    body: try JSONEncoder().encode(["changes": changes])))
+    }
+
+    /// what the budget puts toward the emergency fund or a goal each month ("Emergency Fund",
+    /// "Savings - Trip"): more comes from `from` (default Savings, then money not assigned yet), less
+    /// goes back to Savings. Returns the updated monthly budget.
+    @discardableResult
+    static func setBudgetLine(_ line: String, amount: Double, from: String? = nil) async throws -> [String: Double] {
+        var body: [String: Any] = ["line": line, "amount": amount.rounded()]
+        if let from { body["from"] = from }
+        let req = try request("/api/plan/\(username)/budget-line", method: "POST", body: try JSONSerialization.data(withJSONObject: body))
+        let (data, response) = try await URLSession.shared.data(for: req)
+        guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
+        if http.statusCode == 409, let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            throw NotEnoughInBudget(available: (json["available"] as? NSNumber)?.doubleValue ?? 0)
+        }
+        guard (200...299).contains(http.statusCode) else { throw URLError(.badServerResponse) }
+        struct Wrapped: Decodable { let budget: [String: Double] }
+        return try JSONDecoder().decode(Wrapped.self, from: data).budget
     }
 
     static func states() async throws -> [TaxState] {

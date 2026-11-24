@@ -48,7 +48,7 @@ public class FixedCosts {
 
     public static boolean fromQuiz(String category) {
         String c = category == null ? "" : category.strip().toLowerCase(Locale.ROOT);
-        return FROM_QUIZ.contains(c) || c.startsWith("debt - ");
+        return FROM_QUIZ.contains(c) || c.startsWith("debt - ") || com.plotline.backend.plan.BudgetLines.isPlanSaving(c);
     }
 
     public List<Map<String, Object>> load(String username) {

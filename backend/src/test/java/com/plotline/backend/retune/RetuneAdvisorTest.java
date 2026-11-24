@@ -69,6 +69,19 @@ class RetuneAdvisorTest {
     }
 
     @Test
+    @DisplayName("Money freed from a category goes to the emergency fund while it's being built; goal lines count as saving")
+    void lowerToEmergencyFund() {
+        var budget = map("Eating Out", 300, "Rent", 1200, "Savings", 100, "Emergency Fund", 200, "Savings - Trip", 150);
+        var actual = map("Eating Out", 100, "Rent", 1200);
+        var s = RetuneAdvisor.advise(budget, actual, 2000).suggestions().get(0);
+        assertThat(s.kind()).isEqualTo("lower");
+        assertThat(s.changes()).containsEntry("Eating Out", 150.0).containsEntry("Emergency Fund", 350.0);
+        assertThat(s.message()).contains("add $150 to Emergency Fund");
+        assertThat(RetuneAdvisor.isSaving("Savings - Trip")).isTrue();
+        assertThat(RetuneAdvisor.isSaving("Extra Debt Payment")).isTrue();
+    }
+
+    @Test
     @DisplayName("Spending that comes in bursts (Home, Travel, once-a-year costs) is never lowered or used to pay for another")
     void bursty() {
         var budget = map("Home", 45, "Travel", 200, "Car registration", 10, "Groceries", 300, "Savings", 300);

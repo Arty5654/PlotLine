@@ -2,7 +2,7 @@
 //  PlanTests.swift
 //  PlotLineTests
 //
-//  Budget → Plan: debt payoff, savings goals, net worth, the 401(k) match and the rent check.
+//  Budget → Plan: debt payoff, savings goals, the 401(k) match and the rent check.
 //
 
 import Testing
@@ -60,20 +60,6 @@ struct PlanMathTests {
     @Test("Emergency fund uses spending from the budget, not savings or investing")
     func monthlySpending() {
         #expect(Plan.monthlySpending(budget: ["Rent": 1200, "Groceries": 400, "Savings": 500, "Roth IRA": 300]) == 1600)
-    }
-
-    @Test("Net worth: linked accounts and things you own, minus debts; a debt tied to a linked card counts once")
-    func netWorth() {
-        var plan = Plan()
-        plan.assets = [Holding(name: "Car", value: 8000)]
-        plan.debts = [Debt(name: "Student loan", balance: 20000, apr: 5, minPayment: 200),
-                      Debt(name: "Visa", balance: 999, apr: 24, minPayment: 40, linkedAccountId: "visa")]
-        let linked = [LinkedBalance(id: "chk", name: "Checking", kind: .cash, balance: 2500),
-                      LinkedBalance(id: "visa", name: "Visa ••1234", kind: .owed, balance: 650),
-                      LinkedBalance(id: "amex", name: "Amex", kind: .owed, balance: 100)]
-        let worth = NetWorth.of(plan: plan, linked: linked)
-        #expect(worth.total == 2500 + 8000 - 20000 - 650 - 100) // the Visa debt uses the account's $650, once
-        #expect(worth.owed.count == 3)
     }
 
     @Test("401(k) match: free money at each contribution")

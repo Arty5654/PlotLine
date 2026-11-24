@@ -2,7 +2,7 @@
 //  PlanView.swift
 //  PlotLine
 //
-//  Budget → Plan: net worth, the emergency fund, savings goals, the debt payoff planner, and
+//  Budget → Plan: the emergency fund, savings goals, the debt payoff planner, and
 //  first-job tools (paycheck, 401(k) match, rent).
 //
 
@@ -22,10 +22,10 @@ struct PlanView: View {
 
     @State private var editingGoal: SavingsGoal?
     @State private var depositGoal: SavingsGoal?
-    @State private var editingHolding: Holding?
     @State private var showEmergencySettings = false
     @State private var emergencyDeposit = false
-    @State private var showNetWorthDetail = false
+    @State private var budgetLineEdit: BudgetLineEdit?
+    @State private var editingCheckIn = false
 
     var body: some View {
         ScrollView {
@@ -34,7 +34,7 @@ struct PlanView: View {
                     ProgressView("Loading your plan…")
                         .frame(maxWidth: .infinity, minHeight: 200)
                 } else {
-                    netWorthCard
+                    if model.needsCheckIn() { checkInCard }
                     emergencyFundCard
                     savingsGoalsCard
                     debtCard
@@ -80,93 +80,73 @@ struct PlanView: View {
                 model.update { $0.emergencyFund = fund }
             }
         }
-        .sheet(item: $editingHolding) { holding in
-            HoldingEditor(holding: holding, isNew: !model.plan.assets.contains { $0.id == holding.id },
-                          onSave: { saved in
-                              model.update { plan in
-                                  if let i = plan.assets.firstIndex(where: { $0.id == saved.id }) {
-                                      plan.assets[i] = saved
-                                  } else {
-                                      plan.assets.append(saved)
-                                  }
-                              }
-                          },
-                          onDelete: { id in model.update { $0.assets.removeAll { $0.id == id } } })
+        .sheet(item: $budgetLineEdit) { edit in
+            BudgetAmountSheet(edit: edit, model: model)
+        }
+        .sheet(isPresented: $editingCheckIn) {
+            SavingsCheckInSheet(lines: model.checkInLines) { amounts in model.confirmCheckIn(amounts) }
         }
     }
 
-    // MARK: - Net worth
+    // MARK: - This month's savings (no linked account tracks them)
 
-    private var netWorthCard: some View {
-        let worth = model.netWorth
+    private var checkInCard: some View {
+        let lines = model.checkInLines
         return VStack(alignment: .leading, spacing: PLSpacing.sm) {
+            Label("\(Date().formatted(.dateTime.month(.wide))) savings", systemImage: "checkmark.circle")
+                .font(.headline)
+            Text("Your budget sets these aside. Did you move them to savings this month?")
+                .font(.subheadline).foregroundColor(PLColor.textSecondary)
+            ForEach(lines) { line in
+                HStack {
+                    Text(line.name).font(.subheadline)
+                    Spacer()
+                    Text(line.amount.dollars()).font(.subheadline.monospacedDigit())
+                }
+            }
             HStack {
-                Label("Net worth", systemImage: "chart.line.uptrend.xyaxis")
-                    .font(.headline)
+                Button("I Moved It") {
+                    model.confirmCheckIn(Dictionary(uniqueKeysWithValues: lines.map { ($0.id, $0.amount) }))
+                }
+                .buttonStyle(.borderedProminent)
+                Button("Different Amounts") { editingCheckIn = true }
+                    .buttonStyle(.bordered)
                 Spacer()
-                Button(showNetWorthDetail ? "Hide" : "Details") {
-                    withAnimation { showNetWorthDetail.toggle() }
-                }
-                .font(.subheadline.weight(.semibold))
+                Button("Skip") { model.skipCheckIn() }
+                    .font(.subheadline)
             }
-            Text(worth.total.dollars())
-                .font(.system(size: 34, weight: .bold, design: .rounded))
-                .foregroundColor(worth.total < 0 ? PLColor.danger : PLColor.textPrimary)
-            Text("What you own minus what you owe.")
-                .font(.caption)
-                .foregroundColor(PLColor.textSecondary)
-
-            if showNetWorthDetail {
-                Divider()
-                Text("You own").font(.subheadline.weight(.semibold))
-                if worth.owned.isEmpty {
-                    Text("Link a bank in Budgeting, or add what you own below.")
-                        .font(.caption).foregroundColor(PLColor.textSecondary)
-                }
-                ForEach(model.linked.filter { $0.kind != .owed }) { account in
-                    amountRow(account.name, account.balance)
-                }
-                ForEach(model.plan.assets) { holding in
-                    Button { editingHolding = holding } label: {
-                        HStack {
-                            amountRow(holding.name, holding.value)
-                            Image(systemName: "pencil").font(.caption).foregroundColor(PLColor.textSecondary)
-                        }
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityHint("Edit")
-                }
-                Button {
-                    editingHolding = Holding(name: "", value: 0)
-                } label: {
-                    Label("Add something you own", systemImage: "plus.circle")
-                        .font(.subheadline)
-                }
-                Text("You owe").font(.subheadline.weight(.semibold)).padding(.top, 4)
-                if worth.owed.isEmpty {
-                    Text("No debts. Add them in the payoff planner below.")
-                        .font(.caption).foregroundColor(PLColor.textSecondary)
-                }
-                ForEach(Array(worth.owed.enumerated()), id: \.offset) { _, line in
-                    amountRow(line.name, -line.amount)
-                }
-                Text("Linked accounts update when your bank syncs. Savings goals aren't added again: that money is already in an account.")
-                    .font(.caption2)
-                    .foregroundColor(PLColor.textSecondary)
-                    .padding(.top, 4)
-            }
+            Text("It's added to what you've saved, since no linked account tracks it.")
+                .font(.caption2).foregroundColor(PLColor.textSecondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .plCard()
     }
 
-    private func amountRow(_ name: String, _ amount: Double) -> some View {
-        HStack {
-            Text(name).font(.subheadline)
-            Spacer()
-            Text(amount.dollars())
-                .font(.subheadline.monospacedDigit())
-                .foregroundColor(amount < 0 ? PLColor.danger : PLColor.textPrimary)
+    // MARK: - What the budget puts toward it
+
+    /// "In your budget: $150 a month · On track", or "Not in your budget yet" with a button to add it
+    @ViewBuilder
+    private func budgetRow(line: String, title: String, budgeted: Double, needed: Double?, status: String?, warn: Bool = false) -> some View {
+        if model.hasBudget {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack {
+                    if budgeted > 0 {
+                        Text("In your budget: \(budgeted.dollars()) a month").font(.caption.weight(.semibold))
+                    } else {
+                        Text("Not in your budget yet").font(.caption.weight(.semibold)).foregroundColor(PLColor.textSecondary)
+                    }
+                    Spacer()
+                    Button(budgeted > 0 ? "Change" : "Add to Budget") {
+                        budgetLineEdit = BudgetLineEdit(line: line, title: title, current: budgeted,
+                                                        suggested: budgeted > 0 ? budgeted : (needed ?? 50).rounded(.up))
+                    }
+                    .font(.caption.weight(.semibold))
+                }
+                if let status {
+                    Text(status).font(.caption).foregroundColor(warn ? .orange : PLColor.textSecondary)
+                }
+            }
+            .padding(.top, 2)
         }
     }
 
@@ -200,6 +180,14 @@ struct PlanView: View {
                 Text("Take the budget quiz and the goal is worked out from your monthly spending.")
                     .font(.caption)
                     .foregroundColor(PLColor.textSecondary)
+            }
+            if let target, saved < target || model.emergencyBudget > 0 {
+                let gap = max(0, target - saved)
+                budgetRow(line: BudgetLine.emergencyFund, title: "Emergency fund", budgeted: model.emergencyBudget,
+                          needed: (gap / 12).rounded(.up),
+                          status: saved >= target ? "Full, so this can go to your goals now: tap Change."
+                                : model.emergencyMonthsToFull.map { "Full in about \($0) month\($0 == 1 ? "" : "s") at this pace." }
+                                  ?? "About \((gap / 12).rounded(.up).dollars()) a month fills it in a year.")
             }
             if model.plan.emergencyFund.linkedAccountId == nil {
                 Button { emergencyDeposit = true } label: {
@@ -271,6 +259,17 @@ struct PlanView: View {
                     Button("Add money") { depositGoal = goal }
                         .font(.caption.weight(.semibold))
                 }
+            }
+            if saved < goal.target || model.budget(for: goal) > 0 {
+                let budgeted = model.budget(for: goal)
+                let needed = goal.monthlyNeeded(saved: saved)
+                let short = needed.map { budgeted > 0 && budgeted + 0.5 < $0 } ?? false
+                budgetRow(line: BudgetLine.goal(goal.name), title: goal.name, budgeted: budgeted, needed: needed,
+                          status: saved >= goal.target ? "Not needed now: tap Change to move it to another goal."
+                                : budgeted == 0 ? (needed == nil ? "No date: give it what you can." : nil)
+                                : short ? "\((needed! - budgeted).dollars()) a month short of reaching it on time."
+                                : needed != nil ? "On track." : nil,
+                          warn: short)
             }
         }
     }
@@ -504,36 +503,142 @@ struct EmergencyFundSettings: View {
     }
 }
 
-struct HoldingEditor: View {
-    @State var holding: Holding
-    let isNew: Bool
-    let onSave: (Holding) -> Void
-    let onDelete: (String) -> Void
+// MARK: - Budget amount and check-in sheets
+
+/// which budget line is being set, and from what
+struct BudgetLineEdit: Identifiable {
+    let line: String          // "Emergency Fund", "Savings - Trip"
+    let title: String
+    let current: Double
+    let suggested: Double
+    var id: String { line }
+}
+
+/// how much the budget puts toward the emergency fund or a goal each month
+struct BudgetAmountSheet: View {
+    let edit: BudgetLineEdit
+    @ObservedObject var model: PlanViewModel
     @Environment(\.dismiss) private var dismiss
+    @State private var amount: Double?
+    @State private var saving = false
+    @State private var problem: String?
+    /// where more comes from: nil = Savings, then unassigned money; or another Plan line
+    @State private var from: String?
+
+    private var sources: [(line: String, title: String, amount: Double)] { model.otherSources(for: edit.line) }
+    private var defaultRoom: Double { model.budgetSavings + (model.unassigned ?? 0) }
+    private var most: Double {
+        edit.current + (from.flatMap { f in sources.first { $0.line == f }?.amount } ?? defaultRoom)
+    }
 
     var body: some View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("What it is (e.g. Car, Cash)", text: $holding.name)
-                    TextField("What it's worth", value: $holding.value, format: .currency(code: "USD"))
+                    TextField("$0 a month", value: $amount, format: .currency(code: "USD").precision(.fractionLength(0)))
                         .keyboardType(.decimalPad)
+                } header: {
+                    Text("Each month, for \(edit.title)")
                 } footer: {
-                    Text("For things not in a linked account. Linked accounts are counted automatically.")
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(sourceText)
+                        if let problem { Text(problem).foregroundColor(PLColor.danger) }
+                    }
                 }
-                if !isNew {
+                if !sources.isEmpty {
                     Section {
-                        Button("Delete", role: .destructive) { onDelete(holding.id); dismiss() }
+                        Picker("Comes out of", selection: $from) {
+                            Text("Savings (\(defaultRoom.dollars()) free)").tag(String?.none)
+                            ForEach(sources, id: \.line) { source in
+                                Text("\(source.title) (\(source.amount.dollars()))").tag(String?.some(source.line))
+                            }
+                        }
+                    } footer: {
+                        Text("Taking from another goal or the emergency fund lowers what goes to it.")
+                    }
+                }
+                if edit.current > 0 {
+                    Section {
+                        Button("Take It Out of My Budget", role: .destructive) { Task { await save(0) } }
+                    } footer: {
+                        Text("Its \(edit.current.dollars()) goes back to Savings.")
                     }
                 }
             }
-            .navigationTitle(isNew ? "Something You Own" : "Edit")
+            .navigationTitle(edit.current > 0 ? "Change Budget" : "Add to Budget")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { onSave(holding); dismiss() }
-                        .disabled(holding.name.trimmingCharacters(in: .whitespaces).isEmpty)
+                    Button("Save") { Task { await save(amount ?? 0) } }
+                        .disabled(saving || amount == nil)
+                }
+            }
+            .onAppear {
+                amount = edit.suggested
+                // nothing free in Savings: start from the line with the most in it
+                if defaultRoom < edit.suggested - edit.current { from = sources.max { $0.amount < $1.amount }?.line }
+            }
+        }
+        .presentationDetents([.medium])
+    }
+
+    private var sourceText: String {
+        if let from, let source = sources.first(where: { $0.line == from }) {
+            return "More comes out of \(source.title) (\(source.amount.dollars()) a month); less goes back to Savings. Up to \(most.dollars()) a month."
+        }
+        var parts = ["More comes out of Savings (\(model.budgetSavings.dollars()) a month)"]
+        if let free = model.unassigned, free > 0 { parts.append("then money your budget doesn't assign (\(free.dollars()))") }
+        return parts.joined(separator: ", ") + "; less goes back to Savings. Up to \(most.dollars()) a month."
+    }
+
+    private func save(_ value: Double) async {
+        saving = true
+        defer { saving = false }
+        do {
+            try await model.setBudgetLine(edit.line, amount: value, from: value > edit.current ? from : nil)
+            dismiss()
+        } catch let short as NotEnoughInBudget {
+            problem = "There's room for up to \(short.available.dollars()) a month from there."
+                + (sources.isEmpty ? " Lower another category in Monthly Budget to make room." : " Pick where it comes out of below, or lower another category in Monthly Budget.")
+        } catch {
+            AppBanner.report("change your budget", error)
+        }
+    }
+}
+
+/// this month's savings, when they moved different amounts than budgeted
+struct SavingsCheckInSheet: View {
+    let lines: [PlanViewModel.CheckInLine]
+    let onSave: ([String: Double]) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var amounts: [String: Double] = [:]
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    ForEach(lines) { line in
+                        LabeledContent(line.name) {
+                            TextField("$0", value: Binding(get: { amounts[line.id] ?? line.amount },
+                                                           set: { amounts[line.id] = max(0, $0) }),
+                                      format: .currency(code: "USD"))
+                                .keyboardType(.decimalPad).multilineTextAlignment(.trailing)
+                        }
+                    }
+                } footer: {
+                    Text("What you moved this month. $0 for one you didn't.")
+                }
+            }
+            .navigationTitle("This Month's Savings")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        onSave(Dictionary(uniqueKeysWithValues: lines.map { ($0.id, amounts[$0.id] ?? $0.amount) }))
+                        dismiss()
+                    }
                 }
             }
         }

@@ -49,6 +49,8 @@ struct BudgetQuizView: View {
     @State private var transactionsFor: String?
     /// what each question the bank answers was before Change (for Undo); the opened ones are model.bankOverrides
     @State private var beforeChange: [String: String] = [:]
+    /// a savings goal being added or edited (it's the Plan tab's)
+    @State private var editingGoal: SavingsGoal?
 
     /// the built budget waiting on the review screen
     private struct Review: Identifiable {
@@ -1021,7 +1023,8 @@ struct BudgetQuizView: View {
                 .onChange(of: model.hasDebt) { _, on in if !on { model.debts.removeAll() } }
             if model.hasDebt {
                 ForEach($model.debts) { $debt in
-                    DebtRow(debt: $debt).plCard()
+                    DebtRow(debt: $debt, linkedName: debt.linkedAccountId.flatMap { id in model.planAccounts.first { $0.id == id }?.name })
+                        .plCard()
                 }
                 Button {
                     model.debts.append(DebtItem())
@@ -1032,6 +1035,9 @@ struct BudgetQuizView: View {
                 if !model.debtEntriesValid {
                     Text("Each debt needs a name and a balance.").font(.caption).foregroundColor(.orange)
                 }
+                moneyField("Extra toward debt each month ($, optional)", $model.extraDebtPayment)
+                Text("On top of the minimums: it pays debt off sooner. These debts are the same list as Budget → Plan → Debt payoff, so a change in either place shows in both.")
+                    .font(.caption2).foregroundColor(PLColor.textSecondary)
             }
         }
     }
@@ -1079,41 +1085,80 @@ struct BudgetQuizView: View {
         }
     }
 
-    /// what they have saved: from the Plan tab, or asked here when the Plan has nothing yet
+    /// what they have saved and are saving for: the Plan tab's emergency fund and goals, edited here too
+    /// (asked as one amount only when the Plan tab didn't load)
     @ViewBuilder private var savingsCard: some View {
         card {
-            Text("What you have saved").font(.headline)
-            if let plan = model.plan, model.planHasSavings {
+            Text("What you're saving for").font(.headline)
+            if let plan = model.plan {
                 HStack {
-                    Text("Emergency fund")
+                    Text("Emergency fund saved")
                     Spacer()
-                    Text(model.emergencySaved.dollars()).monospacedDigit()
+                    if plan.emergencyFund.linkedAccountId != nil {
+                        Text(model.emergencySaved.dollars()).monospacedDigit()
+                    } else {
+                        TextField("$0 saved", value: Binding(
+                            get: { model.plan?.emergencyFund.saved ?? 0 },
+                            set: { value in model.updatePlan { $0.emergencyFund.saved = max(0, value) } }),
+                                  format: .currency(code: "USD").precision(.fractionLength(0)))
+                            .keyboardType(.decimalPad)
+                            .multilineTextAlignment(.trailing)
+                            .frame(maxWidth: 140)
+                    }
                 }
                 .font(.subheadline)
-                Text("Goal: \(plan.emergencyFund.months) months of expenses").font(.caption).foregroundColor(PLColor.textSecondary)
+                Stepper("Goal: \(plan.emergencyFund.months) month\(plan.emergencyFund.months == 1 ? "" : "s") of expenses",
+                        value: Binding(get: { model.plan?.emergencyFund.months ?? 3 },
+                                       set: { value in model.updatePlan { $0.emergencyFund.months = value } }),
+                        in: 1...12)
+                    .font(.subheadline)
+                Divider()
                 ForEach(plan.savingsGoals) { goal in
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(goal.name)
-                            if let date = goal.targetDate.flatMap(Plan.day) {
-                                Text("by \(date.formatted(.dateTime.month(.abbreviated).year()))")
+                    Button { editingGoal = goal } label: {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(goal.name).foregroundColor(PLColor.textPrimary)
+                                Text(goal.targetDate.flatMap(Plan.day).map { "by \($0.formatted(.dateTime.month(.abbreviated).year()))" }
+                                     ?? "No date: gets what's left over")
                                     .font(.caption).foregroundColor(PLColor.textSecondary)
                             }
+                            Spacer()
+                            Text("\(model.goalSaved(goal).dollars()) of \(goal.target.dollars())").monospacedDigit()
+                                .foregroundColor(PLColor.textPrimary)
+                            Image(systemName: "chevron.right").font(.caption).foregroundColor(PLColor.textSecondary)
                         }
-                        Spacer()
-                        Text("\(model.goalSaved(goal).dollars()) of \(goal.target.dollars())").monospacedDigit()
+                        .font(.subheadline)
+                        .contentShape(Rectangle())
                     }
-                    .font(.subheadline)
+                    .buttonStyle(.plain)
                 }
-                Text("From your Plan tab (Budget → Plan). Change them there.")
+                Button {
+                    editingGoal = SavingsGoal(name: "", target: 0)
+                } label: {
+                    Label("Add a savings goal", systemImage: "plus.circle.fill").font(.subheadline)
+                }
+                .tint(.green)
+                Text("Your budget splits Savings between the emergency fund and goals with a date. These are the same as Budget → Plan.")
                     .font(.caption2).foregroundColor(PLColor.textSecondary)
             } else {
                 moneyField("How much do you have saved now? ($)", $model.savedNow)
-                Text(model.plan == nil
-                     ? "Savings, emergency fund and cash you could use if something came up."
-                     : "Saved to your Plan tab as your emergency fund, so you can track it there.")
+                Text("Savings, emergency fund and cash you could use if something came up.")
                     .font(.caption2).foregroundColor(PLColor.textSecondary)
             }
+        }
+        .sheet(item: $editingGoal) { goal in
+            SavingsGoalEditor(goal: goal, accounts: model.planAccounts.filter { $0.kind == .cash },
+                              isNew: !(model.plan?.savingsGoals.contains { $0.id == goal.id } ?? false),
+                              onSave: { saved in
+                                  model.updatePlan { plan in
+                                      if let i = plan.savingsGoals.firstIndex(where: { $0.id == saved.id }) {
+                                          plan.savingsGoals[i] = saved
+                                      } else {
+                                          plan.savingsGoals.append(saved)
+                                      }
+                                  }
+                              },
+                              onDelete: { id in model.updatePlan { $0.savingsGoals.removeAll { $0.id == id } } })
         }
     }
 
@@ -1225,14 +1270,21 @@ extension Int {
 // ---------- Rows & helpers ----------
 private struct DebtRow: View {
     @Binding var debt: DebtItem
+    /// the linked card or loan its balance follows
+    var linkedName: String? = nil
     var body: some View {
         VStack(alignment: .leading, spacing: PLSpacing.sm) {
             TextField("Name (e.g., Chase Credit Card)", text: $debt.name)
                 .textFieldStyle(.roundedBorder)
+            if let linkedName {
+                Text("Balance \(debt.principal.isEmpty ? "" : "$\(debt.principal) ")from \(linkedName)")
+                    .font(.caption).foregroundColor(PLColor.textSecondary)
+            }
             HStack(spacing: PLSpacing.sm) {
                 TextField("Remaining Balance ($)", text: $debt.principal)
                     .keyboardType(.decimalPad)
                     .textFieldStyle(.roundedBorder)
+                    .disabled(debt.linkedAccountId != nil)
                     .onChange(of: debt.principal) { _, v in debt.principal = v.filter { "0123456789.".contains($0) } }
                 TextField("APR (%)", text: $debt.apr)
                     .keyboardType(.decimalPad)

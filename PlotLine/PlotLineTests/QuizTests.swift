@@ -322,19 +322,19 @@ struct QuizAdditionsTests {
         #expect(!model.bills(budget: [:]).contains { $0.name == "Car Payment" })
     }
 
-    @Test("Savings: from the Plan tab when it has some (linked balances win), otherwise what they type")
+    @Test("Savings: the Plan tab's (linked balances win); typed here only when the Plan didn't load")
     func savings() {
         let model = BudgetQuizModel()
         #expect(model.payload()["savings"] == nil)          // the Plan didn't load and nothing typed
-        var plan = Plan()
-        model.setPlan(plan)
-        #expect(!model.planHasSavings)
         model.savedNow = "2500"
         #expect(model.emergencySaved == 2500)
+        var plan = Plan()
+        plan.emergencyFund.saved = 300
+        model.setPlan(plan)
+        #expect(model.emergencySaved == 300)                // the Plan's, edited on the quiz's savings card
         plan.emergencyFund = EmergencyFund(months: 6, saved: 4000, linkedAccountId: "acct")
         plan.savingsGoals = [SavingsGoal(name: "Car", target: 5000, saved: 1000, targetDate: "2030-01-01")]
         model.setPlan(plan, balances: ["acct": 7200])
-        #expect(model.planHasSavings)
         #expect(model.emergencySaved == 7200)
         let savings = model.payload()["savings"] as? [String: Any] ?? [:]
         #expect(savings["emergencyMonths"] as? Int == 6)
