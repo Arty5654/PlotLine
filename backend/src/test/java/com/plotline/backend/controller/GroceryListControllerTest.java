@@ -49,7 +49,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @WebMvcTest(controllers = GroceryListController.class,
         excludeFilters = @org.springframework.context.annotation.ComponentScan.Filter(
                 type = org.springframework.context.annotation.FilterType.ASSIGNABLE_TYPE,
-                classes = {com.plotline.backend.ratelimit.AuthRateLimitFilter.class, com.plotline.backend.ratelimit.AiRateLimitFilter.class,
+                classes = {com.plotline.backend.ratelimit.AuthRateLimitFilter.class, com.plotline.backend.ratelimit.AiRateLimitFilter.class, com.plotline.backend.ratelimit.ApiRateLimitFilter.class,
                         com.plotline.backend.membership.MembershipFilter.class}))
 @AutoConfigureMockMvc(addFilters = false)
 class GroceryListControllerTest {

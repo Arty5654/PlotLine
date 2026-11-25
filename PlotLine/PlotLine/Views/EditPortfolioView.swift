@@ -16,6 +16,11 @@ struct EditPortfolioView: View {
     @State var investmentFrequency: String
     @State var totalAmount: Double
     @State var selectedAssetID: UUID? = nil
+    /// the Stocks tab being edited (Brokerage or Roth IRA)
+    let account: InvestmentQuizView.InvestmentAccount
+    var onSaved: (() -> Void)? = nil
+    @State var saving = false
+    @State var saveError: String?
 
     var body: some View {
         ScrollView {
@@ -91,18 +96,26 @@ struct EditPortfolioView: View {
                     .plCard()
                 }
 
-                Button("Save Portfolio") {
+                Button(saving ? "Saving…" : "Save Portfolio") {
                     saveUpdatedPortfolio()
                 }
                 .buttonStyle(PrimaryButton())
+                .disabled(saving)
             }
             .padding(.horizontal, PLSpacing.lg)
             .padding(.vertical, PLSpacing.md)
         }
-        .navigationTitle("Edit Portfolio")
+        .navigationTitle("Edit \(account.rawValue)")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             updateAmountsFromTotal()
+        }
+        .alert("Couldn't save your portfolio", isPresented: Binding(
+            get: { saveError != nil },
+            set: { if !$0 { saveError = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(saveError ?? "")
         }
     }
 
@@ -133,7 +146,9 @@ struct EditPortfolioView: View {
     func saveUpdatedPortfolio() {
         var portfolioText = "### Edited Portfolio:\n"
         for asset in assets {
-            portfolioText += "**\(asset.name)** - \(Int(asset.percentage))% - $\(String(format: "%.2f", asset.amount))\n"
+            // the Stocks page reads symbols in capitals (VTI, BRK.B)
+            let symbol = asset.name.trimmingCharacters(in: .whitespaces).uppercased()
+            portfolioText += "**\(symbol)** - \(Int(asset.percentage.rounded()))% - $\(String(format: "%.2f", asset.amount))\n"
         }
         //portfolioText += "\nInvest: \(investmentFrequency)\nAmount: $\(String(format: "%.2f", totalAmount))"
         portfolioText += "\n### Investment Frequency and Amount\n"
@@ -143,7 +158,8 @@ struct EditPortfolioView: View {
         let payload = SavedPortfolioPayload(
                 username: username,
                 portfolio: portfolioText,
-                riskTolerance: "Edited"
+                riskTolerance: "Edited",
+                account: account.apiValue
         )
 
         guard let jsonData = try? JSONEncoder().encode(payload),
@@ -155,8 +171,17 @@ struct EditPortfolioView: View {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = jsonData
 
-        URLSession.shared.dataTask(with: request) { _, _, _ in
+        saving = true
+        URLSession.shared.dataTask(with: request) { _, response, error in
+            let ok = (response as? HTTPURLResponse).map { (200...299).contains($0.statusCode) } ?? false
             DispatchQueue.main.async {
+                saving = false
+                guard ok else {
+                    // stay here so the edits aren't lost
+                    saveError = error?.localizedDescription ?? "Your changes weren't saved. Try again in a moment."
+                    return
+                }
+                onSaved?()
                 presentationMode.wrappedValue.dismiss()
             }
         }.resume()
@@ -167,6 +192,7 @@ struct SavedPortfolioPayload: Codable {
     let username: String
     let portfolio: String
     let riskTolerance: String
+    let account: String
 }
 
 struct EditableAsset: Identifiable {

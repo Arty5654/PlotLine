@@ -35,6 +35,68 @@ class InvestingFeatureTest extends FeatureTestBase {
     }
 
     @Test
+    @DisplayName("An edit without an account saves to Brokerage; a Roth IRA edit stays in the Roth IRA")
+    void editEachAccount() throws Exception {
+        User me = newUser();
+        ok(postJson(me, "/api/llm/portfolio/save", Map.of("username", me.name(),
+                "portfolio", "VTI: 100%", "riskTolerance", "Edited")));
+        assertThat(ok(getAs(me, "/api/llm/portfolio/{u}", me.name()).param("account", "BROKERAGE")).get("portfolio").asText())
+                .isEqualTo("VTI: 100%");
+
+        ok(postJson(me, "/api/llm/portfolio/save", Map.of("username", me.name(),
+                "portfolio", "VOO: 100%", "riskTolerance", "Edited", "account", "ROTH_IRA")));
+        assertThat(ok(getAs(me, "/api/llm/portfolio/{u}", me.name()).param("account", "ROTH_IRA")).get("portfolio").asText())
+                .isEqualTo("VOO: 100%");
+        assertThat(ok(getAs(me, "/api/llm/portfolio/{u}", me.name()).param("account", "BROKERAGE")).get("portfolio").asText())
+                .isEqualTo("VTI: 100%");
+    }
+
+    @Test
+    @DisplayName("Retaking the Roth IRA quiz replaces the Roth IRA's edits and leaves Brokerage alone")
+    void quizClearsOnlyItsAccount() throws Exception {
+        when(openAIService.generateResponsePortfolio(anyString())).thenReturn(PORTFOLIO);
+        User me = newUser();
+        for (String acct : new String[] { "BROKERAGE", "ROTH_IRA" }) {
+            ok(postJson(me, "/api/llm/portfolio/save-original", Map.of("username", me.name(),
+                    "portfolio", PORTFOLIO, "riskTolerance", "Medium", "account", acct)));
+            ok(postJson(me, "/api/llm/portfolio/save", Map.of("username", me.name(),
+                    "portfolio", "Edited " + acct, "riskTolerance", "Edited", "account", acct)));
+        }
+        ok(postJson(me, "/api/llm/portfolio", Map.of("username", me.name(), "account", "ROTH_IRA",
+                "goals", "Retirement", "riskTolerance", "High", "experience", "Beginner", "age", "22",
+                "timeHorizon", "15+ years", "withdrawalFlexibility", "Very Unlikely", "taxPriority", "Tax Efficiency")));
+
+        assertThat(ok(getAs(me, "/api/llm/portfolio/{u}", me.name()).param("account", "BROKERAGE")).get("portfolio").asText())
+                .isEqualTo("Edited BROKERAGE");
+        assertThat(ok(getAs(me, "/api/llm/portfolio/{u}", me.name()).param("account", "ROTH_IRA")).get("portfolio").asText())
+                .isEqualTo(PORTFOLIO);
+    }
+
+    @Test
+    @DisplayName("Quiz facts: the account's budget line and IRA limits; answers come back next time and carry over to the other quiz")
+    void quizFacts() throws Exception {
+        when(openAIService.generateResponsePortfolio(anyString())).thenReturn(PORTFOLIO);
+        User me = newUser();
+        JsonNode facts = ok(getAs(me, "/api/llm/portfolio/quiz/{u}", me.name()).param("account", "ROTH_IRA"));
+        assertThat(facts.path("ira").path("limit").asDouble()).isEqualTo(7500);
+        assertThat(facts.path("answers").size()).isZero();
+
+        // a brand-new user has no emergency-fund note; the Roth quiz's answers are saved
+        String text = ok(postJson(me, "/api/llm/portfolio", Map.of("username", me.name(), "account", "ROTH_IRA",
+                "age", "24", "experience", "Beginner", "dropReaction", "Wait it out", "style", "One fund",
+                "retireAge", "65", "workplacePlan", "Partial match"))).toString();
+        assertThat(text).contains("Before you invest").contains("full 401(k) match").contains("VTI");
+
+        assertThat(ok(getAs(me, "/api/llm/portfolio/quiz/{u}", me.name()).param("account", "ROTH_IRA"))
+                .path("answers").path("retireAge").asText()).isEqualTo("65");
+        JsonNode brokerage = ok(getAs(me, "/api/llm/portfolio/quiz/{u}", me.name()).param("account", "BROKERAGE")).path("answers");
+        assertThat(brokerage.path("age").asText()).isEqualTo("24");
+        assertThat(brokerage.has("retireAge")).isFalse();       // Roth-only answers stay with the Roth quiz
+
+        call(getAs(me, "/api/llm/portfolio/quiz/{u}", newUser().name()), 403);
+    }
+
+    @Test
     @DisplayName("AI portfolio generation from the investing quiz")
     void generatePortfolio() throws Exception {
         when(openAIService.generateResponsePortfolio(anyString())).thenReturn(PORTFOLIO);

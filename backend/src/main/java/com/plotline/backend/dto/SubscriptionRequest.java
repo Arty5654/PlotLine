@@ -18,6 +18,10 @@ public class SubscriptionRequest {
         @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", timezone = "UTC")
         private Date dueDate;
 
+        /** "Can I afford it?": paused while saving for this goal (its id), resumed when the goal ends */
+        private String pausedFor;
+        private String pausedForName;
+
         // Constructors
         public SubscriptionItem() {}
 
@@ -35,6 +39,12 @@ public class SubscriptionRequest {
 
         public Date getDueDate() { return dueDate; }
         public void setDueDate(Date dueDate) { this.dueDate = dueDate; }
+
+        public String getPausedFor() { return pausedFor; }
+        public void setPausedFor(String pausedFor) { this.pausedFor = pausedFor; }
+
+        public String getPausedForName() { return pausedForName; }
+        public void setPausedForName(String pausedForName) { this.pausedForName = pausedForName; }
     }
 
     // Constructors

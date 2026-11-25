@@ -40,6 +40,7 @@ class RateLimitWiringTest {
 
     @Autowired private MockMvc mockMvc;
     @Autowired private AuthService authService;
+    @Autowired private com.plotline.backend.ratelimit.RateLimiter limiter;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private static final String API_KEY = resolveApiKey();
@@ -86,6 +87,48 @@ class RateLimitWiringTest {
             last = mockMvc.perform(withKey(post("/auth/signin")).header("Fly-Client-IP", "203.0.113.99")
                     .contentType(MediaType.APPLICATION_JSON).content(body)).andReturn().getResponse().getStatus();
             if (i < 10) assertThat(last).as("attempt " + (i + 1)).isEqualTo(200); // normal "Username does not exist" answer
+        }
+        assertThat(last).isEqualTo(429);
+    }
+
+    private String signUp(String username, String phone, String ip) throws Exception {
+        String body = objectMapper.writeValueAsString(Map.of("username", username, "email", username + "@example.com",
+                "phone", phone, "password", "Password1", "acceptedTerms", true));
+        JsonNode signUp = objectMapper.readTree(mockMvc.perform(withKey(post("/auth/signup"))
+                .header("Fly-Client-IP", ip).contentType(MediaType.APPLICATION_JSON).content(body))
+                .andReturn().getResponse().getContentAsString());
+        authService.updateUserRecord(username, r -> r.setIsVerified(true));
+        return signUp.get("token").asText();
+    }
+
+    @Test
+    @DisplayName("Every API call: a signed-in user gets 300 a minute, the 301st gets 429 with Retry-After")
+    void everyCallInRealApp() throws Exception {
+        assertThat(limiter.isShared()).as("counted in the database, shared by every machine").isTrue();
+        String token = signUp("apilimit", "5555550124", "203.0.113.60");
+        int last = 0;
+        String retryAfter = null;
+        for (int i = 0; i < 301; i++) {
+            var response = mockMvc.perform(withKey(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/api/plan/apilimit"))
+                    .header("Authorization", "Bearer " + token).header("Fly-Client-IP", "203.0.113." + (i % 50 + 100)))
+                    .andReturn().getResponse();
+            last = response.getStatus();
+            if (i < 300) assertThat(last).as("call " + (i + 1)).isEqualTo(200);
+            retryAfter = response.getHeader("Retry-After");
+        }
+        assertThat(last).isEqualTo(429);
+        assertThat(Long.parseLong(retryAfter)).isBetween(1L, 60L);
+    }
+
+    @Test
+    @DisplayName("Bad login tokens: 60 a minute per IP get 401, then 429")
+    void badTokensInRealApp() throws Exception {
+        int last = 0;
+        for (int i = 0; i < 61; i++) {
+            last = mockMvc.perform(withKey(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/api/plan/someone"))
+                    .header("Authorization", "Bearer not-a-real-token").header("Fly-Client-IP", "203.0.113.200"))
+                    .andReturn().getResponse().getStatus();
+            if (i < 60) assertThat(last).as("try " + (i + 1)).isEqualTo(401);
         }
         assertThat(last).isEqualTo(429);
     }

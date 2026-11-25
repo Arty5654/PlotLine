@@ -139,6 +139,10 @@ struct BudgetSection: View {
                         BudgetInputView().environmentObject(calendarVM)
                     }
                     .buttonStyle(AdaptivePrimaryButton())
+                    ActionRow(title: "Can I Afford It?", system: "cart.badge.questionmark") {
+                        AffordView(model: plan)
+                    }
+                    .buttonStyle(AdaptivePrimaryButton())
                     ActionRow(title: "Track Subscriptions", system: "calendar.badge.clock") {
                         SubsView().environmentObject(calendarVM)
                     }

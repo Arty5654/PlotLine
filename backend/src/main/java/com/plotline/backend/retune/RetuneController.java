@@ -42,7 +42,11 @@ public class RetuneController {
 
     private final com.plotline.backend.service.BudgetChanges budgetChanges;
 
-    public RetuneController(S3Service s3, TokenStore tokens, com.plotline.backend.service.BudgetChanges budgetChanges) {
+    private final com.plotline.backend.plan.BudgetSaves budgetSaves;
+
+    public RetuneController(S3Service s3, TokenStore tokens, com.plotline.backend.service.BudgetChanges budgetChanges,
+                            com.plotline.backend.plan.BudgetSaves budgetSaves) {
+        this.budgetSaves = budgetSaves;
         this.s3 = s3;
         this.tokens = tokens;
         this.budgetChanges = budgetChanges;
@@ -115,12 +119,14 @@ public class RetuneController {
         }
         Map<String, Double> monthly = new LinkedHashMap<>(loadBudget(user));
         if (monthly.isEmpty()) return ResponseEntity.badRequest().body(Map.of("error", "Take the budget quiz first."));
+        Map<String, Double> before = new LinkedHashMap<>(monthly);
         monthly.putAll(changes);
         Map<String, Double> weekly = new LinkedHashMap<>();
         monthly.forEach((c, v) -> weekly.put(c, v / 4.0)); // the same weekly split as saving the budget elsewhere
         save(user, "monthly", monthly);
         save(user, "weekly", weekly);
         budgetChanges.record(user); // the next suggestions wait for a full month with this budget
+        budgetSaves.changed(user, before, monthly);   // fixed costs and the debt planner follow
         return ResponseEntity.ok(monthly);
     }
 

@@ -786,7 +786,8 @@ struct WeeklyMonthlyCostView: View {
                 Section("Category") {
                     Picker("Category", selection: $fixedCostCategory) {
                         Text("Select...").tag("")
-                        ForEach(commonCategories.sorted(), id: \.self) { cat in
+                        // subscriptions count as they're charged, never as a fixed cost
+                        ForEach(commonCategories.sorted().filter { $0.caseInsensitiveCompare("Subscriptions") != .orderedSame }, id: \.self) { cat in
                             Text(cat).tag(cat)
                         }
                     }
@@ -989,25 +990,6 @@ struct WeeklyMonthlyCostView: View {
         }.resume()
     }
     
-    private func postSetMonthlyTotals(values: [String: Double], completion: @escaping (Bool)->Void) {
-        let monthStr = monthYYYYMM(from: selectedMonth)
-        let urlString = "\(BackendConfig.baseURLString)/api/costs/monthly/\(username)/set-totals?month=\(monthStr)"
-        guard let url = URL(string: urlString) else { completion(false); return }
-
-        let payload: [String: Any] = ["costs": values]
-        guard let data = try? JSONSerialization.data(withJSONObject: payload) else { completion(false); return }
-
-        var req = URLRequest(url: url)
-        BackendConfig.addApiKey(to: &req)
-        req.httpMethod = "POST"
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = data
-
-        URLSession.shared.dataTask(with: req) { _, response, error in
-            let code = (response as? HTTPURLResponse)?.statusCode ?? -1
-            completion(error == nil && (200...299).contains(code))
-        }.resume()
-    }
 
     private func saveCosts() {
         logPrompt = nil
@@ -1023,12 +1005,11 @@ struct WeeklyMonthlyCostView: View {
             return
         }
 
-        let isDaily = costsViewMode == "Daily"
-        let successMsg = isDaily
-            ? "Costs for \(selectedDayDisplayText) saved."
-            : "Your monthly costs have been saved."
+        // only Daily view saves (Monthly view shows the month's totals, read-only)
+        guard costsViewMode == "Daily" else { return }
+        let successMsg = "Costs for \(selectedDayDisplayText) saved."
 
-        if isDaily {
+        do {
             // Daily: build payload excluding tracker exclusions and zeroes
             let values = costItems.reduce(into: [String: Double]()) { acc, item in
                 guard !trackerExclusions.contains(item.category),
@@ -1037,24 +1018,6 @@ struct WeeklyMonthlyCostView: View {
             }
             // SET this day's costs directly
             postMerge(type: "monthly", date: selectedDay, values: values) { ok in
-                DispatchQueue.main.async {
-                    if !ok { self.activeAlert = AppAlert(title: "Save Error", message: "We couldn't save. Please try again."); return }
-                    self.loadMonthlyData()
-                    self.fetchMonthlyFeedback(for: self.selectedMonth)
-                    self.activeAlert = AppAlert(title: "Success", message: successMsg)
-                    WidgetDataWriter.refreshFinancialData()
-                }
-            }
-        } else {
-            // Monthly: send desired totals to backend.
-            // Backend stores adjustments separately from day entries,
-            // so monthly-only costs (like rent) won't appear in weekly charts.
-            let values = costItems.reduce(into: [String: Double]()) { acc, item in
-                guard !trackerExclusions.contains(item.category) else { return }
-                let v = Double(item.amount) ?? 0
-                acc[item.category] = v
-            }
-            postSetMonthlyTotals(values: values) { ok in
                 DispatchQueue.main.async {
                     if !ok { self.activeAlert = AppAlert(title: "Save Error", message: "We couldn't save. Please try again."); return }
                     self.loadMonthlyData()
@@ -1285,7 +1248,8 @@ struct WeeklyMonthlyCostView: View {
                 if !isEmpty {
                     let decoded = try JSONDecoder().decode(SubscriptionMapResponse.self, from: data)
                     for (name, subData) in decoded.subscriptions {
-                        merged[name.lowercased()] = SubscriptionItem(name: name, cost: subData.cost ?? "", dueDate: subData.dueDate)
+                        merged[name.lowercased()] = SubscriptionItem(name: name, cost: subData.cost ?? "", dueDate: subData.dueDate,
+                                                                     pausedFor: subData.pausedFor, pausedForName: subData.pausedForName)
                     }
                 }
             } catch {
@@ -1299,7 +1263,8 @@ struct WeeklyMonthlyCostView: View {
 
         var dict: [String: SubscriptionData] = [:]
         for sub in merged.values {
-            dict[sub.name] = SubscriptionData(name: sub.name, cost: sub.cost, dueDate: sub.dueDate)
+            dict[sub.name] = SubscriptionData(name: sub.name, cost: sub.cost, dueDate: sub.dueDate,
+                                              pausedFor: sub.pausedFor, pausedForName: sub.pausedForName)
             await MainActor.run {
                 ensureSubscriptionEvent(sub)
                 scheduleMonthlySubscriptionReminder(for: sub)
@@ -1750,7 +1715,11 @@ struct SubscriptionItem: Identifiable, Codable {
     var cost: String
     @CodableDate
     var dueDate: Date
+    /// "Can I afford it?": paused while saving for a goal (its id and name); resumes when the goal ends
+    var pausedFor: String? = nil
+    var pausedForName: String? = nil
 
+    var isPaused: Bool { pausedFor != nil }
 }
 // Fixed monthly cost item
 struct FixedCostItem: Codable, Identifiable {
@@ -1819,6 +1788,8 @@ struct SubscriptionData: Codable {
     let name: String
     let cost: String?
     @CodableDate var dueDate: Date
+    var pausedFor: String? = nil
+    var pausedForName: String? = nil
 }
 
 struct RecurringChargePromptModel: Identifiable, Codable {

@@ -34,12 +34,21 @@ struct SubsView: View {
         UserDefaults.standard.string(forKey: "loggedInUsername") ?? "UnknownUser"
     }
 
+    /// what they pay a month now (a subscription paused for a "Can I afford it?" goal doesn't count)
     private var totalSubscriptionsCost: Double {
-        subscriptions.compactMap { Double($0.cost) }.reduce(0, +)
+        subscriptions.filter { !$0.isPaused }.compactMap { Double($0.cost) }.reduce(0, +)
     }
 
+    /// a removed subscription: offer to lower the fixed Subscriptions cost by what it cost
+    @State private var removedCost: (name: String, cost: Double)?
+
+    /// the budget's Subscriptions line (what they plan to pay); nil until it's loaded
+    @State private var budgetedSubscriptions: Double?
+
+    /// tracked subscriptions cost more than the budget plans for
     private var isOverInputtedCost: Bool {
-        inputtedSubscriptionsCost > 0 && totalSubscriptionsCost > inputtedSubscriptionsCost
+        guard let budgeted = budgetedSubscriptions else { return false }
+        return totalSubscriptionsCost > budgeted + 0.005
     }
 
     var body: some View {
@@ -52,7 +61,7 @@ struct SubsView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
 
                 // Budget Summary Card
-                if inputtedSubscriptionsCost > 0 || !subscriptions.isEmpty {
+                if inputtedSubscriptionsCost > 0 || !subscriptions.isEmpty || (budgetedSubscriptions ?? 0) > 0 {
                     budgetSummaryCard
                 }
 
@@ -88,20 +97,30 @@ struct SubsView: View {
             Button("OK", role: .cancel) {}
         }
         .alert("Subscriptions Mismatch", isPresented: $showCostWarning) {
-            Button("Update Monthly Costs", role: .none) {
-                showAdjustCostPrompt = true
+            Button("Update Budget") {
+                adjustInputtedCostToMatchTotal()
             }
             Button("Ignore", role: .cancel) {}
         } message: {
-            Text("Your tracked subscriptions ($\(String(format: "%.2f", totalSubscriptionsCost))) exceed what you entered for monthly Subscriptions ($\(String(format: "%.2f", inputtedSubscriptionsCost))). Would you like to update your monthly costs?")
+            Text("Your tracked subscriptions ($\(String(format: "%.2f", totalSubscriptionsCost))) add up to more than your budget's Subscriptions line ($\(String(format: "%.2f", budgetedSubscriptions ?? 0))). Raise it to $\(String(format: "%.2f", totalSubscriptionsCost)) a month?")
         }
-        .alert("Update Monthly Costs", isPresented: $showAdjustCostPrompt) {
+        .alert("Update Your Budget", isPresented: $showAdjustCostPrompt) {
             Button("Yes, Update") {
                 adjustInputtedCostToMatchTotal()
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This will update your monthly Subscriptions cost to $\(String(format: "%.2f", totalSubscriptionsCost)).")
+            Text("This sets your budget's Subscriptions line to $\(String(format: "%.2f", totalSubscriptionsCost)) a month.")
+        }
+        .alert("Lower Your Budget?", isPresented: Binding(get: { removedCost != nil }, set: { if !$0 { removedCost = nil } })) {
+            if let removed = removedCost {
+                Button("Lower by $\(String(format: "%.2f", removed.cost))") { lowerInputtedCost(by: removed.cost) }
+            }
+            Button("Keep It", role: .cancel) {}
+        } message: {
+            if let removed = removedCost {
+                Text("Your budget's Subscriptions line is $\(String(format: "%.2f", budgetedSubscriptions ?? 0)). Lower it by \(removed.name)'s $\(String(format: "%.2f", removed.cost)) to $\(String(format: "%.2f", max(0, (budgetedSubscriptions ?? 0) - removed.cost)))?")
+            }
         }
         .alert("Recurring Charges Detected", isPresented: $showNewRecurringAlert) {
             Button("View Suggestions", role: .none) {}
@@ -137,22 +156,32 @@ struct SubsView: View {
             }
 
             HStack {
-                Text("Inputted Monthly Cost:")
+                Text("In Your Budget:")
+                Spacer()
+                Text(budgetedSubscriptions.map { "$\(String(format: "%.2f", $0))" } ?? "–")
+                    .foregroundColor(.secondary)
+            }
+
+            HStack {
+                Text("Spent This Month:")
                 Spacer()
                 Text("$\(String(format: "%.2f", inputtedSubscriptionsCost))")
                     .foregroundColor(.secondary)
             }
+            Text("Charges count here when your linked card records them, or add them on Monthly Costs.")
+                .font(.caption)
+                .foregroundColor(.secondary)
 
             if isOverInputtedCost {
                 HStack {
-                    Text("Exceeds by:")
+                    Text("Over budget by:")
                     Spacer()
-                    Text("$\(String(format: "%.2f", totalSubscriptionsCost - inputtedSubscriptionsCost))")
+                    Text("$\(String(format: "%.2f", totalSubscriptionsCost - (budgetedSubscriptions ?? 0)))")
                         .foregroundColor(.orange)
                         .fontWeight(.semibold)
                 }
 
-                Button("Update Monthly Costs") {
+                Button("Update Budget") {
                     showAdjustCostPrompt = true
                 }
                 .buttonStyle(.bordered)
@@ -299,11 +328,18 @@ struct SubsView: View {
                                 if let cost = Double(sub.cost), cost > 0 {
                                     Text("$\(String(format: "%.2f", cost))/mo")
                                         .font(.footnote.weight(.semibold))
-                                        .foregroundColor(PLColor.textPrimary)
+                                        .strikethrough(sub.isPaused)
+                                        .foregroundColor(sub.isPaused ? PLColor.textSecondary : PLColor.textPrimary)
                                 }
-                                Text("Due: \(sub.dueDate.formatted(date: .abbreviated, time: .omitted))")
-                                    .font(.footnote)
-                                    .foregroundColor(.secondary)
+                                if sub.isPaused {
+                                    Label("Paused for \(sub.pausedForName ?? "a goal")", systemImage: "pause.circle")
+                                        .font(.footnote)
+                                        .foregroundColor(PLColor.warning)
+                                } else {
+                                    Text("Due: \(sub.dueDate.formatted(date: .abbreviated, time: .omitted))")
+                                        .font(.footnote)
+                                        .foregroundColor(.secondary)
+                                }
                             }
                         }
                         Spacer()
@@ -378,6 +414,10 @@ struct SubsView: View {
         removeCalendarEvent(for: sub)
         removeNotification(for: sub)
         saveSubscriptions()
+        // one question: the fixed Subscriptions cost can come down by what it cost (a paused one already did)
+        if !sub.isPaused, let cost = Double(sub.cost), cost > 0, (budgetedSubscriptions ?? 0) > 0 {
+            removedCost = (sub.name, cost)
+        }
     }
 
     private func checkCostWarning() {
@@ -409,7 +449,8 @@ struct SubsView: View {
                 return
             }
             let list = decoded.subscriptions.map { (name, subData) in
-                SubscriptionItem(name: name, cost: subData.cost ?? "", dueDate: subData.dueDate)
+                SubscriptionItem(name: name, cost: subData.cost ?? "", dueDate: subData.dueDate,
+                                 pausedFor: subData.pausedFor, pausedForName: subData.pausedForName)
             }
             DispatchQueue.main.async {
                 self.subscriptions = list
@@ -423,7 +464,42 @@ struct SubsView: View {
         }.resume()
     }
 
+    /// the budget's Subscriptions line
+    private func fetchBudgetedSubscriptions() {
+        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/budget/\(username)/monthly") else { return }
+        var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
+        URLSession.shared.dataTask(with: request) { data, response, _ in
+            struct Wrapped: Decodable { let budget: [String: Double]? }
+            guard (response as? HTTPURLResponse)?.statusCode == 200, let data,
+                  let budget = (try? JSONDecoder().decode(Wrapped.self, from: data))?.budget else { return }
+            let line = budget.first { $0.key.caseInsensitiveCompare("Subscriptions") == .orderedSame }?.value ?? 0
+            DispatchQueue.main.async { self.budgetedSubscriptions = line }
+        }.resume()
+    }
+
+    /// sets the budget's Subscriptions line (0 removes it)
+    private func setBudgetedSubscriptions(_ amount: Double) {
+        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/budget/\(username)/line") else { return }
+        let rounded = max(0, (amount * 100).rounded() / 100)
+        guard let body = try? JSONSerialization.data(withJSONObject: ["line": "Subscriptions", "amount": rounded]) else { return }
+        var request = URLRequest(url: url)
+        BackendConfig.addApiKey(to: &request)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = body
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            if AppBanner.reportIfFailed("update your budget", data, response, error,
+                                        retry: { setBudgetedSubscriptions(amount) }) { return }
+            DispatchQueue.main.async {
+                self.budgetedSubscriptions = rounded
+                WidgetDataWriter.refreshFinancialData()
+            }
+        }.resume()
+    }
+
     private func fetchInputtedMonthlyCosts() {
+        fetchBudgetedSubscriptions()
         // Get current month in YYYY-MM format
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM"
@@ -498,38 +574,14 @@ struct SubsView: View {
         }
     }
 
+    /// the budget's Subscriptions line becomes what's tracked here
     private func adjustInputtedCostToMatchTotal() {
-        // Update the Subscriptions cost in the user's monthly costs via merge-dated endpoint
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        let today = formatter.string(from: Date())
+        setBudgetedSubscriptions(totalSubscriptionsCost)
+    }
 
-        guard let url = URL(string: "\(BackendConfig.baseURLString)/api/costs/merge-dated") else { return }
-
-        // Only update the Subscriptions field - the merge will add or update it
-        let payload: [String: Any] = [
-            "username": username,
-            "type": "monthly",
-            "date": today,
-            "costs": ["Subscriptions": totalSubscriptionsCost]
-        ]
-
-        guard let body = try? JSONSerialization.data(withJSONObject: payload) else { return }
-
-        var request = URLRequest(url: url)
-        BackendConfig.addApiKey(to: &request)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = body
-
-        URLSession.shared.dataTask(with: request) { data, response, error in
-            if AppBanner.reportIfFailed("update your subscriptions spending", data, response, error) { return }
-            DispatchQueue.main.async {
-                self.inputtedSubscriptionsCost = self.totalSubscriptionsCost
-                self.fullMonthlyCosts["Subscriptions"] = self.totalSubscriptionsCost
-                WidgetDataWriter.refreshFinancialData()
-            }
-        }.resume()
+    /// the budget's Subscriptions line, lowered by a removed subscription's cost
+    private func lowerInputtedCost(by cost: Double) {
+        setBudgetedSubscriptions((budgetedSubscriptions ?? 0) - cost)
     }
 
     private func mergeFromCalendar() {
@@ -562,7 +614,8 @@ struct SubsView: View {
         }
         var dict: [String: SubscriptionData] = [:]
         for sub in subscriptions {
-            dict[sub.name] = SubscriptionData(name: sub.name, cost: sub.cost, dueDate: sub.dueDate)
+            dict[sub.name] = SubscriptionData(name: sub.name, cost: sub.cost, dueDate: sub.dueDate,
+                                              pausedFor: sub.pausedFor, pausedForName: sub.pausedForName)
             ensureCalendarEvent(for: sub)
             scheduleMonthlyReminder(for: sub)
         }
@@ -577,7 +630,8 @@ struct SubsView: View {
         req.httpBody = body
         URLSession.shared.dataTask(with: req) { data, response, error in
             if AppBanner.reportIfFailed("save your subscriptions", data, response, error, retry: { saveSubscriptions() }) { return }
-            DispatchQueue.main.async { self.showSavedAlert = true }
+            // one alert at a time: the mismatch question (if it's up) already says it was added
+            DispatchQueue.main.async { if !self.showCostWarning && self.removedCost == nil { self.showSavedAlert = true } }
         }.resume()
     }
 

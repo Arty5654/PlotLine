@@ -8,6 +8,8 @@ import com.plotline.backend.dto.SavedPortfolio;
 import com.plotline.backend.dto.SavedPortfolio.AccountType;
 import com.plotline.backend.service.S3Service;
 import com.plotline.backend.service.UserProfileService;
+import com.plotline.backend.investing.InvestingQuiz;
+import com.plotline.backend.investing.InvestorFacts;
 import static com.plotline.backend.util.UsernameUtils.normalize;
 
 import org.apache.http.HttpStatus;
@@ -21,6 +23,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
@@ -47,178 +50,45 @@ public class PortfolioController {
     @Autowired
     private UserProfileService userProfileService;
 
+    @Autowired
+    private InvestorFacts investorFacts;
+
+    /**
+     * What the quiz can fill in and show: income, the account's budget line, the emergency fund,
+     * high-interest debts, the other account's holdings, the IRA limits, and last time's answers.
+     */
+    @GetMapping("/portfolio/quiz/{username}")
+    public ResponseEntity<InvestorFacts.Facts> quizFacts(@PathVariable String username,
+            @RequestParam(name = "account", defaultValue = "BROKERAGE") AccountType account) {
+        return ResponseEntity.ok(investorFacts.load(normalize(username), account));
+    }
+
     @PostMapping("/portfolio")
     public ResponseEntity<String> generatePortfolio(@RequestBody Map<String, String> quizData) {
         try {
             String username = normalize(quizData.get("username"));
             AccountType accountType = AccountType.fromString(quizData.get("account"));
 
-            // Delete original portfilio if user takes the quiz again
-            portfolioService.deleteOriginalPortfolio(username, accountType);
+            InvestorFacts.Facts facts = investorFacts.load(username, accountType);
+            LocalDate today = LocalDate.now();
+            List<String> notes = InvestingQuiz.notes(accountType, quizData, facts, today);
+            String response = openAIService.generateResponsePortfolio(InvestingQuiz.prompt(accountType, quizData, facts, notes, today));
 
-            // Prefer edited monthly budget if it exists; otherwise original.
-            // And support both file shapes (wrapped vs flat).
-            String editedKey  = "users/" + username + "/monthly-budget-edited.json";
-            String origKey    = "users/" + username + "/monthly-budget.json";
-
-            Double brokerageEdited = null, rothEdited = null;
-            Double brokerageOrig   = null, rothOrig   = null;
-
-            try {
-                byte[] b = s3Service.downloadFile(editedKey);
-                Map<String, Double> m = parseBudgetBytes(b);
-                brokerageEdited = m.get("Brokerage");
-                rothEdited      = m.get("Roth IRA");
-            } catch (Exception ignore) {}
-
-            try {
-                byte[] b = s3Service.downloadFile(origKey);
-                Map<String, Double> m = parseBudgetBytes(b);
-                brokerageOrig = m.get("Brokerage");
-                rothOrig      = m.get("Roth IRA");
-            } catch (Exception ignore) { 
-                log.debug("No original monthly budget found; using edited/income if available.");
-            }
-
-            Double chosenMonthly = null;
-            boolean usedEdited = false;
-
-            if (accountType == AccountType.ROTH_IRA) {
-                // “Use edited if it’s different, else use original”
-                if (rothEdited != null && !Objects.equals(rothEdited, rothOrig)) {
-                    chosenMonthly = rothEdited; usedEdited = true;
-                } else if (rothOrig != null) {
-                    chosenMonthly = rothOrig;
-                } else if (rothEdited != null) {
-                    chosenMonthly = rothEdited; usedEdited = true; // edited exists but original missing
-                }
-            } else { // BROKERAGE
-                if (brokerageEdited != null && !Objects.equals(brokerageEdited, brokerageOrig)) {
-                    chosenMonthly = brokerageEdited; usedEdited = true;
-                } else if (brokerageOrig != null) {
-                    chosenMonthly = brokerageOrig;
-                } else if (brokerageEdited != null) {
-                    chosenMonthly = brokerageEdited; usedEdited = true;
-                }
-            }
-
-            String amountBasis = "";
-            if (chosenMonthly != null) {
-                amountBasis = String.format("$%.2f/month (based on %s budget)",
-                        chosenMonthly, usedEdited ? "edited" : "original");
-            } else {
-                log.debug("No Budget For Investments");
-            }
-
-             // Different prompt for Roth IRA
-            String accountHint = (accountType == AccountType.ROTH_IRA)
-                ? """
-                    You are constructing a portfolio **for a Roth IRA** (tax-free qualified withdrawals, contributions limited annually).
-                    Keep the format identical; you may emphasize long-term growth and tax-inefficient assets are fine here.
-                    """
-                : """
-                    You are constructing a portfolio **for a taxable brokerage account**.
-                    Prefer tax efficiency (e.g., broad index ETFs; avoid unnecessary turnover).
-                    """;
-
-            
-            // Different prompt for Roth IRA
-            String prompt = String.format("""
-            Based on the following quiz:
-            - Goal: %s
-            - Risk Tolerance: %s
-            - Experience: %s
-            - Age: %s
-            - Time Horizon: %s
-            - Tax vs Flexibility: %s
-            - Withdrawal Flexibility: %s
-            - Suggested Monthly Investment: %s
-
-            %s
-
-            Recommend a diversified investment portfolio tailored to the account type and answers above.
-
-            For a Roth IRA:
-            - Assume the money is for long-term retirement (unless the time horizon / withdrawal answers say otherwise).
-            - It's okay to emphasize growth assets and tax-inefficient holdings, since qualified withdrawals are tax-free.
-            - You can tilt more toward stocks for longer horizons and higher risk tolerance.
-
-            For a taxable brokerage account:
-            - Prioritize tax efficiency (broad index ETFs, fewer distributions, avoid unnecessary turnover).
-            - If the user cares more about flexibility or has a short time horizon, keep the allocation more conservative and liquid.
-
-            Use the tax vs flexibility answers to decide how aggressive you are about tax efficiency vs liquidity, and use withdrawal flexibility to determine how much should be in safer / less volatile assets.
-
-            IMPORTANT FORMAT REQUIREMENT:  
-            Follow **this exact format** for each asset so the app can parse it:
-
-            **[TICKER] - [PERCENTAGE]%%%%**  
-            - **Allocation:** $XXX.XX  
-            - **Reason:** Explanation of why this asset was chosen.
-
-            For example:
-            **VTI - 40%%%%**  
-            - **Allocation:** $264.80  
-            - **Reason:** Broad U.S. stock market exposure.
-
-            Use 4-5 ETFs or stocks max. Do not include full fund names or vary the bullet format. Make it beginner-friendly.
-            """,
-                quizData.get("goals"),
-                quizData.get("riskTolerance"),
-                quizData.get("experience"),
-                quizData.get("age"),
-                quizData.get("timeHorizon"),
-                quizData.get("taxPriorty"),
-                quizData.get("withdrawalFlexibility"),
-                amountBasis,
-                accountHint
-            );
-
-            String response = openAIService.generateResponsePortfolio(prompt);
-
-            // Automatically save original portfolio
-            // SavedPortfolio original = new SavedPortfolio();
-            // original.setUsername(username);
-            // original.setPortfolio(response);
-            // original.setRiskTolerance(quizData.get("riskTolerance"));
-            // portfolioService.saveOriginalPortfolio(username, original);
-            
-            // Clean up old edited portfolio
-            portfolioService.deleteEditedPortfolio(username);
+            // a new portfolio for this account replaces its edits (the app saves the new original next)
+            portfolioService.deleteEditedPortfolio(username, accountType);
+            investorFacts.saveAnswers(username, accountType, quizData);
 
             // save trophy progress for making portfolio
             userProfileService.incrementTrophy(username, "llm-investor", 1);
             userProfileService.incrementTrophy(username, "investing-streak", 1);
 
-            return ResponseEntity.ok(response);
+            return ResponseEntity.ok(InvestingQuiz.notesSection(notes) + response);
 
         } catch (Exception e) {
             log.error("generatePortfolio failed", e);
             return ResponseEntity.status(500).body("Error generating portfolio");
         }
     }
-
-    // Get budget for Brokerage or Roth IRA
-    private Map<String, Double> parseBudgetBytes(byte[] bytes) throws Exception {
-        JsonNode root = new ObjectMapper().readTree(bytes);
-        // Edited file: { "username": "...", "type": "monthly", "budget": { ... } }
-        // Original file: { "Rent": 1459.0, "Brokerage": 300.0, ... }
-        JsonNode obj = (root.has("budget") && root.get("budget").isObject()) ? root.get("budget") : root;
-
-        Map<String, Double> out = new LinkedHashMap<>();
-        Iterator<Map.Entry<String, JsonNode>> it = obj.fields();
-        while (it.hasNext()) {
-            Map.Entry<String, JsonNode> e = it.next();
-            JsonNode v = e.getValue();
-            if (v.isNumber()) {
-                out.put(e.getKey(), v.asDouble());
-            } else if (v.isTextual()) {
-                try { out.put(e.getKey(), Double.parseDouble(v.asText())); } catch (Exception ignore) {}
-            }
-        }
-        return out;
-    }
-
 
     @PostMapping("/portfolio/save-original")
     public ResponseEntity<String> saveOriginalPortfolio(@RequestBody SavedPortfolio portfolio) {

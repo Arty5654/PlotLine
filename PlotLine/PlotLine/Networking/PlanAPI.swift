@@ -113,6 +113,58 @@ enum PlanAPI {
         _ = try await load(request("/api/plan/\(username)", method: "PUT", body: try JSONEncoder().encode(plan)))
     }
 
+    /// "Can I afford it?": the answer for a purchase
+    static func checkAfford(_ purchase: AffordRequest) async throws -> AffordResult {
+        let data = try await affordCall("/api/afford/\(username)/check", body: try JSONEncoder().encode(purchase))
+        return try JSONDecoder().decode(AffordResult.self, from: data)
+    }
+
+    /// "Save for it": a Plan goal funded by these cuts (budget lines), then Savings, then unassigned money
+    static func saveForIt(_ purchase: AffordRequest, cuts: [String], wishlistId: String? = nil) async throws -> SaveForItResult {
+        var body = try JSONSerialization.jsonObject(with: JSONEncoder().encode(purchase)) as? [String: Any] ?? [:]
+        body["cuts"] = cuts
+        if let wishlistId { body["wishlistId"] = wishlistId }
+        let data = try await affordCall("/api/afford/\(username)/save-for-it", body: try JSONSerialization.data(withJSONObject: body))
+        return try JSONDecoder().decode(SaveForItResult.self, from: data)
+    }
+
+    /// the AI's estimate of what it costs to keep each month (counts toward the daily AI limit)
+    static func estimateOngoingCosts(item: String, price: Double) async throws -> OngoingEstimate {
+        let body = try JSONSerialization.data(withJSONObject: ["item": item, "price": price])
+        let data = try await affordCall("/api/afford/ongoing-costs", body: body)
+        return try JSONDecoder().decode(OngoingEstimate.self, from: data)
+    }
+
+    /// "I bought it": logged to today's spending; the goal and wishlist item close (the goal's cuts end)
+    static func bought(goalId: String? = nil, wishlistId: String? = nil, item: String? = nil, price: Double? = nil) async throws -> BoughtResult {
+        var body: [String: Any] = [:]
+        if let goalId { body["goalId"] = goalId }
+        if let wishlistId { body["wishlistId"] = wishlistId }
+        if let item { body["item"] = item }
+        if let price { body["price"] = price }
+        let data = try await affordCall("/api/afford/\(username)/bought", body: try JSONSerialization.data(withJSONObject: body))
+        return try JSONDecoder().decode(BoughtResult.self, from: data)
+    }
+
+    /// a POST whose error body ({error}) is shown as is
+    private static func affordCall(_ path: String, body: Data) async throws -> Data {
+        let (data, response) = try await URLSession.shared.data(for: request(path, method: "POST", body: body))
+        guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
+        guard (200...299).contains(http.statusCode) else {
+            struct Body: Decodable { let error: String? }
+            if let message = (try? JSONDecoder().decode(Body.self, from: data))?.error { throw AffordError(message: message) }
+            if let limit = AILimitError.from(data, response) { throw AffordError(message: limit.message) }
+            throw URLError(.badServerResponse)
+        }
+        return data
+    }
+
+    /// what the investing quiz fills in for an account ("BROKERAGE" / "ROTH_IRA")
+    static func fetchInvestingFacts(account: String) async throws -> InvestingFacts {
+        let data = try await load(request("/api/llm/portfolio/quiz/\(username)?account=\(account)")) ?? Data("{}".utf8)
+        return try JSONDecoder().decode(InvestingFacts.self, from: data)
+    }
+
     /// linked bank accounts with their balances (empty when none are linked)
     static func fetchAccounts() async throws -> [PlaidAccount] {
         guard let data = try await load(request("/api/plaid/accounts?username=\(username)"), okIfMissing: true) else { return [] }

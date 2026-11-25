@@ -68,7 +68,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
                 CalendarAccessController.class, ChatController.class, ProfileController.class,
                 PlaidController.class, WeeklyGoalsController.class, SmsController.class},
         excludeFilters = @ComponentScan.Filter(type = FilterType.ASSIGNABLE_TYPE, classes = {ApiKeyFilter.class,
-                com.plotline.backend.ratelimit.AuthRateLimitFilter.class, com.plotline.backend.ratelimit.AiRateLimitFilter.class,
+                com.plotline.backend.ratelimit.AuthRateLimitFilter.class, com.plotline.backend.ratelimit.AiRateLimitFilter.class, com.plotline.backend.ratelimit.ApiRateLimitFilter.class,
                 com.plotline.backend.membership.MembershipFilter.class}))
 class SecurityIntegrationTest {
 

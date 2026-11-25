@@ -10,6 +10,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.plotline.backend.service.FixedCosts;
 
 /**
@@ -18,6 +19,9 @@ import com.plotline.backend.service.FixedCosts;
  *     first payment is more than ~6 weeks away has no line yet, as in the quiz)
  *   - "Extra Debt Payment" is the payoff planner's extra
  *   - a renamed goal renames its line; a deleted goal's money goes back to Savings
+ *   - a goal from "Can I afford it?" remembers the budget cuts that fund it ({line, amount}): once
+ *     it's reached or deleted, those lines get their money back (any rest goes to Savings). A paused
+ *     extra debt payment comes back through the plan's extraDebtPayment (see restoreExtraDebt).
  * Only what changed in the plan is touched, so other saves (adding money to a goal) leave the
  * budget alone. Monthly Costs' fixed lines follow the budget.
  */
@@ -89,13 +93,76 @@ public class PlanBudgetSync {
                 Double freed = remove(budget, oldLine);
                 if (freed != null) {
                     changed = true;
-                    if (freed > 0) budget.merge(BudgetLines.SAVINGS, freed, Double::sum);
+                    giveBack(budget, freed, old.getValue().path("cuts"));
                 }
+            } else if (reached(old.getValue(), now) && now.path("cuts").isArray() && now.get("cuts").size() > 0
+                    && find(budget, BudgetLines.goal(name(now))) != null) {
+                // reached: the cuts that paid for it end
+                double freed = remove(budget, BudgetLines.goal(name(now)));
+                giveBack(budget, freed, now.path("cuts"));
+                changed = true;
             } else if (!name(now).isEmpty() && !name(now).equals(name(old.getValue()))) {
                 changed |= rename(budget, oldLine, BudgetLines.goal(name(now)));
             }
         }
         return changed;
+    }
+
+    /**
+     * Before an ending goal (reached or deleted) is synced: an extra debt payment its cuts paused goes
+     * back into the debt planner (the plan's extraDebtPayment), so the planner and the budget agree.
+     * The budget line follows from that change; giveBack doesn't add it again.
+     * @return whether the plan changed
+     */
+    public static boolean restoreExtraDebt(JsonNode before, ObjectNode after) {
+        double add = 0;
+        Map<String, JsonNode> oldGoals = byId(before, "savingsGoals"), newGoals = byId(after, "savingsGoals");
+        for (String id : endedGoals(before, after)) {
+            JsonNode now = newGoals.get(id);
+            JsonNode cuts = (now != null ? now : oldGoals.get(id)).path("cuts");
+            for (JsonNode cut : cuts) {
+                if (BudgetLines.isExtraDebt(cut.path("line").asText(""))) add += cut.path("amount").asDouble();
+            }
+        }
+        if (add <= 0) return false;
+        after.put("extraDebtPayment", Math.round(number(after, "extraDebtPayment") + add));
+        return true;
+    }
+
+    /** goals that ended in this save: deleted, or just reached */
+    public static java.util.Set<String> endedGoals(JsonNode before, JsonNode after) {
+        java.util.Set<String> out = new java.util.LinkedHashSet<>();
+        Map<String, JsonNode> newGoals = byId(after, "savingsGoals");
+        for (var old : byId(before, "savingsGoals").entrySet()) {
+            JsonNode now = newGoals.get(old.getKey());
+            if (now == null || reached(old.getValue(), now)) out.add(old.getKey());
+        }
+        return out;
+    }
+
+    private static boolean reached(JsonNode before, JsonNode after) {
+        double target = number(after, "target");
+        return target > 0 && number(before, "saved") < target && number(after, "saved") >= target;
+    }
+
+    /** a goal's money back to the lines its cuts came from (in order), the rest to Savings */
+    private static void giveBack(Map<String, Double> budget, double freed, JsonNode cuts) {
+        double left = freed;
+        if (cuts != null && cuts.isArray()) {
+            for (JsonNode cut : cuts) {
+                String line = cut.path("line").asText("").strip();
+                double amount = Math.min(left, cut.path("amount").asDouble());
+                if (line.isEmpty() || amount <= 0) continue;
+                if (BudgetLines.isExtraDebt(line)) {
+                    left -= amount;   // back through the plan's extraDebtPayment (restoreExtraDebt)
+                    continue;
+                }
+                String key = find(budget, line);
+                budget.merge(key != null ? key : line, amount, Double::sum);
+                left -= amount;
+            }
+        }
+        if (left > 0) budget.merge(BudgetLines.SAVINGS, left, Double::sum);
     }
 
     static boolean startsLater(String dueDate, LocalDate today) {

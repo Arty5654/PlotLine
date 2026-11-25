@@ -53,6 +53,9 @@ public class BudgetQuizController {
     @Autowired
     private com.plotline.backend.plan.BudgetFiles budgetFiles;
 
+    @Autowired
+    private com.plotline.backend.plan.BudgetSaves budgetSaves;
+
     // take-home pay with the current year's tax rules (shared with the paycheck calculator)
     @Autowired
     private TakeHomeCalculator takeHome;
@@ -782,9 +785,12 @@ public class BudgetQuizController {
   @PostMapping("/revert/{username}/{type}")
   public ResponseEntity<String> revertToOriginal(@PathVariable String username, @PathVariable String type) {
     try {
-        String editedKey = String.format("users/%s/%s-budget-edited.json", normalize(username), type);
-        s3Service.deleteFile(editedKey);
-        budgetChanges.record(normalize(username));
+        // both copies, back to the quiz's budget with the Plan's lines kept (see BudgetSaves.reverted)
+        String user = normalize(username);
+        if (!budgetSaves.revert(user, budgetFiles)) {
+            s3Service.deleteFile(String.format("users/%s/%s-budget-edited.json", user, type));
+        }
+        budgetChanges.record(user);
         return ResponseEntity.ok("Reverted to original budget.");
     } catch (Exception e) {
         return ResponseEntity.status(500).body("Failed to revert: " + e.getMessage());

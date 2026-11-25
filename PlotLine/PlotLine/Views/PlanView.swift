@@ -26,6 +26,9 @@ struct PlanView: View {
     @State private var emergencyDeposit = false
     @State private var budgetLineEdit: BudgetLineEdit?
     @State private var editingCheckIn = false
+    @State private var buyingGoal: SavingsGoal?
+    @State private var deletingGoal: SavingsGoal?
+    @State private var boughtMessage: String?
 
     var body: some View {
         ScrollView {
@@ -37,7 +40,9 @@ struct PlanView: View {
                     if model.needsCheckIn() { checkInCard }
                     emergencyFundCard
                     savingsGoalsCard
+                    if !model.plan.wishlist.isEmpty { wishlistCard }
                     debtCard
+                    affordCard
                     toolsCard
                 }
             }
@@ -59,6 +64,29 @@ struct PlanView: View {
                                   }
                               },
                               onDelete: { id in model.update { $0.savingsGoals.removeAll { $0.id == id } } })
+        }
+        .confirmationDialog(buyingGoal.map { "Bought \($0.name)?" } ?? "", isPresented: Binding(
+            get: { buyingGoal != nil }, set: { if !$0 { buyingGoal = nil } }), titleVisibility: .visible) {
+            if let goal = buyingGoal {
+                Button("Log \(goal.target.dollars()) and Close the Goal") { Task { await markBought(goal) } }
+                Button("Cancel", role: .cancel) {}
+            }
+        } message: {
+            Text("It's added to today's spending, and the goal closes. Any budget cuts that paid for it end.")
+        }
+        .confirmationDialog(deletingGoal.map { "Delete \($0.name)?" } ?? "", isPresented: Binding(
+            get: { deletingGoal != nil }, set: { if !$0 { deletingGoal = nil } }), titleVisibility: .visible) {
+            if let goal = deletingGoal {
+                Button("Delete Goal", role: .destructive) {
+                    model.update { $0.savingsGoals.removeAll { $0.id == goal.id } }
+                }
+                Button("Cancel", role: .cancel) {}
+            }
+        } message: {
+            Text("What your budget puts toward it goes back to Savings, and anything paused for it resumes.")
+        }
+        .alert(boughtMessage ?? "", isPresented: Binding(get: { boughtMessage != nil }, set: { if !$0 { boughtMessage = nil } })) {
+            Button("OK", role: .cancel) {}
         }
         .sheet(item: $depositGoal) { goal in
             MoneyAmountSheet(title: goal.name, current: goal.saved) { amount in
@@ -244,12 +272,24 @@ struct PlanView: View {
                 Spacer()
                 Text("\(saved.dollars()) / \(goal.target.dollars())")
                     .font(.subheadline.monospacedDigit())
+                Menu {
+                    Button { editingGoal = goal } label: { Label("Edit", systemImage: "pencil") }
+                    Button(role: .destructive) { deletingGoal = goal } label: { Label("Delete", systemImage: "trash") }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .foregroundColor(PLColor.tint)
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityLabel("More for \(goal.name)")
             }
             ProgressView(value: min(saved, goal.target), total: max(goal.target, 1))
                 .tint(saved >= goal.target ? PLColor.success : PLColor.tint)
             HStack {
                 if saved >= goal.target {
                     Text("Reached!").font(.caption.weight(.semibold)).foregroundColor(PLColor.success)
+                    Button("I Bought It") { buyingGoal = goal }
+                        .font(.caption.weight(.semibold))
                 } else if let monthly = goal.monthlyNeeded(saved: saved), let date = goal.targetDate.flatMap(Plan.day) {
                     Text("\(monthly.dollars()) a month to reach it by \(date.formatted(.dateTime.month(.abbreviated).year()))")
                         .font(.caption).foregroundColor(PLColor.textSecondary)
@@ -264,12 +304,16 @@ struct PlanView: View {
                 let budgeted = model.budget(for: goal)
                 let needed = goal.monthlyNeeded(saved: saved)
                 let short = needed.map { budgeted > 0 && budgeted + 0.5 < $0 } ?? false
+                let pausedFor = model.plan.savingsGoals.first { other in
+                    other.id != goal.id && (other.cuts ?? []).contains { $0.line.caseInsensitiveCompare(BudgetLine.goal(goal.name)) == .orderedSame }
+                }
                 budgetRow(line: BudgetLine.goal(goal.name), title: goal.name, budgeted: budgeted, needed: needed,
                           status: saved >= goal.target ? "Not needed now: tap Change to move it to another goal."
-                                : budgeted == 0 ? (needed == nil ? "No date: give it what you can." : nil)
+                                : pausedFor.map { "Paused while you save for \($0.name). It starts again once you have it." }
+                                ?? (budgeted == 0 ? (needed == nil ? "No date: give it what you can." : nil)
                                 : short ? "\((needed! - budgeted).dollars()) a month short of reaching it on time."
-                                : needed != nil ? "On track." : nil,
-                          warn: short)
+                                : needed != nil ? "On track." : nil),
+                          warn: short && pausedFor == nil)
             }
         }
     }
@@ -315,7 +359,86 @@ struct PlanView: View {
         .buttonStyle(.plain)
     }
 
+    // MARK: - Wishlist
+
+    private var wishlistCard: some View {
+        VStack(alignment: .leading, spacing: PLSpacing.sm) {
+            Label("Wishlist", systemImage: "heart").font(.headline)
+            ForEach(model.plan.wishlist) { wish in
+                wishRow(wish)
+                if wish.id != model.plan.wishlist.last?.id { Divider() }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .plCard()
+    }
+
+    private func wishRow(_ wish: WishItem) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(wish.item).font(.subheadline.weight(.semibold))
+                Spacer()
+                Text(wish.price.dollars()).font(.subheadline.monospacedDigit())
+            }
+            if let goal = model.goal(for: wish) {
+                let saved = model.saved(goal)
+                ProgressView(value: min(saved, goal.target), total: max(goal.target, 1))
+                    .tint(saved >= goal.target ? PLColor.success : PLColor.tint)
+                Text(saved >= goal.target ? "Saved up: it's yours when you're ready." : "Saving for it: \(saved.dollars()) so far.")
+                    .font(.caption).foregroundColor(PLColor.textSecondary)
+            } else if wish.readyToDecide() {
+                Text("Cooling-off is over. Still want it?").font(.caption.weight(.semibold)).foregroundColor(PLColor.tint)
+            } else if let day = Plan.day(wish.remindOn) {
+                Text("Thinking it over until \(day.formatted(.dateTime.month(.abbreviated).day())).")
+                    .font(.caption).foregroundColor(PLColor.textSecondary)
+            }
+            HStack {
+                NavigationLink("Check It") { AffordView(model: model, wish: wish) }
+                Spacer()
+                Button("Remove", role: .destructive) { model.removeFromWishlist(wish.id) }
+            }
+            .font(.caption.weight(.semibold))
+            .buttonStyle(.borderless)
+        }
+    }
+
+    private func markBought(_ goal: SavingsGoal) async {
+        let wish = model.plan.wishlist.first { $0.goalId == goal.id }
+        do {
+            let r = try await model.bought(goalId: goal.id, wishlistId: wish?.id)
+            boughtMessage = "Logged \(r.logged.dollars()) to \(r.category). Enjoy your \(r.item)!"
+        } catch {
+            boughtMessage = (error as? AffordError)?.message ?? "Couldn't log it right now. Try again in a moment."
+        }
+    }
+
     // MARK: - Tools
+
+    private var affordCard: some View {
+        NavigationLink {
+            AffordView(model: model)
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "cart.badge.questionmark")
+                    .font(.title3)
+                    .foregroundColor(.white)
+                    .frame(width: 40, height: 40)
+                    .background(PLColor.success)
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Can I afford it?").font(.headline).foregroundColor(.primary)
+                    Text("Check a purchase against your budget and plan.")
+                        .font(.subheadline).foregroundColor(PLColor.textSecondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right").font(.footnote).foregroundColor(PLColor.textSecondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .plCard()
+    }
 
     private var toolsCard: some View {
         VStack(alignment: .leading, spacing: PLSpacing.sm) {
@@ -481,6 +604,18 @@ struct EmergencyFundSettings: View {
                     }
                 } footer: {
                     Text("3 to 6 months is the usual advice; more if your income changes a lot.")
+                }
+                Section {
+                    HStack {
+                        Text("Never go below")
+                        Spacer()
+                        TextField("$0", value: $fund.floor, format: .currency(code: "USD").precision(.fractionLength(0)))
+                            .keyboardType(.numberPad)
+                            .multilineTextAlignment(.trailing)
+                            .frame(width: 120)
+                    }
+                } footer: {
+                    Text("“Can I afford it?” never counts money below this, even as a last resort.")
                 }
                 Section {
                     Picker("Saved amount", selection: $fund.linkedAccountId) {
