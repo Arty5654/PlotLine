@@ -10,12 +10,7 @@ import Charts
 
 struct StockView: View {
     
-    enum ViewAccount: String, CaseIterable, Identifiable {
-       case brokerage = "Brokerage"
-       case rothIRA   = "Roth IRA"
-       var id: String { rawValue }
-       var apiValue: String { self == .brokerage ? "BROKERAGE" : "ROTH_IRA" }
-    }
+    typealias ViewAccount = InvestmentQuizView.InvestmentAccount
     
     @State private var viewAccount: ViewAccount = .brokerage
     @State private var savedPortfolio: SavedPortfolio?
@@ -111,7 +106,9 @@ struct StockView: View {
                                 EditableAsset(name: $0.name, percentage: $0.percentage, amount: $0.amount)
                             },
                             investmentFrequency: portfolio.investmentFrequency,
-                            totalAmount: Double(portfolio.totalMonthlyAmountDouble)
+                            totalAmount: Double(portfolio.totalMonthlyAmountDouble),
+                            account: viewAccount,
+                            onSaved: { fetchSavedPortfolio(for: viewAccount) }
                         )
                         ) {
                             Label("Edit Portfolio", systemImage: "slider.horizontal.3")
@@ -124,7 +121,7 @@ struct StockView: View {
                         .buttonStyle(OutlineButton(tint: PLColor.danger))
                     }
 
-                    NavigationLink(destination: InvestmentQuizView(onFinish: {
+                    NavigationLink(destination: InvestmentQuizView(account: viewAccount, onFinish: {
                         fetchSavedPortfolio(for: viewAccount)
                     })
                     .environmentObject(calendarViewModel)
@@ -154,7 +151,7 @@ struct StockView: View {
                     .padding(.vertical, PLSpacing.sm)
                     .plCard()
 
-                    NavigationLink(destination: InvestmentQuizView(onFinish: {
+                    NavigationLink(destination: InvestmentQuizView(account: viewAccount, onFinish: {
                         fetchSavedPortfolio(for: viewAccount)
                     })
                     .environmentObject(calendarViewModel)
@@ -261,8 +258,8 @@ struct SavedPortfolio: Codable {
 
     var parsedAssets: [InvestmentAsset] {
         let patterns = [
-            #"\*\*([A-Z]+)\s*-\s*(\d+)%%\*\*.*?Allocation:\*\*\s*\$([\d.]+)"#, // Quiz format (double %%)
-            #"\*\*([A-Z]+)\*\*\s*-\s*(\d+)%\s*-\s*\$([\d.]+)"#               // Edited format
+            #"\*\*([A-Z]+)\s*-\s*(\d+)%{1,2}\*\*.*?Allocation:\*\*\s*\$([\d.,]+)"#, // Quiz format (the AI writes %% or %)
+            #"\*\*([A-Z][A-Z.]*)\*\*\s*-\s*(\d+)%\s*-\s*\$([\d.]+)"#         // Edited format (BRK.B too)
         ]
 
         for pattern in patterns {
@@ -279,7 +276,7 @@ struct SavedPortfolio: Codable {
 
                     let name = String(portfolio[nameRange])
                     let percentage = Double(portfolio[percentRange]) ?? 0
-                    let amount = Double(portfolio[amountRange]) ?? 0
+                    let amount = Double(portfolio[amountRange].replacingOccurrences(of: ",", with: "")) ?? 0
 
                     results.append(InvestmentAsset(name: name, percentage: percentage, amount: amount))
                 }
@@ -337,7 +334,9 @@ struct PortfolioExplanationView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                ForEach(splitPortfolioText(), id: \.self) { section in
+                let sections = splitPortfolioText()
+                let tips = Self.tipIndices(sections)
+                ForEach(Array(sections.enumerated()), id: \.offset) { index, section in
                     // If we can extract asset details, use a custom layout
                     if let asset = extractAssetInfo(from: section) {
                         VStack(alignment: .leading, spacing: 6) {
@@ -361,6 +360,25 @@ struct PortfolioExplanationView: View {
                                 }
                             }
                         }
+                    } else if section.hasPrefix("#") {
+                        // a heading ("### Before you invest")
+                        Text(section.drop(while: { $0 == "#" || $0 == " " }))
+                            .font(.headline)
+                            .foregroundColor(section.contains("Before you invest") ? PLColor.warning : .primary)
+                    } else if tips.contains(index) {
+                        // a "Before you invest" tip
+                        HStack(alignment: .top, spacing: 10) {
+                            Image(systemName: "lightbulb.fill").foregroundColor(PLColor.warning)
+                            if let attributed = try? AttributedString(markdown: String(section.dropFirst(2))) {
+                                Text(attributed)
+                            } else {
+                                Text(section.dropFirst(2))
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(12)
+                        .background(PLColor.warning.opacity(0.1))
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
                     } else {
                         // Otherwise try to render the section as Markdown
                         if let attributed = try? AttributedString(markdown: section) {
@@ -377,6 +395,17 @@ struct PortfolioExplanationView: View {
     }
     
     // Replace literal "\n" with actual newline characters, collapse double percent signs, and split on double newline.
+    /// the paragraphs under "### Before you invest" (the server's tips), until something else starts
+    static func tipIndices(_ sections: [String]) -> Set<Int> {
+        var out = Set<Int>(), inTips = false
+        for (i, section) in sections.enumerated() {
+            if section.hasPrefix("#") { inTips = section.contains("Before you invest") }
+            else if inTips && section.hasPrefix("- ") { out.insert(i) }
+            else { inTips = false }
+        }
+        return out
+    }
+
     private func splitPortfolioText() -> [String] {
         let replaced = portfolioText
             .replacingOccurrences(of: "\\n", with: "\n")

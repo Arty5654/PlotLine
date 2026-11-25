@@ -243,14 +243,13 @@ class BankCategoriesFeatureTest extends FeatureTestBase {
     }
 
     @Test
-    @DisplayName("A narrower category inside a fixed cost doesn't count a charge twice (Netflix with Subscriptions fixed)")
+    @DisplayName("Subscriptions aren't a fixed cost: a Netflix charge from the bank counts (in the narrower Streaming Services)")
     @SuppressWarnings("unchecked")
-    void nicheInsideFixed() throws Exception {
+    void subscriptionChargesCount() throws Exception {
         User me = newUser();
         String user = me.name().toLowerCase();
         tokenStore.saveAccessToken(user, "item-1", "access-test");
         budget(me, Map.of("Subscriptions", 30.0, "Streaming Services", 20.0, "Music", 15.0, "Shopping", 50.0));
-        ok(postJson(me, "/api/costs/fixed/" + me.name(), Map.of("category", "Subscriptions", "amount", 30)));
         retrofit2.Call<com.plaid.client.model.TransactionsSyncResponse> sync = org.mockito.Mockito.mock(retrofit2.Call.class);
         when(sync.execute()).thenReturn(retrofit2.Response.success(new com.plaid.client.model.TransactionsSyncResponse().added(List.of(
                 withId(txn("NETFLIX.COM", "ENTERTAINMENT", "ENTERTAINMENT_TV_AND_MOVIES", 15.49, 1), "netflix"),
@@ -258,12 +257,12 @@ class BankCategoriesFeatureTest extends FeatureTestBase {
                 .modified(List.of()).removed(List.of()).hasMore(false).nextCursor("c1")));
         when(plaidApi.transactionsSync(any())).thenReturn(sync);
         JsonNode result = ok(postJson(me, "/api/plaid/sync", Map.of("username", user)));
-        assertThat(result.get("skippedFixed").asInt()).isEqualTo(1);  // Netflix: in the Subscriptions fixed cost already
-        assertThat(result.get("added").asInt()).isEqualTo(1);
+        assertThat(result.get("skippedFixed").asInt()).isZero();   // counted as it's charged
+        assertThat(result.get("added").asInt()).isEqualTo(2);
         JsonNode totals = ok(getAs(me, "/api/costs/monthly/{u}", me.name()).param("month",
                 java.time.YearMonth.from(LocalDate.now().minusDays(1)).toString())).get("totals");
         assertThat(totals.get("Music").asDouble()).isEqualTo(60.0);
-        assertThat(totals.path("Streaming Services").asDouble()).isZero();
+        assertThat(totals.path("Streaming Services").asDouble()).isEqualTo(15.49);
     }
 
     @Test

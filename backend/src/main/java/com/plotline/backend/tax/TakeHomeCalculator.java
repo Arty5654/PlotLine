@@ -64,6 +64,18 @@ public class TakeHomeCalculator {
 
     public double k401Limit() { return table.path("k401Limit").asDouble(); }
 
+    /** IRA limits: {limit, catchUpAge, catchUp, rothPhaseout: {single: [from, to], joint: [from, to]}} */
+    public JsonNode ira() { return table.path("ira"); }
+
+    /** the federal bracket (percent) a single filer's last dollar falls in, after a pre-tax 401(k) */
+    public int federalBracket(double gross, double k401) {
+        JsonNode federal = table.path("federal");
+        double taxable = Math.max(0, gross - k401 - federal.path("standardDeduction").asDouble());
+        double rate = 0;
+        for (JsonNode b : federal.path("brackets")) if (taxable > b.path("over").asDouble()) rate = b.path("rate").asDouble();
+        return (int) Math.round(rate * 100);
+    }
+
     public boolean knowsState(String code) {
         return code != null && table.path("states").has(code.toUpperCase(Locale.ROOT));
     }

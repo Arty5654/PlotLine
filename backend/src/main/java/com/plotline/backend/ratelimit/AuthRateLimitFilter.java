@@ -28,7 +28,9 @@ import static com.plotline.backend.util.UsernameUtils.normalize;
 @Order(0)
 public class AuthRateLimitFilter extends OncePerRequestFilter {
 
-    private record Check(RateLimit limit, String key) { }
+    private record Check(RateLimit limit, String key) {
+        RateLimiter.Check shared() { return new RateLimiter.Check(limit, key); }
+    }
 
     private final RateLimiter limiter;
     private final boolean enabled;
@@ -74,20 +76,19 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
             default -> { }
         }
 
-        for (Check check : checks) {
-            RateLimiter.Decision decision = limiter.tryConsume(check.limit(), check.key());
-            if (!decision.allowed()) {
-                RateLimitResponses.tooManyRequests(response,
-                        "Too many attempts. Try again in " + RateLimitResponses.waitTime(decision.retryAfterSeconds()) + ".",
-                        decision.retryAfterSeconds());
-                return;
-            }
+        // all of them at once (one round trip to the shared counts)
+        RateLimiter.Decision decision = limiter.tryConsume(checks.stream().map(Check::shared).toList());
+        if (!decision.allowed()) {
+            RateLimitResponses.tooManyRequests(response,
+                    "Too many attempts. Try again in " + RateLimitResponses.waitTime(decision.retryAfterSeconds()) + ".",
+                    decision.retryAfterSeconds());
+            return;
         }
         chain.doFilter(cached, response);
     }
 
     /** The caller's IP. Fly's proxy puts the real one in Fly-Client-IP; locally it's the socket address. */
-    static String clientIp(HttpServletRequest request) {
+    public static String clientIp(HttpServletRequest request) {
         String fly = request.getHeader("Fly-Client-IP");
         return fly != null && !fly.isBlank() ? fly.trim() : request.getRemoteAddr();
     }

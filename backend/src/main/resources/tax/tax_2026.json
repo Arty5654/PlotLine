@@ -5,6 +5,7 @@
   "IRS Rev. Proc. 2025-32 (2026 federal brackets, standard deduction)",
   "SSA: 2026 Social Security wage base $184,500",
   "IRS: 2026 401(k) limit $24,500",
+  "IRS IR-2025-111: 2026 IRA limit $7,500, catch-up $1,100, Roth phase-out $153k-$168k single, $242k-$252k joint",
   "Tax Foundation, 2026 State Individual Income Tax Rates and Brackets (single filers)",
   "2026 changes after January 1: GA HB 463, UT SB 60, SC H.4216, AR special session, WV SB 392"
  ],
@@ -49,6 +50,15 @@
   "additionalMedicareThreshold": 200000
  },
  "k401Limit": 24500,
+ "ira": {
+  "limit": 7500,
+  "catchUpAge": 50,
+  "catchUp": 1100,
+  "rothPhaseout": {
+   "single": [153000, 168000],
+   "joint": [242000, 252000]
+  }
+ },
  "states": {
   "AL": {
    "name": "Alabama",

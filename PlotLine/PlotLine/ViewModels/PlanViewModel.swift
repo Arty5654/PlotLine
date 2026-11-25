@@ -50,6 +50,7 @@ final class PlanViewModel: ObservableObject {
             loaded = true
             loadFailed = false
             SavingsCheckInReminder.update(total: checkInLines.map(\.amount).reduce(0, +))
+            WishlistReminder.update(self.plan.wishlist)
         } catch {
             loadFailed = !loaded
             if reportErrors { AppBanner.report("load your plan", error, retry: { [weak self] in Task { await self?.load() } }) }
@@ -74,6 +75,47 @@ final class PlanViewModel: ObservableObject {
                 AppBanner.report("save your plan", error, retry: { [weak self] in self?.update { _ in } })
             }
         }
+    }
+
+    /// a change waiting to be saved is saved now (before the server changes the plan itself)
+    func flushSave() async {
+        guard let task = saveTask, !isPreview else { return }
+        task.cancel()
+        saveTask = nil
+        try? await PlanAPI.savePlan(plan)
+    }
+
+    // MARK: - Wishlist ("Can I afford it?" → think it over)
+
+    /// `ongoingCosts`: the monthly costs they kept from the estimate, so reopening it needs no new AI call
+    func addToWishlist(item: String, price: Double, days: Int, ongoingCosts: [OngoingCost]? = nil, now: Date = Date()) {
+        let remind = Calendar.current.date(byAdding: .day, value: days, to: now) ?? now
+        update { $0.wishlist.append(WishItem(item: item.isEmpty ? "Something" : item, price: price,
+                                             addedOn: Plan.dayKey(now), remindOn: Plan.dayKey(remind),
+                                             ongoingCosts: ongoingCosts)) }
+        guard !isPreview else { return }
+        Task {
+            _ = await NotificationPermission.ensure(for: "your wishlist reminder")
+            WishlistReminder.update(plan.wishlist)
+        }
+    }
+
+    func removeFromWishlist(_ id: String) {
+        update { $0.wishlist.removeAll { $0.id == id } }
+        if !isPreview { WishlistReminder.update(plan.wishlist) }
+    }
+
+    /// the goal a wishlist item is being saved for
+    func goal(for wish: WishItem) -> SavingsGoal? {
+        wish.goalId.flatMap { id in plan.savingsGoals.first { $0.id == id } }
+    }
+
+    /// "I bought it": logged to today's spending; the goal and wishlist item close (the goal's cuts end)
+    func bought(goalId: String? = nil, wishlistId: String? = nil) async throws -> BoughtResult {
+        await flushSave()
+        let result = try await PlanAPI.bought(goalId: goalId, wishlistId: wishlistId)
+        await load(reportErrors: false)
+        return result
     }
 
     // MARK: - Linked accounts

@@ -38,13 +38,16 @@ public class PlanController {
     private final PlanBudgetSync sync;
     private final BudgetFiles budgets;
     private final FixedCosts fixedCosts;
+    private final com.plotline.backend.afford.SubscriptionPauses pauses;
     private final ObjectMapper json = new ObjectMapper();
 
-    public PlanController(S3Service s3, PlanBudgetSync sync, BudgetFiles budgets, FixedCosts fixedCosts) {
+    public PlanController(S3Service s3, PlanBudgetSync sync, BudgetFiles budgets, FixedCosts fixedCosts,
+                          com.plotline.backend.afford.SubscriptionPauses pauses) {
         this.s3 = s3;
         this.sync = sync;
         this.budgets = budgets;
         this.fixedCosts = fixedCosts;
+        this.pauses = pauses;
     }
 
     private JsonNode saved(String username) {
@@ -54,6 +57,9 @@ public class PlanController {
             return json.createObjectNode();
         }
     }
+
+    /** users/{u}/plan.json */
+    public static String planKey(String username) { return key(username); }
 
     private static String key(String username) {
         return "users/" + normalize(username) + "/plan.json";
@@ -67,13 +73,17 @@ public class PlanController {
     @PutMapping("/{username}")
     public ResponseEntity<?> put(@PathVariable String username, @RequestBody JsonNode plan) throws Exception {
         if (plan == null || !plan.isObject()) return ResponseEntity.badRequest().body("Expected an object");
+        JsonNode before = saved(username);
+        // a "Can I afford it?" goal that ends gives a paused extra debt payment back to the planner
+        PlanBudgetSync.restoreExtraDebt(before, (com.fasterxml.jackson.databind.node.ObjectNode) plan);
+        java.util.Set<String> ended = PlanBudgetSync.endedGoals(before, plan);
         byte[] bytes = json.writeValueAsBytes(plan);
         if (bytes.length > MAX_BYTES) return ResponseEntity.badRequest().body("That plan is too large");
-        JsonNode before = saved(username);
         try (var in = new ByteArrayInputStream(bytes)) {
             s3.uploadFile(key(username), in, bytes.length);
         }
         sync.apply(normalize(username), before, plan);
+        pauses.resume(normalize(username), ended);   // subscriptions paused for an ended goal
         return ResponseEntity.ok(plan);
     }
 

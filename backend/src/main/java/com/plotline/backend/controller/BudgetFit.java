@@ -14,7 +14,7 @@ import java.util.Set;
  * amounts they typed aren't touched. Also: where they usually spend more than the plan allows.
  * (The same order the review screen's Rebalance uses.)
  */
-final class BudgetFit {
+public final class BudgetFit {
     private BudgetFit() { }
 
     static final Set<String> SAVING = Set.of("savings", "brokerage", "roth ira", "emergency fund", "investments", "investing",
@@ -25,8 +25,8 @@ final class BudgetFit {
             "car maintenance", "taxes & fees");
 
     private static String key(String c) { return c.toLowerCase(Locale.ROOT).strip(); }
-    static boolean isSaving(String c) { return SAVING.contains(key(c)) || com.plotline.backend.plan.BudgetLines.isPlanSaving(c); }
-    static boolean isNeed(String c) { return NEEDS.contains(key(c)) || key(c).startsWith("debt - "); }
+    public static boolean isSaving(String c) { return SAVING.contains(key(c)) || com.plotline.backend.plan.BudgetLines.isPlanSaving(c); }
+    public static boolean isNeed(String c) { return NEEDS.contains(key(c)) || key(c).startsWith("debt - "); }
 
     /** lowers lines so the total fits; returns what each lowered line was. Whole dollars. */
     static Map<String, Double> fit(Map<String, Double> monthly, double takeHome, Set<String> locked, double savingsFloor) {

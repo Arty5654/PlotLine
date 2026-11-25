@@ -34,7 +34,7 @@ class FixedCostsFeatureTest extends FeatureTestBase {
     }
 
     @Test
-    @DisplayName("Saving the quiz adds its fixed lines (savings, investing, bills, subscriptions, debt minimums), not the rest")
+    @DisplayName("Saving the quiz adds its fixed lines (savings, investing, bills, debt minimums), not the rest or subscriptions")
     void fromQuiz() throws Exception {
         User me = newUser();
         // one they made themselves keeps its amount
@@ -44,9 +44,10 @@ class FixedCostsFeatureTest extends FeatureTestBase {
         Map<String, Double> byCategory = new java.util.HashMap<>();
         fixed(me).forEach(f -> byCategory.put(f.get("category").asText(), f.get("amount").asDouble()));
         assertThat(byCategory).containsEntry("Savings", 500.0).containsEntry("Roth IRA", 300.0).containsEntry("Brokerage", 200.0)
-                .containsEntry("Phone", 45.0).containsEntry("Subscriptions", 38.0).containsEntry("Debt - Chase Card", 60.0)
+                .containsEntry("Phone", 45.0).containsEntry("Debt - Chase Card", 60.0)
                 .containsEntry("Rent", 1400.0)                     // theirs, left alone
-                .doesNotContainKeys("Groceries", "Eating Out", "Utilities");   // utilities change month to month
+                .doesNotContainKeys("Groceries", "Eating Out", "Utilities",   // utilities change month to month
+                        "Subscriptions");                          // counted as they're charged
 
         // removing one the quiz added: the next quiz doesn't add it back; a dropped quiz line goes away
         String brokerageId = null;
@@ -56,6 +57,38 @@ class FixedCostsFeatureTest extends FeatureTestBase {
         java.util.Set<String> now = new java.util.HashSet<>();
         fixed(me).forEach(f -> now.add(f.get("category").asText() + "=" + f.get("amount").asDouble()));
         assertThat(now).contains("Savings=600.0", "Rent=1400.0").noneMatch(c -> c.startsWith("Brokerage") || c.startsWith("Phone"));
+    }
+
+    @Test
+    @DisplayName("Subscriptions are never a fixed cost: refused as one, and an old fixed entry stops counting")
+    void subscriptionsNotFixed() throws Exception {
+        User me = newUser();
+        saveQuiz(me, Map.of("Rent", 1450, "Subscriptions", 30, "Savings", 300));
+        call(postJson(me, "/api/costs/fixed/" + me.name(), Map.of("category", "Subscriptions", "amount", 47.98)), 400);
+
+        // one saved by an older version of the app
+        String user = me.name().toLowerCase();
+        byte[] old = objectMapper.writeValueAsBytes(java.util.List.of(
+                Map.of("id", "old-subs", "category", "Subscriptions", "amount", 30, "source", "quiz"),
+                Map.of("id", "rent", "category", "Rent", "amount", 1450)));
+        s3.putObject(software.amazon.awssdk.services.s3.model.PutObjectRequest.builder().bucket("plotline-database-bucket").key("users/" + user + "/fixed_costs.json").build(),
+                software.amazon.awssdk.core.sync.RequestBody.fromBytes(old));
+        java.util.Set<String> categories = new java.util.HashSet<>();
+        fixed(me).forEach(f -> categories.add(f.get("category").asText()));
+        assertThat(categories).contains("Rent").doesNotContain("Subscriptions");
+
+        // what was charged counts, like any category
+        String month = YearMonth.now().toString();
+        ok(postJson(me, "/api/costs/add-dated", Map.of("username", me.name(), "type", "monthly", "date", month + "-05",
+                "costs", Map.of("Subscriptions", 17.99))));
+        JsonNode totals = ok(getAs(me, "/api/costs/monthly/{u}", me.name()).param("month", month)).get("totals");
+        assertThat(totals.get("Subscriptions").asDouble()).isEqualTo(17.99);
+
+        // the budget line can be set on its own (Track Subscriptions)
+        JsonNode budget = ok(postJson(me, "/api/budget/" + me.name() + "/line", Map.of("line", "Subscriptions", "amount", 41.97))).get("budget");
+        assertThat(budget.get("Subscriptions").asDouble()).isEqualTo(41.97);
+        assertThat(budget.get("Rent").asDouble()).isEqualTo(1450.0);
+        call(postJson(newUser(), "/api/budget/" + me.name() + "/line", Map.of("line", "Subscriptions", "amount", 1)), 403);
     }
 
     @Test

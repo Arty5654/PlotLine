@@ -82,7 +82,7 @@ public class SavedPortfolio {
         this.riskTolerance = riskTolerance;
     }
 
-    public void setAccount(AccountType accountType) {
+    public void setAccount(AccountType account) {
         this.account = account;
     }
 

@@ -379,7 +379,15 @@ public class WeeklyMonthlyCostController {
     @PostMapping("/merge")
         public ResponseEntity<String> merge(@RequestBody WeeklyMonthlyCostRequest req){
         try {
-        mergeCosts(normalize(req.getUsername()), req.getType(), req.getCosts());
+        String user = normalize(req.getUsername());
+        mergeCosts(user, req.getType(), req.getCosts());
+        // older apps send receipt items sorted by hand here: they count as today's spending too
+        Map<String, Double> added = new HashMap<>();
+        if (req.getCosts() != null) req.getCosts().forEach((c, v) -> { if (v != null && v > 0) added.put(c, v); });
+        if (!added.isEmpty()) {
+            updateDatedCosts(user, "weekly", LocalDate.now(), added);
+            updateDatedCosts(user, "monthly", LocalDate.now(), added);
+        }
         return ResponseEntity.ok("Merged successfully");
         } catch (Exception e){
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
@@ -604,11 +612,24 @@ public class WeeklyMonthlyCostController {
             String dateStr = String.valueOf(body.getOrDefault("date", LocalDate.now().toString()));
             @SuppressWarnings("unchecked")
             Map<String, Number> costs = (Map<String, Number>) body.get("costs");
-
             LocalDate date = LocalDate.parse(dateStr);
-            String periodKey = "weekly".equalsIgnoreCase(type) ? weekKey(date) : monthKey(date);
-
             boolean replaceAll = Boolean.TRUE.equals(body.get("replaceAll"));
+
+            Map<String, Object> period = setDayCosts(username, type, date, costs, replaceAll);
+            // a day typed on Monthly Costs is that week's spending too (the grocery card's "spent this week")
+            if ("monthly".equalsIgnoreCase(type) && !replaceAll) setDayCosts(username, "weekly", date, costs, false);
+            return ResponseEntity.ok(period);
+        } catch (Exception ex) {
+            log.error("mergeDatedCosts failed", ex);
+            return ResponseEntity.status(500).body("merge-dated failed: " + ex.getMessage());
+        }
+    }
+
+    /** sets one day's amounts in the weekly or monthly file (0 removes a category) and its totals */
+    private Map<String, Object> setDayCosts(String username, String type, LocalDate date, Map<String, Number> costs,
+                                            boolean replaceAll) throws Exception {
+        {
+            String periodKey = "weekly".equalsIgnoreCase(type) ? weekKey(date) : monthKey(date);
 
             String key = "users/%s/costs/%s/%s.json".formatted(username, type.toLowerCase(), periodKey);
             Map<String, Object> period = loadJsonOrEmpty(key);
@@ -687,11 +708,7 @@ public class WeeklyMonthlyCostController {
             }
 
             saveJson(key, period);
-            return ResponseEntity.ok(period);
-
-        } catch (Exception ex) {
-            log.error("mergeDatedCosts failed", ex);
-            return ResponseEntity.status(500).body("merge-dated failed: " + ex.getMessage());
+            return period;
         }
     }
 
@@ -958,44 +975,6 @@ public class WeeklyMonthlyCostController {
         }
     }
 
-    /**
-     * Set desired monthly totals. Adjustments are stored separately from day entries
-     * so monthly-only costs (like rent) don't appear in weekly charts.
-     */
-    @PostMapping("/monthly/{username}/set-totals")
-    public ResponseEntity<?> setMonthlyTotals(
-            @PathVariable String username,
-            @RequestParam String month,
-            @RequestBody Map<String, Object> body) {
-        try {
-            String normUser = normalize(username);
-            @SuppressWarnings("unchecked")
-            Map<String, Number> costsRaw = (Map<String, Number>) body.get("costs");
-            Map<String, Double> costs = new LinkedHashMap<>();
-            if (costsRaw != null) {
-                for (var e : costsRaw.entrySet()) {
-                    costs.put(e.getKey(), e.getValue() == null ? 0.0 : e.getValue().doubleValue());
-                }
-            }
-
-            // Exclude fixed cost categories so setMonthlyTotals doesn't zero them out
-            // (fixed costs are merged into totals separately on GET)
-            List<Map<String, Object>> fixedCosts = loadFixedCosts(normUser);
-            Set<String> fixedCatNames = new HashSet<>();
-            for (var fc : fixedCosts) {
-                fixedCatNames.add(String.valueOf(fc.get("category")).toLowerCase());
-            }
-            costs.keySet().removeIf(k -> fixedCatNames.contains(k.toLowerCase()));
-
-            Map<String, Object> result = costsService.setMonthlyTotals(normUser, month, costs);
-            if (result == null) {
-                return ResponseEntity.status(500).body("Failed to set monthly totals");
-            }
-            return ResponseEntity.ok(result);
-        } catch (Exception e) {
-            return ResponseEntity.status(500).body("set-monthly-totals failed: " + e.getMessage());
-        }
-    }
 
     // ==================== Transaction Management ====================
 
@@ -1109,7 +1088,10 @@ public class WeeklyMonthlyCostController {
         }
     }
 
-    /** POST /api/costs/fixed/{username} — add or update a fixed cost */
+    /**
+     * POST /api/costs/fixed/{username} — add or update a fixed cost. One they set themselves is theirs
+     * from then on: the budget quiz's sync (FixedCosts.applyQuizBudget) no longer resets its amount.
+     */
     @PostMapping("/fixed/{username}")
     public ResponseEntity<?> saveFixedCost(
             @PathVariable String username,
@@ -1126,6 +1108,10 @@ public class WeeklyMonthlyCostController {
             if (category == null || category.isBlank()) {
                 return ResponseEntity.badRequest().body(Map.of("error", "category is required"));
             }
+            if (com.plotline.backend.service.FixedCosts.neverFixed(category)) {
+                return ResponseEntity.badRequest().body(Map.of("error",
+                        "Subscriptions count as they're charged: a linked card records them, or add them on the day."));
+            }
 
             if (id != null && !id.isBlank()) {
                 // Update existing by id
@@ -1133,6 +1119,7 @@ public class WeeklyMonthlyCostController {
                     if (id.equals(fc.get("id"))) {
                         fc.put("category", category);
                         fc.put("amount", round2(amount));
+                        fc.remove("source");
                         break;
                     }
                 }
@@ -1142,6 +1129,7 @@ public class WeeklyMonthlyCostController {
                 for (var fc : fixed) {
                     if (category.equalsIgnoreCase(String.valueOf(fc.get("category")))) {
                         fc.put("amount", round2(amount));
+                        fc.remove("source");
                         found = true;
                         break;
                     }

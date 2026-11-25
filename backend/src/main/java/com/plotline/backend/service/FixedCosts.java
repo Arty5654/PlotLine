@@ -25,6 +25,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  * Never counted twice: bank sync skips transactions in a fixed category, and a month's total for a
  * fixed category is the fixed amount or what was recorded there (older syncs, receipts), whichever
  * is larger — never both.
+ *
+ * Subscriptions are never fixed: what's actually charged is spending like any other category (a
+ * linked bank or card records it, or it's entered by hand). Older fixed Subscriptions entries are ignored.
  */
 @Component
 public class FixedCosts {
@@ -36,8 +39,12 @@ public class FixedCosts {
             // bills that are the same each month (not utilities: they change with use, so they're tracked
             // from the bank or entered on the day the bill is paid)
             "rent", "mortgage", "internet", "phone", "car payment", "car insurance", "insurance",
-            "renters insurance", "health insurance",
-            "subscriptions");
+            "renters insurance", "health insurance");
+
+    /** never a fixed cost (see above) */
+    public static boolean neverFixed(String category) {
+        return category != null && category.strip().equalsIgnoreCase("subscriptions");
+    }
 
     private final S3Service s3;
     private final ObjectMapper json = new ObjectMapper();
@@ -55,7 +62,9 @@ public class FixedCosts {
         try {
             byte[] data = s3.downloadFile("users/" + username + "/fixed_costs.json");
             if (data == null || data.length == 0) return new ArrayList<>();
-            return json.readValue(data, new TypeReference<List<Map<String, Object>>>() {});
+            List<Map<String, Object>> fixed = json.readValue(data, new TypeReference<List<Map<String, Object>>>() {});
+            fixed.removeIf(fc -> neverFixed(String.valueOf(fc.get("category"))));
+            return fixed;
         } catch (Exception e) {
             return new ArrayList<>();
         }

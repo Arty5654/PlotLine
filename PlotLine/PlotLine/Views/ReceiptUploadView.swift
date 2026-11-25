@@ -417,26 +417,6 @@ extension ReceiptUploadView {
         resultMessage = finalMessage.isEmpty ? nil : "Added:\n" + finalMessage
     }
     
-    // Upload to both weekly and monthly costs (for unmatched user corrections)
-    private func postMergeCosts(type: String, costs: [String: Double], completion: @escaping (Bool) -> Void) {
-        let payload: [String: Any] = [
-            "username": username,
-            "type": type,
-            "costs": costs
-        ]
-        guard let jsonData = try? JSONSerialization.data(withJSONObject: payload) else {
-            completion(false); return
-        }
-        var request = URLRequest(url: URL(string: "\(BackendConfig.baseURLString)/api/costs/merge")!)
-        BackendConfig.addApiKey(to: &request)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = jsonData
-        URLSession.shared.dataTask(with: request) { _, _, err in
-            completion(err == nil)
-        }.resume()
-    }
-
     private func submitCorrections() {
         var additions: [String: Double] = [:]
         for (itemName, category) in userCorrections {
@@ -444,7 +424,11 @@ extension ReceiptUploadView {
             additions[category, default: 0.0] += amount
         }
 
-        postMergeCosts(type: "monthly", costs: additions) { ok in
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        let day = lastAddedDate.isEmpty ? formatter.string(from: Date()) : lastAddedDate
+        // sorted items count on the receipt's day, in this week and this month (like the rest of it)
+        addDatedBoth(additions, on: day) { ok in
             DispatchQueue.main.async {
                 self.resultMessage = """
                 Uploaded:
@@ -452,7 +436,12 @@ extension ReceiptUploadView {
                 """
                 self.showCategoryPrompt = false
                 self.loadCategories()
-                if !ok { print("Monthly merge failed") }
+                if ok {
+                    for (category, amount) in additions { self.lastAddedCosts[category, default: 0] += amount }
+                    if self.lastAddedDate.isEmpty { self.lastAddedDate = day }
+                } else {
+                    self.errorText = "Couldn't add the sorted items. Try again."
+                }
             }
         }
     }
@@ -550,42 +539,41 @@ extension ReceiptUploadView {
                 return
             }
 
-            // Step 2: Add new costs to monthly
-            let addPayload: [String: Any] = [
-                "username": self.username,
-                "type": "monthly",
-                "date": localDate,
-                "costs": updatedCosts
-            ]
-
-            guard let addData = try? JSONSerialization.data(withJSONObject: addPayload) else {
-                DispatchQueue.main.async {
-                    self.isUploading = false
-                    self.errorText = "Failed to create add request"
-                }
-                return
-            }
-
-            var addRequest = URLRequest(url: URL(string: "\(BackendConfig.baseURLString)/api/costs/add-dated")!)
-            BackendConfig.addApiKey(to: &addRequest)
-            addRequest.httpMethod = "POST"
-            addRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            addRequest.httpBody = addData
-
-            URLSession.shared.dataTask(with: addRequest) { _, resp, _ in
+            // Step 2: the new amounts, on the receipt's day, in both this week and this month
+            let day = self.lastAddedDate.isEmpty ? localDate : self.lastAddedDate
+            self.addDatedBoth(updatedCosts, on: day) { ok in
                 DispatchQueue.main.async {
                     self.isUploading = false
                     self.showEditSheet = false
-
-                    if let http = resp as? HTTPURLResponse, (200...299).contains(http.statusCode) {
+                    if ok {
                         self.lastAddedCosts = updatedCosts
                         self.resultMessage = "Updated costs:\n" + updatedCosts.map { "\($0.key): $\(String(format: "%.2f", $0.value))" }.joined(separator: "\n")
                     } else {
                         self.errorText = "Failed to save edited costs"
                     }
                 }
-            }.resume()
+            }
         }.resume()
+    }
+
+    /// adds amounts to a day's spending in the weekly and the monthly costs (like a scanned receipt)
+    private func addDatedBoth(_ costs: [String: Double], on day: String, completion: @escaping (Bool) -> Void) {
+        func post(_ type: String, _ next: @escaping (Bool) -> Void) {
+            let payload: [String: Any] = ["username": username, "type": type, "date": day, "costs": costs]
+            guard let body = try? JSONSerialization.data(withJSONObject: payload),
+                  let url = URL(string: "\(BackendConfig.baseURLString)/api/costs/add-dated") else { next(false); return }
+            var request = URLRequest(url: url)
+            BackendConfig.addApiKey(to: &request)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = body
+            URLSession.shared.dataTask(with: request) { _, response, error in
+                next(error == nil && ((response as? HTTPURLResponse).map { (200...299).contains($0.statusCode) } ?? false))
+            }.resume()
+        }
+        post("weekly") { weeklyOK in
+            post("monthly") { monthlyOK in completion(weeklyOK && monthlyOK) }
+        }
     }
 }
 

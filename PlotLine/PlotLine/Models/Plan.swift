@@ -16,6 +16,7 @@ struct Plan: Codable, Equatable {
     var extraDebtPayment: Double = 0       // on top of the minimums, each month
     var importedQuizDebts = false          // the budget quiz's debts were offered once (the quiz edits these now)
     var savingsCheckIn: String?            // "2026-11": that month's savings were confirmed (or skipped)
+    var wishlist: [WishItem] = []          // "Can I afford it?" → think it over first
 
     init() { }
 
@@ -28,6 +29,24 @@ struct Plan: Codable, Equatable {
         extraDebtPayment = (try? c.decode(Double.self, forKey: .extraDebtPayment)) ?? 0
         importedQuizDebts = (try? c.decode(Bool.self, forKey: .importedQuizDebts)) ?? false
         savingsCheckIn = try? c.decode(String.self, forKey: .savingsCheckIn)
+        wishlist = (try? c.decode([WishItem].self, forKey: .wishlist)) ?? []
+    }
+}
+
+/// something they want, waiting out a cooling-off period before deciding ("Can I afford it?")
+struct WishItem: Codable, Identifiable, Equatable {
+    var id = UUID().uuidString
+    var item: String
+    var price: Double
+    var addedOn: String                    // "2026-11-24"
+    var remindOn: String                   // when to decide: a reminder that day
+    var goalId: String?                    // saving for it: that goal's progress
+    var ongoingCosts: [OngoingCost]?       // the monthly costs they kept from the AI's estimate (nil: not estimated)
+
+    /// the cooling-off period is over
+    func readyToDecide(now: Date = Date()) -> Bool {
+        guard let day = Plan.day(remindOn) else { return true }
+        return day <= now
     }
 }
 
@@ -38,6 +57,14 @@ struct SavingsGoal: Codable, Identifiable, Equatable {
     var saved: Double = 0                  // typed-in deposits (ignored when linked to an account)
     var targetDate: String?                // "2027-06-01"
     var linkedAccountId: String?           // a linked savings account: its balance is the saved amount
+    /// from "Can I afford it?": budget lines lowered to fund it; the server gives them back once it's
+    /// reached or deleted (kept as is when the plan is saved)
+    var cuts: [GoalCut]?
+
+    struct GoalCut: Codable, Equatable {
+        let line: String
+        let amount: Double
+    }
 
     /// how much a month to reach the target by the date (nil without a date, or once reached)
     func monthlyNeeded(saved: Double, now: Date = Date()) -> Double? {
@@ -50,6 +77,7 @@ struct SavingsGoal: Codable, Identifiable, Equatable {
 struct EmergencyFund: Codable, Equatable {
     var months: Int = 3                    // months of spending to have set aside
     var saved: Double = 0
+    var floor: Double?                     // never counted for a purchase ("Can I afford it?")
     var linkedAccountId: String?
 }
 

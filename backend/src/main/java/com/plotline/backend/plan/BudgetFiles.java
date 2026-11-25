@@ -32,6 +32,12 @@ public class BudgetFiles {
         return numbers(read("users/%s/monthly-budget.json".formatted(user)));
     }
 
+    /** the budget the quiz made (before any edits); empty before the quiz */
+    public Map<String, Double> original(String user) {
+        Map<String, Object> m = read("users/%s/monthly-budget.json".formatted(user));
+        return m.get("budget") instanceof Map<?, ?> wrapped ? numbers(wrapped) : numbers(m);
+    }
+
     /** the monthly budget and its weekly copy, in the format POST /api/budget saves */
     public void save(String user, Map<String, Double> monthly) throws Exception {
         Map<String, Double> weekly = new LinkedHashMap<>();

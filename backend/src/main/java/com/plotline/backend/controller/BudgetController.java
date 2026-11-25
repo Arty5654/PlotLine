@@ -24,6 +24,39 @@ public class BudgetController {
     @Autowired
     private com.plotline.backend.service.BudgetChanges budgetChanges;
 
+    @Autowired
+    private com.plotline.backend.plan.BudgetFiles budgetFiles;
+
+    @Autowired
+    private com.plotline.backend.plan.BudgetSaves budgetSaves;
+
+    /**
+     * {line, amount}: one line of the monthly budget (the weekly copy follows); 0 removes it. Used by
+     * Track Subscriptions to keep the Subscriptions line in step with what's tracked.
+     */
+    @PostMapping("/{username}/line")
+    public ResponseEntity<?> setLine(@PathVariable String username, @RequestBody Map<String, Object> body) {
+        try {
+            String user = normalize(username);
+            String line = body.get("line") == null ? "" : String.valueOf(body.get("line")).strip();
+            double amount = body.get("amount") instanceof Number n ? Math.round(n.doubleValue() * 100) / 100.0 : -1;
+            if (line.isEmpty() || line.length() > 60 || amount < 0 || amount > 1_000_000) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Enter a line and an amount."));
+            }
+            Map<String, Double> budget = new java.util.LinkedHashMap<>(budgetFiles.monthly(user));
+            if (budget.isEmpty()) return ResponseEntity.badRequest().body(Map.of("error", "Take the budget quiz first."));
+            Map<String, Double> before = com.plotline.backend.plan.BudgetSaves.copy(budget);
+            String key = budget.keySet().stream().filter(k -> k.equalsIgnoreCase(line)).findFirst().orElse(line);
+            if (amount > 0) budget.put(key, amount); else budget.remove(key);
+            budgetFiles.save(user, budget);
+            budgetChanges.record(user);
+            budgetSaves.changed(user, before, budget);
+            return ResponseEntity.ok(Map.of("budget", budget));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", "Couldn't update your budget."));
+        }
+    }
+
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final String S3_BUCKET_PATH = "users/%s/%s-budget.json";
     private final String S3_BUCKET_PATH2 = "users/%s/%s-budget-edited.json";
@@ -62,18 +95,23 @@ public class BudgetController {
                 return ResponseEntity.badRequest().body("Type must be 'monthly' or 'weekly'");
             }
 
+            Map<String, Double> before = com.plotline.backend.plan.BudgetSaves.copy(budgetFiles.monthly(username));
+
             // Save the requested type
             saveBudgetForType(username, type, budget);
 
             // Save the companion type (monthly <-> weekly)
+            Map<String, Double> monthly;
             if (type.equals("monthly")) {
+                monthly = budget;
                 Map<String, Double> weekly = scaleBudget(budget, 1.0 / 4.0);
                 saveBudgetForType(username, "weekly", weekly);
             } else {
-                Map<String, Double> monthly = scaleBudget(budget, 4.0);
+                monthly = scaleBudget(budget, 4.0);
                 saveBudgetForType(username, "monthly", monthly);
             }
             budgetChanges.record(username); // tune suggestions wait a full month after a change
+            budgetSaves.changed(username, before, monthly);   // fixed costs and the debt planner follow
 
             return ResponseEntity.ok("Budget data saved successfully.");
         } catch (Exception e) {
